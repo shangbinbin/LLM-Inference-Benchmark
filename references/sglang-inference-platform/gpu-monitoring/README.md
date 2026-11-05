@@ -1,5 +1,8 @@
 # NVIDIA DCGM GPU 监控配置说明
 
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
+
 本文说明如何把三个 GPU 节点上已有的 `nvidia-dcgm-exporter` 接入当前
 Prometheus/Grafana 链路。配置基于现场返回的三个端点：
 

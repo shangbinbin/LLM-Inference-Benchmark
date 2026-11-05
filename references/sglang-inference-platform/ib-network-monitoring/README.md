@@ -1,5 +1,8 @@
 # 两节点分布式推理的 IB 网卡监控配置
 
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
+
 本目录说明如何复用集群中现有的 `prometheus-node-exporter`，监控两节点
 TP=2 分布式推理的 InfiniBand 流量和基础链路事件。现场 exporter 无法升级，
 实际返回的版本为 `node_exporter 0.17.0`，因此当前 Dashboard 和告警只使用

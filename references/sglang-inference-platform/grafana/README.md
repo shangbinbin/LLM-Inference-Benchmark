@@ -3,13 +3,16 @@
  * @Date: 2026-07-27 13:47:44
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /vllm bench serve自定义数据集压测/config/grafana/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/grafana/README.md
  * @Description: grafana配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
 -->
 
 # grafana配置说明
+
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 grafana组件使用的配置文件参见[此处](./grafana.ini)，使用的镜像为`grafana:13.0.4-ubuntu-root`，该镜像通过[此处](./grafana-dockerfile/Dockerfile)的Dockerfile构建。grafana配置的启动命令如下所示：
 
@@ -107,7 +110,7 @@ deployment/group，再选择该组 frontend target，避免把无关组的 gauge
 Dashboard v14 默认选择三节点 GLM5.2 的
 `deployment=glm52-sglang-3node`、`inference_group=glm52-sglang-3node-group-0`、
 `instance=glm52-sglang-3node.default.svc.cluster.local:30000` 和 `model_name=glm-5.2`。
-这些默认值与 `config/prometheus/prometheus.yml` 一致；Prometheus 只抓取 rank 0/master，
+这些默认值与 [`prometheus.yml`](../prometheus/prometheus.yml) 一致；Prometheus 只抓取 rank 0/master，
 因此应用请求 gauge 和直方图不会把 rank 1/2 重复求和。若切回其他部署，可在变量中选择
 `All` 或对应标签值，无需改 panel PromQL。
 

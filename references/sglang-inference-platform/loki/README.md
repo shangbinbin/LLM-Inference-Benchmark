@@ -3,13 +3,16 @@
  * @Date: 2026-07-27 14:40:23
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-07-31 19:26:19
- * @FilePath: /vllm bench serve自定义数据集压测/config/loki/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/loki/README.md
  * @Description: loki配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
 -->
 
 # loki配置说明
+
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 loki组件使用的配置文件参见[此处](./loki.yaml)，使用的镜像是由[此处](./loki-dockerfile/Dockerfile)的Dockerfile构建得到的，启动loki组件的启动命令如下所示：
 

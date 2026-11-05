@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 14:24:14
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 15:24:47
- * @FilePath: /vllm bench serve自定义数据集压测/config/logrotate/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/logrotate/README.md
  * @Description: logrotate配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
@@ -11,7 +11,10 @@
 
 # logrotate配置说明
 
-logrotate组件使用的配置文件参见[此处](./sglang-logrotate.conf)，使用的镜像是由[此处](../../logrotate/logrotate-dockerfile/Dockerfile)的Dockerfile构建得到的，该文件夹下的[`docker-entrypoint.sh`](../../logrotate/logrotate-dockerfile/docker-entrypoint.sh)对应的是该镜像的启动命令。配置的启动命令具体如下所示：
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
+
+logrotate组件使用的配置文件参见[此处](./sglang-logrotate.conf)，使用的镜像是由[此处](https://github.com/shangbinbin/sglang-inference-platform/blob/46609ee6b3095e0851e612a5b5c587e7a78f280e/logrotate/logrotate-dockerfile/Dockerfile)的Dockerfile构建得到的，该文件夹下的[`docker-entrypoint.sh`](https://github.com/shangbinbin/sglang-inference-platform/blob/46609ee6b3095e0851e612a5b5c587e7a78f280e/logrotate/logrotate-dockerfile/docker-entrypoint.sh)对应的是该镜像的启动命令。配置的启动命令具体如下所示：
 
 ```shell
 LOGROTATE_LOG_FILE=/private/benchmark-data/sglang-log/sglang-server.log LOGROTATE_CONFIG=/private/benchmark-data/logrotate/config/sglang-logrotate.conf LOGROTATE_STATE=/private/benchmark-data/logrotate/data/status LOGROTATE_INTERVAL_SECONDS=60 docker-entrypoint.sh

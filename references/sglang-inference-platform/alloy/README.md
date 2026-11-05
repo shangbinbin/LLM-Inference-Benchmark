@@ -3,13 +3,16 @@
  * @Date: 2026-07-27 13:32:36
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 15:24:47
- * @FilePath: /vllm bench serve自定义数据集压测/config/alloy/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/alloy/README.md
  * @Description: alloy配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
 -->
 
 # alloy配置说明
+
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 alloy组件使用的配置文件参见[此处](./config.alloy)，使用的镜像为`m.daocloud.io/docker.io/grafana/alloy:v1.18.0`。该组件的启动命令具体如下所示：
 
@@ -31,7 +34,7 @@ rank 0/1/2，并让文件前缀及 Loki 标签与三节点 profile 一致：
 /bin/alloy run --storage.path=/private/benchmark-data/alloy/data --server.http.listen-addr=0.0.0.0:12345 /private/benchmark-data/alloy/config/config-glm52-3node-8gpu.alloy
 ```
 
-每次修改 `profiles/glm52-3node-8gpu.json` 的 `logging.persistent.filePrefix` 时，必须同步修改
+每次修改 上游的 [`glm52-3node-8gpu.json`](https://github.com/shangbinbin/sglang-inference-platform/blob/46609ee6b3095e0851e612a5b5c587e7a78f280e/sglang-deployment/profiles/glm52-3node-8gpu.json) 的 `logging.persistent.filePrefix` 时，必须同步修改
 三节点 Alloy 配置中的三个 `__path__`。共享 RWX PVC 上只能运行一个负责这些文件的 Alloy
 reader，不能让两节点和三节点 Alloy 实例同时重复采集同一文件。
 

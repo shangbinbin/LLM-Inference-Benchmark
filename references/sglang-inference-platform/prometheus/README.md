@@ -3,13 +3,16 @@
  * @Date: 2026-07-27 15:21:52
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /vllm bench serve自定义数据集压测/config/prometheus/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/prometheus/README.md
  * @Description: prometheus配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
 -->
 
 # prometheus配置说明
+
+> 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 Prometheus 组件使用的当前配置文件参见[此处](./prometheus.yml)。该配置已切换到 GLM5.2
 三节点、每节点 8 GPU 场景，只抓取 `glm52-sglang-3node` 普通 Service 暴露的 rank 0
