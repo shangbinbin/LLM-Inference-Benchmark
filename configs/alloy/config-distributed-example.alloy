@@ -1,0 +1,69 @@
+// SGLang 两节点单 GPU（TP=2）日志采集示例。
+// 默认日志文件由 sglang-deployment 的 StatefulSet 通过 tee 生成。
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.source.file "sglang_distributed" {
+  // 为每个固定 Rank 单独声明 target，避免仅靠文件名解析角色，并为 Loki
+  // 增加低基数的 deployment、inference_group、node_rank、role 和 pod 标签。
+  targets = [
+    {
+      "__path__"     = "/private/benchmark-data/sglang-log/sglang-server-rank-0.log",
+      "job"          = "sglang",
+      "service_name" = "sglang",
+      "deployment"   = "sglang-ib-2node",
+      "inference_group" = "sglang-ib-2node-group-0",
+      "topology"     = "2node-1gpu-tp2",
+      "node_rank"    = "0",
+      "role"         = "master",
+      "replica_id"   = "0",
+      "pod"          = "sglang-ib-2node-0",
+      "model"        = "Qwen3.5-9B",
+      "environment"  = "benchmark",
+      "instance"     = "sglang-ib-2node-0",
+    },
+    {
+      "__path__"     = "/private/benchmark-data/sglang-log/sglang-server-rank-1.log",
+      "job"          = "sglang",
+      "service_name" = "sglang",
+      "deployment"   = "sglang-ib-2node",
+      "inference_group" = "sglang-ib-2node-group-0",
+      "topology"     = "2node-1gpu-tp2",
+      "node_rank"    = "1",
+      "role"         = "worker",
+      "replica_id"   = "0",
+      "pod"          = "sglang-ib-2node-1",
+      "model"        = "Qwen3.5-9B",
+      "environment"  = "benchmark",
+      "instance"     = "sglang-ib-2node-1",
+    },
+  ]
+
+  // Alloy 首次发现文件时读取已有内容；持久化 positions 后从上次位置续读。
+  tail_from_end = false
+
+  // 两个 SGLang Pod 会在启动时分别创建日志文件。周期文件发现允许 Alloy 先启动，
+  // 即使首次扫描时文件尚不存在，也会在文件出现后自动为对应 Rank 创建 reader。
+  file_match {
+    enabled     = true
+    sync_period = "2s"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://10.0.3.253:33336/loki/api/v1/push"
+
+    batch_wait = "1s"
+    batch_size = "1MiB"
+
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "5m"
+    max_backoff_retries = 10
+  }
+}

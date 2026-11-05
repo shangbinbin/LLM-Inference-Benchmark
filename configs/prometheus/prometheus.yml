@@ -1,0 +1,74 @@
+global:
+  # 默认采集间隔
+  scrape_interval: 5s
+
+  # 告警和记录规则的计算间隔
+  evaluation_interval: 5s
+
+  # 单次采集超时时间，不能大于 scrape_interval
+  scrape_timeout: 3s
+
+scrape_configs:
+  # 监控 Prometheus 自身，可选
+  #- job_name: "prometheus"
+  #  scrape_interval: 15s
+  #  static_configs:
+  #    - targets:
+  #        - "localhost:9090"
+
+  # GLM5.2 三节点分布式组只从 rank 0/master 获取 SGLang 应用指标。
+  # 普通 ClusterIP Service 只选择 glm52-sglang-3node-0；不要使用会发现
+  # master 和两个 worker 的 headless Service，避免重复聚合请求指标。
+  - job_name: "sglang-distributed-master"
+    scheme: "http"
+    metrics_path: "/metrics"
+
+    # 压测期间希望观察得更细，可以设置为 2 秒
+    scrape_interval: 2s
+    scrape_timeout: 1s
+
+    static_configs:
+      - targets:
+          - "glm52-sglang-3node.default.svc.cluster.local:30000"
+        # 这些是 Prometheus 在采集时附加的 target labels，不会重命名 SGLang 原生的
+        # sglang:* 指标，也不会把原生 model_name 标签改成下面的 model 标签。
+        labels:
+          service: "sglang"
+          deployment: "glm52-sglang-3node"
+          inference_group: "glm52-sglang-3node-group-0"
+          topology: "3node-8gpu-tp8-pp3"
+          role: "master"
+          node_rank: "0"
+          replica_id: "0"
+          pod: "glm52-sglang-3node-0"
+          model: "glm-5.2"
+          environment: "benchmark"
+
+  # 监控三个 GPU 节点上的 NVIDIA DCGM Exporter。node 是 Prometheus 附加的稳定节点标签，
+  # 即使 exporter 不可达，up 指标仍可按节点筛选；Exporter 原生的 Hostname、gpu、UUID、
+  # modelName、pod、namespace、container 等标签会原样保留。
+  - job_name: "nvidia-dcgm-exporter"
+    scheme: "http"
+    metrics_path: "/metrics"
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+    static_configs:
+      - targets:
+          - "10.0.3.1:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu01"
+          environment: "benchmark"
+      - targets:
+          - "10.0.3.2:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu02"
+          environment: "benchmark"
+      - targets:
+          - "10.0.3.3:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu03"
+          environment: "benchmark"

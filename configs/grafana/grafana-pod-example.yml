@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/networks-status: |-
+      [{
+          "name": "k8s-pod-network",
+          "ips": [
+              "177.177.8.251"
+          ],
+          "default": true,
+          "dns": {}
+      }]
+    scheduling.k8s.io/group-name: dev-yzz-grafana-qzw6-b780e178-4bed-4bff-b550-75f9301a8209
+    volcano.sh/job-name: dev-yzz-grafana-qzw6
+    volcano.sh/job-retry-count: "0"
+    volcano.sh/job-version: "0"
+    volcano.sh/queue-name: 313137b39f5ec486019f5f398f190000
+    volcano.sh/task-index: "0"
+    volcano.sh/task-spec: pod
+    volcano.sh/template-uid: dev-yzz-grafana-qzw6-pod
+  creationTimestamp: "2026-07-31T11:10:49Z"
+  labels:
+    ampha-ai-module: notebook
+    app: ac0e3d87-7e31-4565-baa5-579c522de51a
+    business: notebook
+    notebook-id: ac0e3d87-7e31-4565-baa5-579c522de51a
+    notebook-resource-group-id: 313137b39f5ec486019f5f398f190000
+    notebook-user-id: "28"
+    volcano.sh/job-name: dev-yzz-grafana-qzw6
+    volcano.sh/job-namespace: default
+    volcano.sh/preemptable: "false"
+    volcano.sh/queue-name: 313137b39f5ec486019f5f398f190000
+    volcano.sh/task-index: "0"
+    volcano.sh/task-spec: pod
+    watch: business
+  name: dev-yzz-grafana-qzw6-pod-0
+  namespace: default
+  ownerReferences:
+  - apiVersion: batch.volcano.sh/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Job
+    name: dev-yzz-grafana-qzw6
+    uid: b780e178-4bed-4bff-b550-75f9301a8209
+  resourceVersion: "12337445"
+  uid: 8e5d66af-2529-45f4-bfc2-bc5fa81e7092
+spec:
+  containers:
+  - command:
+    - /bin/bash
+    - -c
+    - mkdir -p /log && (GF_PATHS_CONFIG=/private/benchmark-data/grafana/grafana.ini
+      GF_PATHS_DATA=/private/benchmark-data/grafana/data GF_PATHS_LOGS=/private/benchmark-data/grafana/logs
+      GF_PATHS_PLUGINS=/private/benchmark-data/grafana/plugins GF_PATHS_PROVISIONING=/private/benchmark-data/grafana/provisioning
+      GF_DATABASE_TYPE=sqlite3 GF_DATABASE_PATH=/private/benchmark-data/grafana/grafana.db
+      GF_SERVER_HTTP_ADDR=0.0.0.0 GF_SERVER_HTTP_PORT=3000 GF_SECURITY_ADMIN_USER=admin
+      GF_SECURITY_ADMIN_PASSWORD=123456 GF_USERS_ALLOW_SIGN_UP=false exec /run.sh)
+      1>/log/dev-yzz-grafana-qzw6.log 2>>/log/dev-yzz-grafana-qzw6.log
+    env:
+    - name: PRIVATE_FILE_PATH
+      value: /private
+    - name: PUBLIC_FILE_PATH
+      value: /public
+    - name: DATAHUB
+      value: /ampha/datahub
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: void
+    image: ampha-registry.h3c.com:8099/ampha/58117d169ca2233d4a23f1edea482321:latest
+    imagePullPolicy: Always
+    name: notebook
+    resources:
+      limits:
+        cpu: "4"
+        memory: 8Gi
+      requests:
+        cpu: "4"
+        memory: 8Gi
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /private
+      name: data
+      subPath: private/user/yzz
+    - mountPath: /public
+      name: data
+      readOnly: true
+      subPath: public/publicdata/
+    - mountPath: /ampha/datahub
+      name: data
+      readOnly: true
+      subPath: private/datahub/
+    - mountPath: /log
+      name: data
+      subPath: private/log/yzz/dev/dev-yzz-grafana-qzw6/1785496248985
+    - mountPath: /etc/tips
+      name: notebook-tips
+      subPath: tips
+    - mountPath: /dev/shm
+      name: dshm
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: default-token-w8pl2
+      readOnly: true
+    workingDir: /private/
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: jbsw-gpu01
+  nodeSelector:
+    ampha/schedulable: "true"
+  preemptionPolicy: PreemptLowerPriority
+  priority: 100
+  priorityClassName: low
+  restartPolicy: Never
+  schedulerName: volcano
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 180
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 180
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: hpai-pvc
+  - configMap:
+      defaultMode: 420
+      name: notebook-tips
+    name: notebook-tips
+  - emptyDir:
+      medium: Memory
+    name: dshm
+  - name: default-token-w8pl2
+    secret:
+      defaultMode: 420
+      secretName: default-token-w8pl2
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:51Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:55Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:55Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:50Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: docker://975ffa850e8853edb41a7e3fb25db440bcfc6285af6939e8ac4fbaf928f003c1
+    image: ampha-registry.h3c.com:8099/ampha/58117d169ca2233d4a23f1edea482321:latest
+    imageID: docker-pullable://ampha-registry.h3c.com:8099/ampha/58117d169ca2233d4a23f1edea482321@sha256:6514578b0777810de3776d1db116446dad3676a8bef1238829fda9c9a0dc9a52
+    lastState: {}
+    name: notebook
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-07-31T11:10:53Z"
+  hostIP: 10.0.3.1
+  phase: Running
+  podIP: 177.177.8.251
+  podIPs:
+  - ip: 177.177.8.251
+  qosClass: Guaranteed
+  startTime: "2026-07-31T11:10:51Z"

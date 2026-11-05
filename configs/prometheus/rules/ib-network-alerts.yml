@@ -1,0 +1,71 @@
+groups:
+  - name: ib-network
+    interval: 15s
+    rules:
+      - alert: NodeExporterIBTargetDown
+        expr: up{job="prometheus-node-exporter-ib"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node_exporter IB target is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for more than 1 minute."
+
+      - alert: NodeExporterIBScrapeSlow
+        expr: (scrape_duration_seconds{job="prometheus-node-exporter-ib"} > 2) and on (instance) (up{job="prometheus-node-exporter-ib"} == 1)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node_exporter IB scrape is approaching its timeout"
+          description: "The successful scrape of {{ $labels.instance }} took {{ $value }} seconds for more than 2 minutes; the configured timeout is 3 seconds."
+
+      - alert: NodeExporterIBCollectorFailed
+        expr: |
+          (node_scrape_collector_success{job="prometheus-node-exporter-ib",collector="infiniband"} == 0)
+          or
+          (
+            up{job="prometheus-node-exporter-ib"} == 1
+            unless on (instance)
+            node_scrape_collector_success{job="prometheus-node-exporter-ib",collector="infiniband"}
+          )
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node_exporter InfiniBand collector failed"
+          description: "The infiniband collector on {{ $labels.instance }} has failed or exposed no collector health series for more than 2 minutes."
+
+      - alert: NodeExporterIBMetricsMissing
+        expr: up{job="prometheus-node-exporter-ib"} == 1 unless on (instance) node_infiniband_port_data_received_bytes_total{job="prometheus-node-exporter-ib"}
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "InfiniBand metrics are missing"
+          description: "{{ $labels.instance }} is scrapeable, but exposes no legacy InfiniBand receive counter expected from node_exporter 0.17.0. Check the host sysfs mount and collector flags."
+
+      - alert: NodeExporterIBDeviceCountUnexpected
+        expr: count by (instance) (count by (instance, device) (node_infiniband_port_data_received_bytes_total{job="prometheus-node-exporter-ib"})) != 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Visible legacy InfiniBand device count is not 10"
+          description: "{{ $labels.instance }} currently exposes counters for {{ $value }} unique InfiniBand devices; the observed node_exporter 0.17.0 baseline is 10. This does not prove that all devices belong to the inference data plane."
+
+      - alert: NodeExporterIBLinkWentDown
+        expr: increase(node_infiniband_link_downed_total{job="prometheus-node-exporter-ib"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "InfiniBand link-down counter increased"
+          description: "{{ $labels.instance }} device {{ $labels.device }} port {{ $labels.port }} recorded {{ $value }} link-down events in 5 minutes."
+
+      - alert: NodeExporterIBLinkErrorRecovery
+        expr: increase(node_infiniband_link_error_recovery_total{job="prometheus-node-exporter-ib"}[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "InfiniBand link error recovery counter increased"
+          description: "{{ $labels.instance }} device {{ $labels.device }} port {{ $labels.port }} recorded {{ $value }} link error recovery events in 5 minutes. node_exporter 0.17.0 does not expose the newer full errors/discards metric set."

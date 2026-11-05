@@ -1,0 +1,29 @@
+apiVersion: 1
+
+providers:
+  - name: "SGLang Dashboards"
+
+    orgId: 1
+
+    # SGLang 应用与 GPU/IB 推理基础设施 Dashboard 在 Grafana 页面中的文件夹名称
+    folder: "SGLang"
+
+    # 使用固定 UID，避免重复创建文件夹
+    folderUid: "sglang"
+
+    type: file
+
+    # 删除 JSON 文件时，不立即删除 Grafana 中的 Dashboard
+    disableDeletion: true
+
+    # 大于 10 秒时，Grafana使用轮询，更适合 Docker bind mount
+    updateIntervalSeconds: 30
+
+    # 允许通过 Grafana 页面修改 Dashboard
+    allowUiUpdates: true
+
+    options:
+      # 容器内 Dashboard JSON 目录；会同时加载 SGLang、GPU 与 IB 网卡 Dashboard
+      path: /private/benchmark-data/grafana/dashboards
+
+      foldersFromFilesStructure: false

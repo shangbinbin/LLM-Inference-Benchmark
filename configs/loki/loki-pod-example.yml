@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/networks-status: |-
+      [{
+          "name": "k8s-pod-network",
+          "ips": [
+              "177.177.8.214"
+          ],
+          "default": true,
+          "dns": {}
+      }]
+    scheduling.k8s.io/group-name: dev-yzz-loki-5vqp-5342d4e2-fd5e-4852-a36c-f6b8fe63dccb
+    volcano.sh/job-name: dev-yzz-loki-5vqp
+    volcano.sh/job-retry-count: "0"
+    volcano.sh/job-version: "0"
+    volcano.sh/queue-name: 313137b39f5ec486019f5f398f190000
+    volcano.sh/task-index: "0"
+    volcano.sh/task-spec: pod
+    volcano.sh/template-uid: dev-yzz-loki-5vqp-pod
+  creationTimestamp: "2026-07-31T11:10:50Z"
+  labels:
+    ampha-ai-module: notebook
+    app: aa1b6515-df24-47c7-a49f-0b7c066e8618
+    business: notebook
+    notebook-id: aa1b6515-df24-47c7-a49f-0b7c066e8618
+    notebook-resource-group-id: 313137b39f5ec486019f5f398f190000
+    notebook-user-id: "28"
+    volcano.sh/job-name: dev-yzz-loki-5vqp
+    volcano.sh/job-namespace: default
+    volcano.sh/preemptable: "false"
+    volcano.sh/queue-name: 313137b39f5ec486019f5f398f190000
+    volcano.sh/task-index: "0"
+    volcano.sh/task-spec: pod
+    watch: business
+  name: dev-yzz-loki-5vqp-pod-0
+  namespace: default
+  ownerReferences:
+  - apiVersion: batch.volcano.sh/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Job
+    name: dev-yzz-loki-5vqp
+    uid: 5342d4e2-fd5e-4852-a36c-f6b8fe63dccb
+  resourceVersion: "12337452"
+  uid: 97fd6d92-af81-44d9-8f00-8410538446e3
+spec:
+  containers:
+  - command:
+    - /bin/bash
+    - -c
+    - mkdir -p /log && (/usr/bin/loki -config.file=/private/benchmark-data/loki/config/loki.yaml)
+      1>/log/dev-yzz-loki-5vqp.log 2>>/log/dev-yzz-loki-5vqp.log
+    env:
+    - name: PRIVATE_FILE_PATH
+      value: /private
+    - name: PUBLIC_FILE_PATH
+      value: /public
+    - name: DATAHUB
+      value: /ampha/datahub
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: void
+    image: ampha-registry.h3c.com:8099/ampha/56b40f623032451cd687f92fab48e11b:latest
+    imagePullPolicy: Always
+    name: notebook
+    resources:
+      limits:
+        cpu: "4"
+        memory: 8Gi
+      requests:
+        cpu: "4"
+        memory: 8Gi
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /private
+      name: data
+      subPath: private/user/yzz
+    - mountPath: /public
+      name: data
+      readOnly: true
+      subPath: public/publicdata/
+    - mountPath: /ampha/datahub
+      name: data
+      readOnly: true
+      subPath: private/datahub/
+    - mountPath: /log
+      name: data
+      subPath: private/log/yzz/dev/dev-yzz-loki-5vqp/1785496250486
+    - mountPath: /etc/tips
+      name: notebook-tips
+      subPath: tips
+    - mountPath: /dev/shm
+      name: dshm
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: default-token-w8pl2
+      readOnly: true
+    workingDir: /private/
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: jbsw-gpu01
+  nodeSelector:
+    ampha/schedulable: "true"
+  preemptionPolicy: PreemptLowerPriority
+  priority: 100
+  priorityClassName: low
+  restartPolicy: Never
+  schedulerName: volcano
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 180
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 180
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: hpai-pvc
+  - configMap:
+      defaultMode: 420
+      name: notebook-tips
+    name: notebook-tips
+  - emptyDir:
+      medium: Memory
+    name: dshm
+  - name: default-token-w8pl2
+    secret:
+      defaultMode: 420
+      secretName: default-token-w8pl2
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:52Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:55Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:55Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-31T11:10:51Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: docker://0bf7decc75f17b3b2c2f87ca12949926776be13cc522571f1d29fc652b78ef0c
+    image: ampha-registry.h3c.com:8099/ampha/56b40f623032451cd687f92fab48e11b:latest
+    imageID: docker-pullable://ampha-registry.h3c.com:8099/ampha/56b40f623032451cd687f92fab48e11b@sha256:31bcaf784fc5d7efb18a70639c169640b3e3a12e3a64df5044b5efb394541f9f
+    lastState: {}
+    name: notebook
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-07-31T11:10:54Z"
+  hostIP: 10.0.3.1
+  phase: Running
+  podIP: 177.177.8.214
+  podIPs:
+  - ip: 177.177.8.214
+  qosClass: Guaranteed
+  startTime: "2026-07-31T11:10:52Z"

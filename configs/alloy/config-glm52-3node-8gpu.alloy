@@ -1,0 +1,81 @@
+// GLM5.2 三节点、每节点 8 GPU（TP=8、PP=3）的全 Rank 日志采集配置。
+// 文件名与 profiles/glm52-3node-8gpu.json 的 filePrefix 保持一致。
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.source.file "sglang_glm52_3node_8gpu" {
+  targets = [
+    {
+      "__path__"        = "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-0.log",
+      "job"             = "sglang",
+      "service_name"    = "sglang",
+      "deployment"      = "glm52-sglang-3node",
+      "inference_group" = "glm52-sglang-3node-group-0",
+      "topology"        = "3node-8gpu-tp8-pp3",
+      "node_rank"       = "0",
+      "role"            = "master",
+      "replica_id"      = "0",
+      "pod"             = "glm52-sglang-3node-0",
+      "model"           = "glm-5.2",
+      "environment"     = "benchmark",
+      "instance"        = "glm52-sglang-3node-0",
+    },
+    {
+      "__path__"        = "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-1.log",
+      "job"             = "sglang",
+      "service_name"    = "sglang",
+      "deployment"      = "glm52-sglang-3node",
+      "inference_group" = "glm52-sglang-3node-group-0",
+      "topology"        = "3node-8gpu-tp8-pp3",
+      "node_rank"       = "1",
+      "role"            = "worker",
+      "replica_id"      = "0",
+      "pod"             = "glm52-sglang-3node-1",
+      "model"           = "glm-5.2",
+      "environment"     = "benchmark",
+      "instance"        = "glm52-sglang-3node-1",
+    },
+    {
+      "__path__"        = "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-2.log",
+      "job"             = "sglang",
+      "service_name"    = "sglang",
+      "deployment"      = "glm52-sglang-3node",
+      "inference_group" = "glm52-sglang-3node-group-0",
+      "topology"        = "3node-8gpu-tp8-pp3",
+      "node_rank"       = "2",
+      "role"            = "worker",
+      "replica_id"      = "0",
+      "pod"             = "glm52-sglang-3node-2",
+      "model"           = "glm-5.2",
+      "environment"     = "benchmark",
+      "instance"        = "glm52-sglang-3node-2",
+    },
+  ]
+
+  // 首次读取已有内容，之后从持久化 positions 继续。
+  tail_from_end = false
+
+  // SGLang Pod 会在启动时创建 Rank 文件；周期发现允许 Alloy 先启动。
+  file_match {
+    enabled     = true
+    sync_period = "2s"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://10.0.3.253:33336/loki/api/v1/push"
+
+    batch_wait = "1s"
+    batch_size = "1MiB"
+
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "5m"
+    max_backoff_retries = 10
+  }
+}

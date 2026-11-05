@@ -1,0 +1,52 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.source.file "sglang" {
+  targets = [
+    {
+      "__path__"    = "/private/benchmark-data/sglang-log/sglang-server.log",
+      "job"         = "sglang",
+      "service_name" = "sglang",
+      "deployment"  = "sglang-single",
+      "inference_group" = "sglang-single-group-0",
+      "topology"    = "1node-1gpu-tp1",
+      "node_rank"   = "0",
+      "role"        = "master",
+      "replica_id"  = "0",
+      "pod"         = "sglang-single-0",
+      "model"       = "Qwen3.5-9B",
+      "environment" = "benchmark",
+      "instance"    = "10.0.3.253:33333",
+    },
+  ]
+
+  // false 表示 Alloy 第一次启动时读取文件已有内容。
+  // 如果只希望采集启动 Alloy 之后的新日志，改为 true。
+  tail_from_end = false
+
+  // SGLang 可能晚于 Alloy 启动并在启动时才创建日志文件。启用周期文件发现后，
+  // 初次扫描没有匹配文件不会永久跳过该 target，文件出现后会自动开始采集。
+  file_match {
+    enabled     = true
+    sync_period = "2s"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://10.0.3.253:33336/loki/api/v1/push"
+
+    // 默认约等待 1 秒或达到批次大小后发送
+    batch_wait = "1s"
+    batch_size = "1MiB"
+
+    // Loki 不可用时重试
+    min_backoff_period = "500ms"
+    max_backoff_period = "5m"
+    max_backoff_retries = 10
+  }
+}

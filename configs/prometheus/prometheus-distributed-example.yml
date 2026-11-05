@@ -1,0 +1,105 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  scrape_timeout: 3s
+
+rule_files:
+  - /private/benchmark-data/prometheus/config/rules/ib-network-alerts.yml
+
+scrape_configs:
+  # GLM5.2 三节点 TP=8/PP=3 中只有 rank 0/master 对外提供 HTTP API 和当前 Dashboard
+  # 使用的 SGLang 请求指标入口。该 ClusterIP Service 只选择 glm52-sglang-3node-0；
+  # 不要改成会解析到 master 和两个 worker 的 headless Service。样例也没有启用
+  # --enable-metrics-for-all-schedulers，因此保持 TP0/master 统计口径。
+  - job_name: "sglang-distributed-master"
+    scheme: "http"
+    metrics_path: "/metrics"
+    scrape_interval: 2s
+    scrape_timeout: 1s
+
+    static_configs:
+      - targets:
+          - "glm52-sglang-3node.default.svc.cluster.local:30000"
+        # 这些是 Prometheus 在采集时附加的 target labels，不会重命名 SGLang 原生的
+        # sglang:* 指标，也不会把原生 model_name 标签改成下面的 model 标签。
+        labels:
+          service: "sglang"
+          deployment: "glm52-sglang-3node"
+          inference_group: "glm52-sglang-3node-group-0"
+          topology: "3node-8gpu-tp8-pp3"
+          role: "master"
+          node_rank: "0"
+          replica_id: "0"
+          pod: "glm52-sglang-3node-0"
+          model: "glm-5.2"
+          environment: "benchmark"
+
+  # 三个 GPU 节点上已经运行的 NVIDIA DCGM Exporter。使用独立 static_config 为每个 target
+  # 附加稳定的 node 标签，供 Grafana 在 target DOWN 时仍能按节点定位；Exporter 原生的
+  # Hostname、gpu、UUID、modelName、pod、namespace、container 等标签会原样保留。
+  - job_name: "nvidia-dcgm-exporter"
+    scheme: "http"
+    metrics_path: "/metrics"
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+    static_configs:
+      - targets:
+          - "10.0.3.1:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu01"
+          environment: "benchmark"
+      - targets:
+          - "10.0.3.2:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu02"
+          environment: "benchmark"
+      - targets:
+          - "10.0.3.3:9400"
+        labels:
+          service: "nvidia-dcgm-exporter"
+          node: "jbsw-gpu03"
+          environment: "benchmark"
+
+  # prometheus-node-exporter 是 ampha-business 中的无头 Service。使用 DNS A 记录发现会为
+  # 每个 Endpoint 建立独立 target；若把该 Service 写成单个 static target，DNS 返回的多个
+  # 地址不保证都能成为独立 target。Dashboard 中再按本次三个推理节点对应的 instance 过滤。
+  - job_name: "prometheus-node-exporter-ib"
+    scheme: "http"
+    metrics_path: "/metrics"
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+    # 这是 IB 专用 job，在 node_exporter 端只执行 infiniband collector。现场为
+    # node_exporter 0.17.0：下方仅入库已验证存在的 IB、collector health 和
+    # build info 指标，Dashboard/规则不依赖新版才有的 info、state_id、
+    # rate_bytes_per_second 等序列。仅使用
+    # metric_relabel_configs 会在完整 /metrics 下载后才过滤，不会降低
+    # collector 执行、指标编码和响应传输耗时。
+    params:
+      collect[]:
+        - "infiniband"
+
+    dns_sd_configs:
+      - names:
+          - "prometheus-node-exporter.ampha-business.svc.cluster.local"
+        type: "A"
+        port: 9100
+        refresh_interval: 30s
+
+    relabel_configs:
+      - target_label: service
+        replacement: "prometheus-node-exporter"
+      - target_label: namespace
+        replacement: "ampha-business"
+      - target_label: environment
+        replacement: "benchmark"
+
+    # collect[] 限制 exporter 端的采集范围；这里再进行入库白名单过滤，
+    # 并保留 collector duration，便于定位后续抖动。
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "node_infiniband_.*|node_scrape_collector_(success|duration_seconds)|node_exporter_build_info"
+        action: keep
