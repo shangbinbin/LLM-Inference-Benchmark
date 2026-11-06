@@ -101,6 +101,8 @@ docker run --rm --network <project>-net \
 
 ## 结果解读
 
+业务 SLO 阈值设定、自动筛选达标并发和边界复测见 [SLO 容量搜索手册](aisbench-slo-capacity.md)。
+
 先看成功/失败请求数和实际输入输出长度，再看吞吐、平均值和尾延迟。不要将 Mac fixture 的延迟/吞吐用于 GPU 选型。
 
 | 指标 | 解释及注意事项 |

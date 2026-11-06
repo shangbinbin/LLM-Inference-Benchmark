@@ -126,6 +126,8 @@ python3 scripts/benchmark_stack.py down --config /absolute/path/site.json
 
 输出位于 `storage.root/data/results/suites/<UTC时间戳>/<name>/`，包含 `stack.json`、`aisbench.py`、`client.log`、`results/`。根目录 `suite-results.json` 记录实际参数、顺序、起止时间、退出码、passed 和报告路径。这里的 passed 仅表示功能/请求完整性，尚未增加业务 TTFT/吞吐 SLO 门槛。
 
+需要按时延 SLO 自动筛选达标档位时，使用 [SLO 容量搜索手册](aisbench-slo-capacity.md)的策略与报告筛选示例；它不会改变本入口 passed 的含义。
+
 ## 原生自定义模型/数据集组合
 
 AISBench Python 配置可声明 models、datasets 及 model_dataset_combinations 精确配对。不写配对时会生成模型 × 数据集笛卡尔积；各模型和数据集必须有唯一 abbr，否则可能被合并/去重。设置 `--max-num-workers 1` 可限制一次一个任务，但分区器可能合并同模型任务，不应把任意复杂配对列表直接当成严格的外层测试步骤清单。需要明确先后顺序、独立冷却和失败即停时，优先使用 suite。

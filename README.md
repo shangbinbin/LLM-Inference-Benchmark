@@ -22,6 +22,7 @@ python3 -m unittest discover -s tests -v
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |
 | [批量顺序执行](docs/aisbench-sequential.md) | 原生并发档扫描、任意用例清单、冷却和失败处理 |
+| [SLO 容量搜索](docs/aisbench-slo-capacity.md) | 业务阈值、候选负载扫描、自动筛选、边界细化与复测 |
 | [Mac 验证记录](docs/reports/mac-container-smoke-2026-11-07.md) | 实际容器、请求、指标、日志及重启验证 |
 | [配置分层](configs/README.md) | 通用组件、GPU 适配、网络适配、环境实例 |
 | [官方监控资料与下载](docs/hygon-official-monitoring.md) | 最新官方文档、配置原件、镜像入口和版本差异 |
