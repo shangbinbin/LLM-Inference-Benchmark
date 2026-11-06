@@ -1,0 +1,5 @@
+{
+  "tokenizer_class": "PreTrainedTokenizerFast",
+  "unk_token": "[UNK]",
+  "model_max_length": 1048576
+}

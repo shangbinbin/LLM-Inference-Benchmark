@@ -1,0 +1,419 @@
+{
+  "simulation_only": true,
+  "nvidia": {
+    "simulation": true,
+    "platform": "linux/arm64",
+    "vendor": "nvidia",
+    "checks": {
+      "container_states": true,
+      "targets_up": [
+        "http://node-exporter:9100/metrics",
+        "http://fixture:18000/gpu-metrics",
+        "http://fixture:18000/metrics"
+      ],
+      "gpu_series": [
+        {
+          "metric": {
+            "Hostname": "mock",
+            "UUID": "MOCK-ONLY",
+            "__name__": "DCGM_FI_DEV_GPU_UTIL",
+            "gpu": "0",
+            "instance": "fixture:18000",
+            "job": "nvidia-dcgm-exporter",
+            "modelName": "SIMULATED",
+            "node": "simulated",
+            "simulation": "true"
+          },
+          "value": [
+            1793983750.447,
+            "25"
+          ]
+        }
+      ],
+      "other_vendor_absent": true,
+      "node_series": {
+        "__name__": "node_cpu_seconds_total",
+        "cpu": "0",
+        "instance": "node-exporter:9100",
+        "job": "node-exporter",
+        "mode": "idle"
+      },
+      "fixture_requests": "9",
+      "grafana_dashboards": [
+        "NVIDIA DCGM GPU Monitoring",
+        "SGLang Inference"
+      ],
+      "grafana_datasources": [
+        "loki",
+        "prometheus"
+      ],
+      "inference_logs": true,
+      "aisbench_reports": [
+        "data/results/20261106_164902/performances/aisbench-target/synthetic.json"
+      ],
+      "aisbench_counts": [
+        {
+          "Total Requests": {
+            "total": 8
+          },
+          "Success Requests": {
+            "total": 8
+          },
+          "Failed Requests": {
+            "total": 0
+          }
+        }
+      ],
+      "rotation_restart_persistence": true
+    }
+  },
+  "hygon": {
+    "simulation": true,
+    "platform": "linux/arm64",
+    "vendor": "hygon",
+    "checks": {
+      "container_states": true,
+      "targets_up": [
+        "http://fixture:18000/gpu-metrics",
+        "http://node-exporter:9100/metrics",
+        "http://fixture:18000/metrics"
+      ],
+      "gpu_series": [
+        {
+          "metric": {
+            "__name__": "hcu_memorycap_bytes",
+            "device_id": "MOCK-ONLY",
+            "instance": "fixture:18000",
+            "job": "hygon-hcu-exporter",
+            "minor_number": "0",
+            "node": "simulated",
+            "simulation": "true"
+          },
+          "value": [
+            1793983762.509,
+            "8589934592"
+          ]
+        }
+      ],
+      "other_vendor_absent": true,
+      "node_series": {
+        "__name__": "node_cpu_seconds_total",
+        "cpu": "0",
+        "instance": "node-exporter:9100",
+        "job": "node-exporter",
+        "mode": "idle"
+      },
+      "fixture_requests": "14",
+      "grafana_dashboards": [
+        "Hygon HCU v3 — 基础设备指标",
+        "SGLang Inference"
+      ],
+      "grafana_datasources": [
+        "loki",
+        "prometheus"
+      ],
+      "inference_logs": true,
+      "aisbench_reports": [
+        "data/results/20261106_164902/performances/aisbench-target-bs2/synthetic.json",
+        "data/results/20261106_164902/performances/aisbench-target-bs1/synthetic.json"
+      ],
+      "aisbench_counts": [
+        {
+          "Total Requests": {
+            "total": 8
+          },
+          "Success Requests": {
+            "total": 8
+          },
+          "Failed Requests": {
+            "total": 0
+          }
+        },
+        {
+          "Total Requests": {
+            "total": 4
+          },
+          "Success Requests": {
+            "total": 4
+          },
+          "Failed Requests": {
+            "total": 0
+          }
+        }
+      ]
+    }
+  },
+  "suite": [
+    {
+      "case": "short-string",
+      "started_at": "2026-11-06T16:39:35.371645+00:00",
+      "benchmark": {
+        "dataset_type": "string",
+        "input_length": 32,
+        "output_length": 16,
+        "request_count": 4,
+        "concurrency": 1,
+        "request_rate": 0,
+        "warmups": 1,
+        "mode": "perf",
+        "generation_kwargs": {
+          "temperature": 0,
+          "ignore_eos": true
+        }
+      },
+      "finished_at": "2026-11-06T16:39:42.592129+00:00",
+      "exit_code": 0,
+      "passed": true,
+      "reports": [
+        "short-string/results/20261106_163935/performances/aisbench-target/synthetic.json"
+      ]
+    },
+    {
+      "case": "random-tokenid",
+      "started_at": "2026-11-06T16:39:48.178816+00:00",
+      "benchmark": {
+        "dataset_type": "tokenid",
+        "input_length": 64,
+        "output_length": 8,
+        "request_count": 4,
+        "concurrency": 2,
+        "request_rate": 0,
+        "warmups": 1,
+        "mode": "perf",
+        "generation_kwargs": {
+          "temperature": 0,
+          "ignore_eos": true
+        }
+      },
+      "finished_at": "2026-11-06T16:39:55.291711+00:00",
+      "exit_code": 0,
+      "passed": true,
+      "reports": [
+        "random-tokenid/results/20261106_163948/performances/aisbench-target/synthetic.json"
+      ]
+    },
+    {
+      "case": "sustained-pressure",
+      "started_at": "2026-11-06T16:40:00.895572+00:00",
+      "benchmark": {
+        "dataset_type": "string",
+        "input_length": 16,
+        "output_length": 8,
+        "request_count": 4,
+        "concurrency": 2,
+        "request_rate": 0,
+        "warmups": 1,
+        "mode": "pressure",
+        "generation_kwargs": {
+          "temperature": 0,
+          "ignore_eos": true
+        },
+        "pressure_seconds": 3
+      },
+      "finished_at": "2026-11-06T16:40:10.878274+00:00",
+      "exit_code": 0,
+      "passed": true,
+      "reports": [
+        "sustained-pressure/results/20261106_164001/performances/aisbench-target/synthetic.json"
+      ]
+    }
+  ],
+  "production_image_platforms": [
+    {
+      "image": "python:3.11-slim-bookworm",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        },
+        {
+          "architecture": "386",
+          "os": "linux"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        },
+        {
+          "architecture": "unknown",
+          "os": "unknown"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "prom/prometheus:v3.5.0",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        },
+        {
+          "architecture": "s390x",
+          "os": "linux"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "grafana/grafana:12.0.2",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "grafana/loki:3.5.0",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "grafana/alloy:v1.8.3",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        },
+        {
+          "architecture": "s390x",
+          "os": "linux"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "prom/node-exporter:v1.9.1",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux",
+          "variant": "v8"
+        },
+        {
+          "architecture": "arm",
+          "os": "linux",
+          "variant": "v7"
+        },
+        {
+          "architecture": "ppc64le",
+          "os": "linux"
+        },
+        {
+          "architecture": "s390x",
+          "os": "linux"
+        }
+      ],
+      "has_linux_amd64": true
+    },
+    {
+      "image": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
+      "platforms": [
+        {
+          "architecture": "amd64",
+          "os": "linux"
+        },
+        {
+          "architecture": "arm64",
+          "os": "linux"
+        }
+      ],
+      "has_linux_amd64": true
+    }
+  ],
+  "tested_local_images": [
+    {
+      "image": "llm-benchmark-aisbench:e330dc1-arm64",
+      "id": "sha256:24767dfb18c9754844a87b6ec34b9f010fb0e5a6fb90f1d1778752f63f975dbd",
+      "os": "linux",
+      "architecture": "arm64",
+      "labels": {
+        "org.opencontainers.image.revision": "e330dc134c33f47671926144d9c143b554bc71cc",
+        "org.opencontainers.image.source": "https://github.com/AISBench/benchmark"
+      }
+    },
+    {
+      "image": "llm-benchmark-toolbox:local-arm64",
+      "id": "sha256:9922c7b3d6ffdb953ae6c614196e45df3a996787a7d46d1f4cad2a39e3d252d5",
+      "os": "linux",
+      "architecture": "arm64",
+      "labels": {}
+    }
+  ]
+}

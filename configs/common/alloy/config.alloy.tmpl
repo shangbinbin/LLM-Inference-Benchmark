@@ -4,17 +4,17 @@ logging {
   format = "logfmt"
 }
 
+// 独立发现组件兼容 Alloy v1.8；允许服务启动后才创建日志文件。
+local.file_match "inference" {
+  path_targets = @@LOG_TARGETS@@
+  sync_period = "2s"
+}
+
 loki.source.file "inference" {
-  targets = @@LOG_TARGETS@@
+  targets = local.file_match.inference.targets
 
   // 首次读取已有内容，之后从持久化 positions 继续。
   tail_from_end = false
-
-  // SGLang Pod 会在启动时创建 Rank 文件；周期发现允许 Alloy 先启动。
-  file_match {
-    enabled     = true
-    sync_period = "2s"
-  }
 
   forward_to = [loki.write.local.receiver]
 }

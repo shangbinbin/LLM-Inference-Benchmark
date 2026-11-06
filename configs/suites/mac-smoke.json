@@ -1,0 +1,9 @@
+{
+  "cooldown_seconds": 5,
+  "stop_on_failure": true,
+  "cases": [
+    {"name": "short-string", "benchmark": {"dataset_type": "string", "input_length": 32, "output_length": 16, "concurrency": 1, "request_count": 4}},
+    {"name": "random-tokenid", "benchmark": {"dataset_type": "tokenid", "input_length": 64, "output_length": 8, "concurrency": 2, "request_count": 4}},
+    {"name": "sustained-pressure", "benchmark": {"dataset_type": "string", "input_length": 16, "output_length": 8, "concurrency": 2, "request_count": 4, "mode": "pressure", "pressure_seconds": 3}}
+  ]
+}

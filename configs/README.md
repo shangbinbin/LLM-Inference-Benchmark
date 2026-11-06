@@ -1,9 +1,12 @@
 # 配置分层
 
-配置按“通用组件 + GPU 型号/采集适配 + 可选网络 + 环境实例”组合。每次生成一个独立观测栈的配置；环境文件是组合入口，不是推理服务启动清单。
+配置按“通用组件 + GPU 型号/采集适配 + 可选网络 + 环境实例”组合。每次生成一个独立观测栈的配置；`stacks/` 是容器启动与 AISBench 压测入口；`environments/` 保留独立观测配置渲染入口，两者都不会部署真实推理服务。
 
 ```text
 configs/
+├── stacks/                        # Mac 模拟 / NVIDIA 单机完整运行配置
+├── suites/                        # 按顺序执行的 AISBench 测试例清单
+├── fixtures/mock-tokenizer/        # 仅模拟使用的小型 tokenizer
 ├── common/
 │   ├── prometheus/base.json         # 全局采集周期
 │   ├── grafana/                     # 服务、provider、SGLang 应用面板
@@ -13,6 +16,7 @@ configs/
 ├── gpu/
 │   ├── nvidia/
 │   │   ├── dcgm/                   # Exporter job 与 GPU Dashboard
+│   │   ├── model-agnostic/         # 不限定 NVIDIA 卡型号
 │   │   └── h200/profile.json       # 型号到适配器的选择
 │   └── hygon/
 │       ├── hcu-exporter-v3/        # 基于最新官方文档的参考适配器
@@ -30,6 +34,7 @@ configs/
 
 | 变化 | 修改位置 |
 | --- | --- |
+| 容器镜像、存储、客户端 workload、多角色采集入口 | `stacks/<场景>.json` |
 | 采集周期、日志重试、保留策略、Grafana/Loki 通用设置 | `common/` |
 | GPU Exporter 的 job、接口、指标与专属面板 | `gpu/<厂商>/<适配器>/` |
 | 型号对应的适配器、验证状态 | `gpu/<厂商>/<型号>/profile.json` |
@@ -49,4 +54,4 @@ configs/
 
 生成工具仅依赖 Python 3.9+ 标准库。JSON 配置片段由工具组合为完整 Prometheus/Grafana YAML（使用合法的 JSON 表示形式），不是让 Prometheus 自动 include job 片段。运行命令、输出目录挂载与限制见[使用指南](../docs/observability.md)。
 
-后续压测客户端参数放 `configs/workloads/<场景>/`，推理服务启动清单放 `configs/deployments/<引擎>/`；目前这两类执行入口尚未实现。
+AISBench 参数目前放 `stacks/*.json` 的 `benchmark` 字段，详见 [AISBench 指南](../docs/aisbench.md)。新增容器部署请从 [Docker 指南](../docs/docker-stack.md)开始；上文旧环境清单的单组限制不适用于新入口的多角色 targets。

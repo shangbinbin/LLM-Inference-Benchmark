@@ -1,5 +1,7 @@
 # 观测链路使用指南
 
+本页说明独立配置渲染器及历史环境格式。新的容器启动/AISBench 入口请使用 [Docker 一键部署](docker-stack.md)和 `configs/stacks/`；它支持独立的多角色采集入口，不受本页旧环境格式的单 master 约定限制。
+
 ## 生成配置
 
 从仓库根目录执行：
@@ -28,7 +30,7 @@ H200 文件保留来源环境地址。新环境应复制环境目录并调整清
 
 Grafana 还需持久化 `/var/lib/grafana` 并保证写权限。Alloy 必须能读取清单中所有 rank 的日志路径；当前组合按共享日志卷设计。若采用节点本地日志，应按节点部署采集器并裁剪 targets，避免多个采集器重复采集同一文件。logrotate 需要对日志有写权限。
 
-来源中的 Pod YAML 是平台导出的运行快照，包含调度平台注解、UID、ownerReferences 和 status，仅留在档案中；不要直接用于部署新环境。新配置不提供 Kubernetes、Docker Compose 或 Exporter 安装清单。组件版本、镜像和挂载需由部署方指定并验证。
+来源中的 Pod YAML 是平台导出的运行快照，包含调度平台注解、UID、ownerReferences 和 status，仅留在档案中；不要直接用于部署新环境。独立渲染器不执行部署。容器启动器会按 stacks 配置选择镜像、挂载与 Exporter 参数，无需 Docker Compose；未来 Kubernetes 仍需按目标集群生成部署清单。
 
 Loki 为来源的单实例本地存储模式，`auth_enabled: false`；仅适用于受控网络，未配置高可用和自动日志保留策略。logrotate 的 `maxage 7` 管理原始文件历史，不等于 Loki 保留周期。`copytruncate` 沿用来源策略，复制与截断期间存在少量日志丢失窗口。
 
@@ -58,4 +60,4 @@ logrotate --debug /etc/logrotate.d/inference
 
 随后确认 Prometheus Targets 全部 UP、SGLang 指标只统计一次、GPU 数与实际一致；GPU 温度/功耗/显存单位应与设备工具读数对照。确认 Grafana 自动加载正确厂商面板，网络关闭时没有 IB 面板或告警。为每个 rank 写入唯一测试日志，验证 Loki 可查到且标签正确；重启 Alloy 后检查 positions 续读，再检查轮转后的连续性。
 
-本次仓库调整只进行了本地生成和结构测试，未在 H200 或海光服务器部署验证，也不保证未来上传的 Exporter 与当前模板接口一致。
+历史渲染器经过生成和结构测试；新的容器链路另有 [Mac 模拟实测记录](reports/mac-container-smoke-2026-11-07.md)。尚未在 H200 或海光服务器部署验证，未来上传的 Exporter 仍需核对指标契约。

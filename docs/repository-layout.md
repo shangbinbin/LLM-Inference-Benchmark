@@ -6,11 +6,13 @@
 | `configs/gpu/<厂商>/<型号或适配器>/` | 型号选择、厂商采集接口、指标口径和 GPU 面板 |
 | `configs/network/` | 独立于 GPU 的可选网络采集、告警和面板 |
 | `configs/environments/` | 实际节点、模型、拓扑、地址及日志路径 |
-| `scripts/` | 配置组合工具，不包含压测执行器 |
+| `configs/stacks/` | 容器部署及 AISBench workload 的统一 JSON 入口 |
+| `containers/` | AISBench 与探测/轮转/模拟端点的 OCI 镜像 |
+| `scripts/` | 配置渲染、容器生命周期及模拟验证工具 |
 | `tests/` | 组合完整性、GPU 隔离和未完成模板拦截测试 |
 | `docs/` | 操作指南、方案与验证记录 |
 | `references/` | 固定来源档案与其他项目测试场景 |
-| `generated/` | 生成的完整组件配置，Git 忽略 |
+| `generated/` | Mac 默认配置、组件数据和 AISBench 报告，Git 忽略 |
 
 ## 2026-11-06 迁移
 
