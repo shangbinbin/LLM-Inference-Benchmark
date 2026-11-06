@@ -1,0 +1,19 @@
+{
+  "job_name": "prometheus-node-exporter-ib",
+  "scheme": "http",
+  "metrics_path": "/metrics",
+  "params": {
+    "collect[]": [
+      "infiniband"
+    ]
+  },
+  "metric_relabel_configs": [
+    {
+      "source_labels": [
+        "__name__"
+      ],
+      "regex": "node_infiniband_.*|node_scrape_collector_(success|duration_seconds)|node_exporter_build_info",
+      "action": "keep"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+@@LOG_FILES@@ {
+    daily
+    maxsize 1G
+
+    # Retain by age instead of archive count because maxsize may cause several
+    # rotations on the same day. maxage remains responsible for deletion.
+    rotate -1
+    maxage 7
+
+    missingok
+    notifempty
+    copytruncate
+    su root root
+
+    compress
+    dateext
+    dateformat -%Y%m%d-%H%M%S
+}

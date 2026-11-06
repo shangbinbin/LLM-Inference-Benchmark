@@ -1,0 +1,7 @@
+{
+  "vendor": "hygon",
+  "model": "REPLACE_MODEL",
+  "adapter": "gpu/hygon/dcu-exporter-template",
+  "status": "template",
+  "notes": "复制为真实型号目录；确认驱动、运行时与 Exporter 版本后再启用。"
+}

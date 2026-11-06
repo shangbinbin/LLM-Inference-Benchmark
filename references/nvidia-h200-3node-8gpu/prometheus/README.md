@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 15:21:52
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/prometheus/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/prometheus/README.md
  * @Description: prometheus配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 

@@ -1,24 +1,49 @@
-# 本项目执行配置
+# 配置分层
 
-本目录用于存放已经按本项目环境适配的压测、部署和观测配置。目前没有执行配置或统一配置加载器；现有参考资料请从 [references](../references/README.md) 查阅。
+配置按“通用组件 + GPU 型号/采集适配 + 可选网络 + 环境实例”组合。每次生成一个独立观测栈的配置；环境文件是组合入口，不是推理服务启动清单。
 
-## 后续配置的存放位置
+```text
+configs/
+├── common/
+│   ├── prometheus/base.json         # 全局采集周期
+│   ├── grafana/                     # 服务、provider、SGLang 应用面板
+│   ├── alloy/config.alloy.tmpl      # 日志采集机制
+│   ├── loki/loki.yaml               # 单实例日志存储
+│   └── logrotate/inference.conf.tmpl
+├── gpu/
+│   ├── nvidia/
+│   │   ├── dcgm/                   # Exporter job 与 GPU Dashboard
+│   │   └── h200/profile.json       # 型号到适配器的选择
+│   └── hygon/
+│       ├── dcu-exporter-template/  # 待确认的采集与指标契约、接入状态面板
+│       └── model-template/         # 复制为实际型号
+├── network/infiniband/             # 可选 IB job、规则、Dashboard
+└── environments/
+    ├── nvidia-h200-3node-8gpu/      # 来源环境，3 × 8 H200，TP=8/PP=3
+    └── hygon-template/             # 海光待适配环境
+```
 
-以下是新增文件时的约定，相关子目录在有实际文件时创建：
+## 各层修改边界
 
-| 路径约定 | 存放内容 | 示例用途 |
-| --- | --- | --- |
-| `configs/workloads/<场景>/` | 压测客户端参数、输入输出长度分布、请求速率、并发及 SLO 配置 | chat、rag、reasoning、agent |
-| `configs/deployments/<引擎>/` | 推理服务启动、部署与模型并行配置 | vllm、sglang |
-| `configs/observability/<组件>/` | 本项目使用的指标采集、日志采集、告警和 Dashboard 配置 | prometheus、grafana、alloy、loki、logrotate |
+| 变化 | 修改位置 |
+| --- | --- |
+| 采集周期、日志重试、保留策略、Grafana/Loki 通用设置 | `common/` |
+| GPU Exporter 的 job、接口、指标与专属面板 | `gpu/<厂商>/<适配器>/` |
+| 型号对应的适配器、验证状态 | `gpu/<厂商>/<型号>/profile.json` |
+| IB 等网络指标、规则与面板 | `network/<网络类型>/` |
+| 节点数量、卡数、地址、模型、TP/PP、日志路径、服务 URL | `environments/<环境>/environment.json` |
 
-这些名称只约定文件归属，不代表项目已经支持相应场景或实现了配置解析。
+型号可以共享已经确认兼容的适配器；不同型号、驱动或 Exporter 指标不兼容时建立独立适配器目录。不要整套复制 `common/`。网络类型单独选择，不由 GPU 厂商推断；`network: null` 不生成网络 job、规则或面板。
 
-## 从参考配置到执行配置
+## 环境清单
 
-1. 从 [平台配置参考](../references/sglang-inference-platform/README.md) 选择所需文件，复制到上述对应目录。
-2. 按实际环境调整地址、端口、Service、命名空间、PVC/挂载路径、模型、并行规模和指标标签；账号、令牌等使用环境变量或 Secret 注入。
-3. 在配置旁写明适用引擎和版本、环境前提、运行命令，以及完成过的验证。未完成验证时明确标注。
-4. 记录对应的测试场景、数据集版本、SLO 口径和结果位置，使后续运行能够复现。
+- `gpu_profile`：相对于 `configs/` 的型号目录；profile 中 `adapter` 同样相对于 `configs/`。
+- `nodes`：按 node rank 排序；每项含稳定节点名、独立 GPU Exporter `host:port` 和卡数。模板中的 `gpus: 1` 仅为示意。
+- `inference`：SGLang 主节点指标入口、部署名、推理组、模型、TP/PP，以及按 rank 排序的一节点一活跃日志文件。当前仅实现一个推理组、一个副本；其他部署布局需扩展生成器。
+- `network`：可为 null；IB 支持 `dns_names` + `port` 或 `targets`，两者都有时使用 DNS。DNS 应指向 headless Service，以逐个发现 Endpoint。
+- `services`：Grafana/Alloy 容器实际可达的 Prometheus、Loki URL；示例服务名必须由部署环境提供。
+- `status`：`reference` 是来源示例，`template` 是未完成适配。完成现场验证后可记录为 `validated`，并在旁边补充版本和证据；状态本身不构成验证证明。
 
-原始参考材料保留在 `references/`，测试方案正文放在 `docs/`，数据集实体与运行输出不混入配置目录。新增文件的完整约定见[仓库结构说明](../docs/repository-layout.md)。
+生成工具仅依赖 Python 3.9+ 标准库。JSON 配置片段由工具组合为完整 Prometheus/Grafana YAML（使用合法的 JSON 表示形式），不是让 Prometheus 自动 include job 片段。运行命令、输出目录挂载与限制见[使用指南](../docs/observability.md)。
+
+后续压测客户端参数放 `configs/workloads/<场景>/`，推理服务启动清单放 `configs/deployments/<引擎>/`；目前这两类执行入口尚未实现。

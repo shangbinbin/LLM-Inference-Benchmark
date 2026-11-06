@@ -1,0 +1,47 @@
+{
+  "name": "nvidia-h200-3node-8gpu",
+  "status": "reference",
+  "gpu_profile": "gpu/nvidia/h200",
+  "nodes": [
+    {
+      "name": "jbsw-gpu01",
+      "gpu_target": "10.0.3.1:9400",
+      "gpus": 8
+    },
+    {
+      "name": "jbsw-gpu02",
+      "gpu_target": "10.0.3.2:9400",
+      "gpus": 8
+    },
+    {
+      "name": "jbsw-gpu03",
+      "gpu_target": "10.0.3.3:9400",
+      "gpus": 8
+    }
+  ],
+  "inference": {
+    "engine": "sglang",
+    "deployment": "glm52-sglang-3node",
+    "group": "glm52-sglang-3node-group-0",
+    "model": "glm-5.2",
+    "tp": 8,
+    "pp": 3,
+    "metrics_target": "glm52-sglang-3node.default.svc.cluster.local:30000",
+    "log_files": [
+      "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-0.log",
+      "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-1.log",
+      "/private/benchmark-data/sglang-log/glm52-3node-8gpu-run-01-rank-2.log"
+    ]
+  },
+  "network": {
+    "adapter": "network/infiniband",
+    "dns_names": [
+      "prometheus-node-exporter.ampha-business.svc.cluster.local"
+    ],
+    "port": 9100
+  },
+  "services": {
+    "prometheus_url": "http://prometheus:9090",
+    "loki_url": "http://loki:3100"
+  }
+}

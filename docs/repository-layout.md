@@ -1,52 +1,35 @@
-# 仓库结构与文件存放约定
+# 仓库结构与迁移
 
-## 当前划分
-
-本项目目前处于参考配置与测试方案整理阶段。目录按用途划分，并区分已经收集的参考材料与后续适配的执行配置。
-
-| 目录或文件 | 职责 | 当前状态 |
-| --- | --- | --- |
-| [README.md](../README.md) | 项目入口与导航 | 已提供 |
-| `docs/` | 本项目方案、结构、指标口径和使用说明 | 当前包含本结构说明 |
-| [configs/](../configs/README.md) | 本项目实际使用的工作负载、部署和观测配置 | 当前仅定义存放约定 |
-| [references/sglang-inference-platform/](../references/sglang-inference-platform/README.md) | 来自已有平台的监控与日志配置参考 | 保留 7 个组件目录及其配套文件 |
-| [references/benchmark-scenarios/](../references/benchmark-scenarios/README.md) | 其他项目的压测场景与测试项参考 | 已收录一份核对修订版清单 |
-
-配置参考按来源集中管理，组件内部仍保留 README、配置、Pod 示例及 Dockerfile，便于对照来源版本。GPU/IB 说明与 Prometheus、Grafana 的兄弟目录关系保持不变。
-
-## 2026-11-05 路径迁移
-
-| 原路径 | 新路径 |
+| 目录 | 职责 |
 | --- | --- |
-| `readme.md` | [README.md](../README.md) |
-| `configs/alloy/` | [references/sglang-inference-platform/alloy/](../references/sglang-inference-platform/alloy/README.md) |
-| `configs/gpu-monitoring/` | [references/sglang-inference-platform/gpu-monitoring/](../references/sglang-inference-platform/gpu-monitoring/README.md) |
-| `configs/grafana/` | [references/sglang-inference-platform/grafana/](../references/sglang-inference-platform/grafana/README.md) |
-| `configs/ib-network-monitoring/` | [references/sglang-inference-platform/ib-network-monitoring/](../references/sglang-inference-platform/ib-network-monitoring/README.md) |
-| `configs/logrotate/` | [references/sglang-inference-platform/logrotate/](../references/sglang-inference-platform/logrotate/README.md) |
-| `configs/loki/` | [references/sglang-inference-platform/loki/](../references/sglang-inference-platform/loki/README.md) |
-| `configs/prometheus/` | [references/sglang-inference-platform/prometheus/](../references/sglang-inference-platform/prometheus/README.md) |
-| `configs/examples/推理测试场景与测试项清单.md` | [references/benchmark-scenarios/推理测试场景与测试项清单.md](../references/benchmark-scenarios/推理测试场景与测试项清单.md) |
+| `configs/common/` | 与 GPU 无关的组件配置、日志模板和 SGLang 应用面板 |
+| `configs/gpu/<厂商>/<型号或适配器>/` | 型号选择、厂商采集接口、指标口径和 GPU 面板 |
+| `configs/network/` | 独立于 GPU 的可选网络采集、告警和面板 |
+| `configs/environments/` | 实际节点、模型、拓扑、地址及日志路径 |
+| `scripts/` | 配置组合工具，不包含压测执行器 |
+| `tests/` | 组合完整性、GPU 隔离和未完成模板拦截测试 |
+| `docs/` | 操作指南、方案与验证记录 |
+| `references/` | 固定来源档案与其他项目测试场景 |
+| `generated/` | 生成的完整组件配置，Git 忽略 |
 
-本次只整理仓库路径、导航与说明。YAML、JSON、Alloy、INI、conf、Dockerfile 和场景清单的内容保持不变，文档中的配置参数也未调整。logrotate 原来指向未复制文件的两处相对链接已改为上游固定版本链接；三节点 profile 的引用也指向上游对应文件。
+## 2026-11-06 迁移
 
-原环境的容器路径和存储挂载路径保持原样。外部脚本如果曾从本仓库的旧 `configs/<组件>/` 路径复制文件，应按上表更新其仓库源路径。
+旧目录 `references/sglang-inference-platform/` 重命名为 `references/nvidia-h200-3node-8gpu/`，标明实际来源硬件与规模。其内部原始配置及运行快照保持不变，原始文件名保留用于溯源；新配置使用以下命名，不依赖档案参与生成。
 
-## 后续新增文件放在哪里
-
-只在有实际内容时创建子目录，以下尚未落地的路径是规划约定：
-
-| 新增内容 | 建议位置 |
+| 来源文件（相对原平台目录） | 新的可组合配置 |
 | --- | --- |
-| 测试方案、SLO 定义、指标解释、操作指南 | `docs/` 下按主题命名的 Markdown 文件 |
-| chat、rag、reasoning、agent 等场景的客户端配置 | `configs/workloads/<场景>/` |
-| vLLM、SGLang 的部署配置 | `configs/deployments/<引擎>/` |
-| 本项目使用的采集、日志、告警和面板配置 | `configs/observability/<组件>/` |
-| 准备数据、发压、采集、汇总等执行脚本 | `scripts/`，在实现时按职责细分 |
-| 数据集说明、版本、获取方式与小规模样例 | `datasets/`；大型数据文件另行存储 |
-| 运行原始输出、日志、指标快照和临时报告 | `results/<run-id>/`；创建运行流程时加入忽略规则，默认不纳入 Git |
-| 需要版本化保存的精选报告 | `docs/reports/` |
-| 其他已有平台的配置参考 | `references/<来源项目>/`，同时记录来源版本和适用范围 |
-| 其他项目的压测场景与测试要求 | `references/benchmark-scenarios/`，材料增多后按项目拆分子目录 |
+| `prometheus/prometheus*.yml` 的采集配置 | `common/prometheus/base.json` + GPU/network adapter + environment，由脚本组合 |
+| `grafana/grafana.ini`、`dashboards/sglang.yml` | `common/grafana/grafana.ini`、`dashboard-provider.json` |
+| `grafana/dashboards/sglang-dashboard.json` | `common/grafana/dashboards/sglang.json`，去掉模型、节点规模与默认选中值 |
+| `grafana/dashboards/nvidia-dcgm-gpu-dashboard.json` | `gpu/nvidia/dcgm/grafana/gpu.json` |
+| `grafana/dashboards/ib-network-dashboard.json` | `network/infiniband/grafana/network.json` |
+| `prometheus/rules/ib-network-alerts.yml` | `network/infiniband/prometheus/alerts.yml`，去掉现场固定设备数告警 |
+| `alloy/config*.alloy` | `common/alloy/config.alloy.tmpl` + environment 日志列表 |
+| `logrotate/sglang*.conf` | `common/logrotate/inference.conf.tmpl` + 同一日志列表 |
+| `loki/loki.yaml` | `common/loki/loki.yaml`，持久化路径改为 `/var/lib/loki` |
+| 三节点地址、模型和 TP/PP | `environments/nvidia-h200-3node-8gpu/environment.json` |
+| 平台 Pod 快照、镜像构建文件与现场说明 | 仅留来源档案，未作为可移植部署文件复用 |
 
-文件名优先采用含义明确的英文短横线命名；现有中文场景清单保留原名。配置与运行输出分开保存，敏感参数通过环境变量或 Secret 注入。
+上表新配置路径均相对于 `configs/`。更早的 2026-11-05 整理把 `configs/<组件>/` 移到旧平台参考目录；现在请从[配置入口](../configs/README.md)使用四层组合结构。
+
+新增海光型号请按[海光说明](../configs/gpu/hygon/README.md)扩展，避免按型号复制整套日志与监控链路。数据集实体、测试输出和密码不放配置目录；运行输出放 `results/<run-id>/`，需版本化的精选报告放 `docs/reports/`。

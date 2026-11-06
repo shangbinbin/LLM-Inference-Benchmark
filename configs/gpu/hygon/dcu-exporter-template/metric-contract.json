@@ -1,0 +1,46 @@
+{
+  "status": "unverified",
+  "exporter": null,
+  "exporter_version": null,
+  "driver_version": null,
+  "runtime_version": null,
+  "device_id_label": null,
+  "metrics": {
+    "utilization_percent": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    },
+    "memory_used_bytes": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    },
+    "memory_total_bytes": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    },
+    "temperature_celsius": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    },
+    "power_watts": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    },
+    "device_errors_total": {
+      "source": null,
+      "source_unit": null,
+      "scale": null,
+      "verified": false
+    }
+  }
+}

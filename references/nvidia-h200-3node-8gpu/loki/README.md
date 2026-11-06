@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 14:40:23
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-07-31 19:26:19
- * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/loki/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/loki/README.md
  * @Description: loki配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 

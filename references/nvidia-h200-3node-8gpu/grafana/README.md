@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 13:47:44
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /LLM-Inference-Benchmark/references/sglang-inference-platform/grafana/README.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/grafana/README.md
  * @Description: grafana配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 

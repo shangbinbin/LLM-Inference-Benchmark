@@ -1,0 +1,8 @@
+{
+  "vendor": "hygon",
+  "status": "template",
+  "job_name": "hygon-dcu-exporter",
+  "scheme": "http",
+  "metrics_path": "/metrics",
+  "dashboard": "grafana/gpu.json"
+}

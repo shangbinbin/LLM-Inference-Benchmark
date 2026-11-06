@@ -1,3 +1,7 @@
+# NVIDIA H200 三节点八卡来源档案
+
+本目录保留来源环境的历史快照（含单机、两节点辅助示例），仅供追溯，不作为新环境的配置入口。可组合配置和使用命令见 [configs](../../configs/README.md)。旧路径 `references/sglang-inference-platform/` 已迁至此处。下文为来源记录，文中的“本次整理”指 2026-11-05 的快照整理。
+
 # 平台监控与日志配置参考
 
 本目录收集从 [sglang-inference-platform](https://github.com/shangbinbin/sglang-inference-platform) 复制的配置及说明，用于后续搭建本项目的压测观测链路。

@@ -1,0 +1,38 @@
+{
+  "uid": "hygon-dcu-overview",
+  "title": "Hygon DCU — 接入状态（指标待适配）",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "hygon",
+    "template"
+  ],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Exporter UP（不代表设备指标完整）",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"hygon-dcu-exporter\"}",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    }
+  ]
+}

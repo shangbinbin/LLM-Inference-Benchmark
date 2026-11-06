@@ -1,0 +1,7 @@
+{
+  "vendor": "nvidia",
+  "model": "h200",
+  "adapter": "gpu/nvidia/dcgm",
+  "status": "reference",
+  "notes": "来源为三台 8 卡 H200；节点规模、TP/PP 与地址由环境配置。"
+}
