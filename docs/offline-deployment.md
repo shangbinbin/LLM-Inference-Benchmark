@@ -1,0 +1,258 @@
+# 离线环境准备与部署
+
+推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
+
+本文说明当前工程所需物料与操作。仓库尚未提供统一的 `offline: true` 开关，也没有完成隔绝公网条件下的整栈验收；已有 Mac 验证不等同于离线 Linux/GPU 验证。
+
+## 1. 必须准备的内容
+
+| 类别 | 准备内容 | 说明 |
+| --- | --- | --- |
+| 工程 | 固定 Git 提交的源码包，包含 scripts、configs、containers、docs、tests | 启动器依赖仓库相对结构；不要只复制一个 Python 文件 |
+| 主机运行工具 | Python 3.9+、Docker Engine/CLI 及依赖安装包；可选 Git、tar、校验工具 | 主机脚本只用 Python 标准库；Compose 不是必需项；用源码压缩包时运行不要求 Git |
+| 项目镜像 | AISBench 与 toolbox 的 **linux/amd64** 完整镜像 | 生产服务器都是 x86，不要带 Mac 的 arm64 镜像冒充 amd64 |
+| 观测镜像 | Prometheus、Grafana、Loki、Alloy、node_exporter | logrotate/就绪探测已包含在 toolbox 中 |
+| 设备采集 | NVIDIA DCGM Exporter 或海光 HCU Exporter 镜像 | 根据实际厂商准备；external 模式在各设备节点准备，不一定在观测主机启动 |
+| 设备驱动/运行时 | 目标 OS/内核兼容的驱动、设备容器运行时及完整依赖 | 容器镜像不包含可替代宿主机驱动的安装环境 |
+| tokenizer | 被测模型对应的完整本地 tokenizer 文件 | string 和 tokenid 的性能汇总都需要，不能使用模拟词表替代真实模型词表 |
+| 测试配置 | site.json、suite JSON、SLO search JSON | 包含内网地址、模型 ID、GPU 厂商、挂载路径、负载与停止条件 |
+| 网络与证书 | 内网 DNS/IP、必要端口、内网 CA、时间同步源 | 离线指无公网，不是容器之间或到推理服务完全无网络 |
+| 存储 | 配置/状态目录、日志目录、指标/日志数据、AISBench 报告空间 | 预估解包、镜像层、压测明细与监控保留空间，不能只按压缩包大小规划 |
+| 被测服务 | 推理服务镜像、权重、模型配置和部署依赖 | 由服务部署方另外准备，本工程不部署真实推理服务；AISBench 客户端本身不需要模型权重 |
+
+Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联网环境收集依赖，使用组织已有的离线软件源或安装包仓库。单独一个 docker 二进制通常不等于完整 Engine 安装；还需对应的 daemon、containerd/runc、网络与系统依赖。只有运行设备 Exporter 的主机才需要对应设备访问能力。
+
+## 2. 当前版本的镜像清单
+
+以 `configs/stacks/nvidia-single.json` 为准。下面是当前默认值；如果 site.json 修改过标签，以现场配置中的镜像名为准，并保存实际 image ID/digest。
+
+| 组件 | 镜像 |
+| --- | --- |
+| AISBench | `llm-benchmark-aisbench:e330dc1-amd64`，需本项目构建 |
+| toolbox（探测、logrotate） | `llm-benchmark-toolbox:local-amd64`，需本项目构建 |
+| Prometheus | `prom/prometheus:v3.5.0` |
+| Grafana | `grafana/grafana:12.0.2` |
+| Loki | `grafana/loki:3.5.0` |
+| Alloy | `grafana/alloy:v1.8.3` |
+| node_exporter | `prom/node-exporter:v1.9.1` |
+| NVIDIA，按需 | `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4` |
+| 海光，按需 | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
+
+NVIDIA 单机链路共需要前七个镜像加 DCGM Exporter。海光替换最后一个设备镜像；同时支持两厂商的交付包可包含二者。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
+
+AISBench 镜像包含 Python 3.11、CPU Torch、AISBench 与其 Python 依赖；toolbox 包含 Python、logrotate 与探测程序。使用这些**已构建镜像运行**时，离线主机不需要另装 pip 包，也不需要 python 基础镜像。只有离线重建时才需要基础镜像和全部构建依赖。
+
+## 3. 联网侧：制作交付包
+
+以下命令在仓库根目录、联网 **x86 Linux** 构建机执行。构建 CPU 客户端不要求构建机有 GPU。若已经用本工程 build 命令完成 amd64 镜像构建，可跳过 3.2；不要直接拿 Mac 模拟镜像改标签。
+
+### 3.1 固定仓库版本与目录
+
+```bash
+mkdir -p generated/offline-bundle/images generated/offline-bundle/metadata \
+  generated/offline-bundle/tokenizer generated/offline-bundle/runtime \
+  generated/offline-bundle/drivers generated/offline-bundle/site
+git rev-parse HEAD > generated/offline-bundle/metadata/repository-commit.txt
+git archive --format=tar --prefix=LLM-Inference-Benchmark/ HEAD \
+  | gzip > generated/offline-bundle/repository.tar.gz
+```
+
+git archive 只包含已提交文件，不包含当前未提交修改、generated、运行数据或 .git。需要保留 Git 历史时可另外准备 git bundle。现场配置放在交付包 site/，不要复制另一台主机的 `generated/.../state.json` 或 suite.lock；它们含运行状态和绝对路径，应在目标机重新生成。
+
+### 3.2 构建两个项目镜像
+
+直接构建可避免联网构建机必须具备真实服务地址、tokenizer 路径和 GPU 自动识别条件：
+
+```bash
+docker build --platform linux/amd64 -t llm-benchmark-toolbox:local-amd64 \
+  -f containers/toolbox/Dockerfile .
+
+mkdir -p generated/aisbench-offline-build
+curl --fail --location \
+  https://codeload.github.com/AISBench/benchmark/tar.gz/e330dc134c33f47671926144d9c143b554bc71cc \
+  --output generated/aisbench-offline-build/source.tar.gz
+printf '%s  %s\n' \
+  87a5434c8fa8b78aa57b588f00fbfb1861435d602496f6473b4a9dece94647c2 \
+  generated/aisbench-offline-build/source.tar.gz | sha256sum -c -
+cp containers/aisbench/Dockerfile generated/aisbench-offline-build/Dockerfile
+docker build --platform linux/amd64 -t llm-benchmark-aisbench:e330dc1-amd64 \
+  generated/aisbench-offline-build
+```
+
+源码提交和归档校验值与当前启动器一致。构建会访问基础镜像仓库、Debian apt 源、Python 包索引及 PyTorch CPU 下载站；这些访问在联网构建机完成。保留构建日志与镜像内 `/opt/aisbench/dependencies.txt`，便于追溯实际依赖版本。
+
+### 3.3 拉取公共镜像并记录架构
+
+将下面代码保存为 `generated/prepare-offline-images.py`，从仓库根目录运行 `python3 generated/prepare-offline-images.py`。海光交付包把 vendor 改为 hygon；此处只读取模板中的镜像名，不启动模板中的服务地址。
+
+```python
+import json
+import subprocess
+from pathlib import Path
+
+vendor = 'nvidia'  # 或 hygon
+if vendor not in ('nvidia', 'hygon'):
+    raise ValueError('Unsupported vendor')
+cfg = json.loads(Path('configs/stacks/nvidia-single.json').read_text())
+keys = ['toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy',
+        'node-exporter', vendor + '_exporter']
+images = [cfg['images'][key] for key in keys]
+metadata = []
+for key, image in zip(keys, images):
+    if key not in ('toolbox', 'aisbench'):
+        subprocess.run(['docker', 'pull', '--platform', 'linux/amd64', image], check=True)
+    info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
+    if (info['Os'], info['Architecture']) != ('linux', 'amd64'):
+        raise RuntimeError('Wrong architecture: ' + image)
+    metadata.append({'image': image, 'id': info['Id'], 'digests': info.get('RepoDigests', []),
+                     'platform': 'linux/amd64'})
+bundle = Path('generated/offline-bundle')
+(bundle / 'metadata/images.json').write_text(json.dumps(metadata, indent=2) + '\n')
+subprocess.run(['docker', 'image', 'save', '-o', str(bundle / 'images/images-linux-amd64.tar'),
+                *images], check=True)
+```
+
+如果实际 site.json 的 images 字段不同，修改脚本读取的文件及选择项，与现场清单保持一致。docker save 导出镜像层和标签；不要用 docker export 代替。若本机保存了同镜像的多架构变体，默认 save 可能全部导出；Docker API 1.48+ 可增加 `--platform linux/amd64` 缩小归档，旧版本不要使用此选项。[Docker save 文档](https://docs.docker.com/reference/cli/docker/image/save/)。
+
+### 3.4 准备真实 tokenizer 并做无网络加载检查
+
+至少包括 tokenizer_config.json，以及模型所需的 tokenizer.json 或 vocab/merges/SentencePiece 文件。还可能需要 special_tokens_map.json、added_tokens.json、config.json、chat template 文件等；应携带模型发布的完整 tokenizer 目录，而非只挑一个文件。Hugging Face snapshots 常含指向 blobs 的软链接，打包时需解引用或同时携带完整目标内容。
+
+```bash
+tar -chzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C /absolute/path/to/model-tokenizer .
+
+docker run --rm --platform linux/amd64 --network none \
+  --mount type=bind,src=/absolute/path/to/model-tokenizer,dst=/tokenizer,readonly \
+  --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
+  -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, len(t.encode("offline tokenizer check")))'
+```
+
+镜像已经设置 HF_HUB_OFFLINE=1。自定义 tokenizer 若依赖额外包或自定义 Python 代码，应在联网构建阶段解决并重新封装/验证镜像；当前配置不自动开启 trust_remote_code。仅有词表但运行时还需下载 tokenizer 代码或依赖，不能认为已经准备完整。[Transformers 离线说明](https://huggingface.co/docs/transformers/installation)。
+
+当前固定长度合成数据由 AISBench 在本地生成，不需要另下载公开数据集。未来使用真实语料/其他数据集时，还要准备数据文件、索引、处理脚本及依赖，并验证所选数据集加载器不会再尝试远程下载；现有 stack JSON 的简化入口仅支持 string/tokenid 合成数据。
+
+### 3.5 系统、驱动与完整性校验
+
+将匹配目标系统的运行时安装包放 runtime/，设备驱动/设备运行时包及安装说明放 drivers/，现场配置放 site/。同一套 rpm/deb 不能默认适用于其他发行版、版本或内核。NVIDIA 需准备 NVIDIA Container Toolkit 及驱动；海光需准备对应驱动/运行库、hy-smi 与 HCU Exporter 所需宿主机路径。
+
+site.json 可从 `configs/stacks/nvidia-single.json` 复制后修改：保持 `platform: linux/amd64`、`simulation: false`，填写真实存储路径、推理服务地址/模型、指标端点及 node_exporter_target。GPU 在本机时可用 auto 识别；观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入 Docker/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
+
+在全部物料放齐后生成 SHA-256 清单（流式计算，避免把大镜像归档一次读入内存）：
+
+```python
+import hashlib
+from pathlib import Path
+
+bundle = Path('generated/offline-bundle')
+lines = []
+for path in sorted(bundle.rglob('*')):
+    if not path.is_file() or path.name == 'SHA256SUMS':
+        continue
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    lines.append(f'{digest.hexdigest()}  {path.relative_to(bundle).as_posix()}')
+(bundle / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
+```
+
+## 4. 离线侧：导入、预检查与运行
+
+先安装已准备的系统运行时、驱动及设备运行时，在交付包目录执行：
+
+```bash
+sha256sum -c SHA256SUMS
+docker image load -i images/images-linux-amd64.tar
+tar -xzf repository.tar.gz -C /path/to/workspace
+mkdir -p /srv/model-tokenizer
+tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
+```
+
+`docker load` 恢复镜像和标签；镜像只读层不包含主机 bind mount 数据。[Docker load 文档](https://docs.docker.com/reference/cli/docker/image/load/)。建议在 **新建空 tokenizer 目录**解包，避免与旧模型词表混合。将 site.json 的 storage.tokenizer 指向该目录。
+
+离线运行前逐项确认：
+
+1. `docker info` 成功；主机 Python 版本满足要求；容器运行账户具有实际所需权限。
+2. site.json 的所有选用镜像标签存在、架构为 linux/amd64，并与 metadata/images.json 的 image ID 对照。导入后如重命名标签，需同步修改 site.json；不要只修改镜像名字而忽略内容。
+3. storage.root、storage.logs、tokenizer 和 log_files 路径真实有效；目标机可创建数据目录，容器 UID/GID 有读写权限。
+4. 被测服务、逐节点 Exporter、host 模式 node_exporter_target 地址在容器内可达；不能把容器 localhost 当成宿主机。NVIDIA 驱动/容器设备注入可用，或海光 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 已准备。
+5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许 Docker bridge 与推理服务/Exporter/日志接收端通信。Grafana/Prometheus/Loki 宿主机映射默认只绑定 127.0.0.1，远程访问另按现场方式接入。
+6. 若要求严格禁止公网请求，按下一节关闭相关功能并由现场网络策略控制出站访问；不要用 `--network none` 启动整栈，因为这会同时切断压测与观测必需通信。
+
+从解包后的仓库根目录执行：
+
+```bash
+python3 scripts/benchmark_stack.py plan --config /absolute/path/site.json
+python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
+python3 scripts/slo_search.py --config /absolute/path/site.json \
+  --search /absolute/path/search.json
+# 或使用 run_aisbench_suite.py 执行预设清单
+```
+
+`plan` 不启动容器，也不检查所有镜像是否已经导入。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
+
+## 5. 当前工程可能触发的联网行为
+
+| 环节 | 当前行为 | 离线处理 |
+| --- | --- | --- |
+| build 命令 | 构建 Dockerfile，访问 apt/pip/基础镜像；AISBench 归档不存在时下载源码 | 在线完成构建，离线直接 load 成品镜像 |
+| up 缺少 toolbox/AISBench | 自动尝试构建缺失项目镜像 | 首次启动前检查镜像齐全；当前无“离线禁止构建”开关 |
+| up 缺少公共镜像 | docker run 可能尝试从 registry 拉取 | 预先导入，或使用已准备的内网 registry；当前未统一传 --pull=never |
+| SLO 搜索 | 先检查 AISBench/toolbox 镜像存在及架构 | 缺镜像会报错；不能用此检查代替所有组件的离线准备 |
+| tokenizer | 镜像设置 HF_HUB_OFFLINE=1，使用本地路径 | 准备完整文件及依赖，执行无网络加载检查 |
+| Loki | common 配置已设置 analytics.reporting_enabled=false | 保留此设置 |
+| Grafana 12.0.2 | 当前 common 配置未关闭默认统计、更新检查与插件预安装 | 在交付配置中关闭，见下文 |
+| Alloy 1.8.3 | 当前启动器未传 --disable-reporting | 严格离线部署时在交付副本的 Alloy run 参数中加入该标志 |
+
+Grafana 在 `configs/common/grafana/grafana.ini` 的交付副本中追加（如已存在同名 section，合并字段）：
+
+```ini
+[analytics]
+reporting_enabled = false
+check_for_updates = false
+check_for_plugin_updates = false
+
+[plugins]
+preinstall_disabled = true
+```
+
+本工程现有面板使用内置面板与 Prometheus/Loki 数据源，不要求额外下载插件。后续增加第三方插件时，应预下载兼容版本并随镜像/卷交付。已核对固定 Grafana 12.0.2 镜像含上述设置，Alloy 1.8.3 的 `run --help` 含 `--disable-reporting`；Alloy 的该标志需要加到 `scripts/benchmark_stack.py` 中 Alloy 服务的 command 参数列表，当前不是一个可直接填写到 stack JSON 的字段。[Grafana 配置说明](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)。
+
+这些调整应在交付版本制作前完成并记录差异，然后重新生成配置/重启对应组件。关闭上述已知行为不等于证明所有组件绝无外联尝试，严格隔离验收仍应在目标网络策略下运行并检查日志/出站记录。
+
+## 6. containerd / 高版本 Kubernetes 的额外准备
+
+Docker 镜像本地存储与独立 containerd namespace 不互通，不能认为执行过 docker load 后 Kubernetes 就能看到镜像。
+
+裸 containerd/nerdctl 场景需准备 containerd、runc、nerdctl、CNI 及设备运行时；只有计划在内网重建镜像时才需要 BuildKit。把镜像导入与 CLI 配置相同的 namespace，例如：
+
+```bash
+nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
+```
+
+对应 stack runtime 为 `["nerdctl", "--namespace", "benchmark"]`。这是预留适配入口，当前仍未实测裸 containerd。[nerdctl 官方命令文档](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
+
+Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/device plugin 镜像与安装清单、运行时/CDI/RuntimeClass 配置、ConfigMap/PVC/Job 等资源、证书与存储。镜像通常要导入 CRI 使用的 k8s.io namespace，具体由目标发行版确认；设置与离线策略匹配的 imagePullPolicy（IfNotPresent 或已逐节点导入时的 Never），避免 Always 在无可达 registry 时解析镜像失败。[Kubernetes 镜像拉取策略](https://kubernetes.io/docs/concepts/containers/images/)。现有 CLI 不会自动生成或部署这些 Kubernetes 资源。
+
+## 7. 如果必须在离线环境重建镜像
+
+这与“离线运行现成镜像”是另一套交付要求，还需准备：
+
+- python:3.11-slim-bookworm 的 amd64 基础镜像、对应 Dockerfile/源码归档及校验值。
+- apt 完整依赖闭包或离线镜像源，包含 build-essential、libgomp1、git、logrotate 等及传递依赖。
+- Python 3.11/Linux x86 兼容的全部 wheel/sdist 及构建依赖；特别包含 CPU Torch 下载源对应的包，不能拿 macOS/arm64 wheel 替代。
+- pip/构建工具、缓存或内网索引，以及能够完全离线解析这些依赖的构建配置。
+
+**当前 Dockerfile 直接执行 apt-get 和 pip 联网安装，启动器还使用公网源码 URL；仅提供 source.tar.gz 不足以离线重建。** 需要改用内网 apt/PyPI/镜像仓库，或重写为本地包源，并在隔离环境重新验证。除非确实需要离线开发，优先交付已验证的完整 amd64 镜像，可显著减少现场准备项。
+
+## 8. 最小验收清单
+
+- 校验和、仓库提交、镜像标签/ID/架构、真实 tokenizer 均匹配。
+- 无公网条件下能启动所有所选容器；没有因缺镜像触发失败的 build/pull。
+- Prometheus targets UP、正确厂商 GPU 指标可见、Grafana provisioning 正常、Loki 可查请求日志。
+- AISBench 小规模单档成功并落盘报告，再验证顺序清单或 SLO 搜索。
+- 停止/重启后数据路径、日志轮转和采集续读正常。
+- 记录目标 OS/内核、驱动、运行时、镜像、服务与 tokenizer 版本，以及离线网络验证结果。
+
+排障优先区分：缺镜像、错误架构、缺 tokenizer/依赖、内网地址不可达、驱动/设备权限、挂载权限以及后台外联告警。不要把“无公网”误诊为所有服务端口都应禁止。

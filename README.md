@@ -20,6 +20,7 @@ python3 -m unittest discover -s tests -v
 | 入口 | 内容 |
 | --- | --- |
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
+| [离线环境部署](docs/offline-deployment.md) | amd64 镜像、tokenizer、运行时/驱动、交付包与联网环节 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |
 | [批量顺序执行](docs/aisbench-sequential.md) | 原生并发档扫描、任意用例清单、冷却和失败处理 |
 | [SLO 容量搜索](docs/aisbench-slo-capacity.md) | 业务阈值、候选负载扫描、自动筛选、边界细化与复测 |

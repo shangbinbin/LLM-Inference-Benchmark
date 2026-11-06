@@ -2,6 +2,8 @@
 
 本入口以 AISBench 为唯一发压客户端，启动已有推理服务之外的观测组件。生产模式不会启动或改动被测推理服务；`simulation: true` 才创建明确标识的测试 fixture，以便 Mac 无 GPU 验证。
 
+无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置；默认启动器仍可能在缺镜像时尝试构建或拉取。
+
 ## Mac 一键模拟
 
 前提：Docker Desktop 已运行，主机有 Python 3.9+，能够拉取镜像及 AISBench 官方源码/依赖。无需 Compose。首次运行会构建缺失的工具与 AISBench 镜像，耗时取决于网络；后续复用镜像。
