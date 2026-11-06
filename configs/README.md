@@ -15,11 +15,14 @@ configs/
 │   │   ├── dcgm/                   # Exporter job 与 GPU Dashboard
 │   │   └── h200/profile.json       # 型号到适配器的选择
 │   └── hygon/
+│       ├── hcu-exporter-v3/        # 基于最新官方文档的参考适配器
+│       ├── model-agnostic-hcu-v3/  # 暂不限定型号
 │       ├── dcu-exporter-template/  # 待确认的采集与指标契约、接入状态面板
 │       └── model-template/         # 复制为实际型号
 ├── network/infiniband/             # 可选 IB job、规则、Dashboard
 └── environments/
     ├── nvidia-h200-3node-8gpu/      # 来源环境，3 × 8 H200，TP=8/PP=3
+    ├── hygon-hcu-v3-template/       # 官方 HCU v3，待填现场信息
     └── hygon-template/             # 海光待适配环境
 ```
 

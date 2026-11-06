@@ -1,0 +1,56 @@
+{
+  "status": "documented-not-hardware-verified",
+  "source": "https://developer.sourcefind.cn/document/fea33d51-cc37-11f1-9b14-0242ac150003?id=47c190c3-cc5e-11f1-9b14-0242ac150003",
+  "exporter_version": "v3.0.0",
+  "device_id_label": "device_id",
+  "node_label": "node",
+  "minor_number_label": "minor_number",
+  "pod_labels": [
+    "hcu_pod_name",
+    "hcu_pod_namespace",
+    "container"
+  ],
+  "metrics": {
+    "hcu_utilizationrate": {
+      "unit": null,
+      "scale": null,
+      "documentation_note": "最新文档称为低成本 HCUUse；范围与单位需对照实际 /metrics 和设备工具。",
+      "hardware_verified": false
+    },
+    "hcu_usedmemory_bytes": {
+      "unit": "bytes",
+      "scale": 1,
+      "documentation_note": "官方指标名称为 bytes。",
+      "hardware_verified": false
+    },
+    "hcu_memorycap_bytes": {
+      "unit": "bytes",
+      "scale": 1,
+      "documentation_note": "官方指标名称为 bytes。",
+      "hardware_verified": false
+    },
+    "hcu_vram_percent": {
+      "unit": "percent",
+      "scale": 1,
+      "documentation_note": "官方文档明示百分比。",
+      "hardware_verified": false
+    },
+    "hcu_temp_mem": {
+      "unit": "celsius",
+      "scale": 1,
+      "documentation_note": "官方文档明示摄氏度。",
+      "hardware_verified": false
+    },
+    "hcu_power_usage": {
+      "unit": null,
+      "scale": null,
+      "documentation_note": "最新在线表格未明确单位；确认单位后再改为 W，不预设缩放。",
+      "hardware_verified": false
+    }
+  },
+  "notes": [
+    "Keep native hcu_* names; do not rename dcu_* metrics blindly.",
+    "METRICS_DEFINE and LABEL_DEFINE must remain empty for this dashboard.",
+    "High-cost sampled utilization metrics intentionally excluded."
+  ]
+}

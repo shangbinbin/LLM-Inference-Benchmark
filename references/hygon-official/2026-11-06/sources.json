@@ -1,0 +1,69 @@
+{
+  "checked_on": "2026-11-06",
+  "latest_document": {
+    "url": "https://developer.sourcefind.cn/document/fea33d51-cc37-11f1-9b14-0242ac150003?id=47c190c3-cc5e-11f1-9b14-0242ac150003",
+    "title": "1 HCU-Exporter",
+    "updated_at": "2026-10-27T15:53:41.266+08:00",
+    "version_uuid": "47c12ea7-cc5e-11f1-9b14-0242ac150003",
+    "api_url": "https://developer.sourcefind.cn/api-doc/document/DetailDocument?UUID=47c190c3-cc5e-11f1-9b14-0242ac150003"
+  },
+  "image_catalog": {
+    "url": "https://developer.sourcefind.cn/servicelist/detail?active=TagDownload&post_id=77f7eb50-b3c7-11f0-9a0f-acde48001122",
+    "tags": [
+      {
+        "tag": "v2.4.2",
+        "pushed_at": "2026-06-25 14:06:02",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.2",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.4.1",
+        "pushed_at": "2026-04-02 10:54:38",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.4.0",
+        "pushed_at": "2026-02-04 19:55:42",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.0",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.3.1",
+        "pushed_at": "2025-11-25 12:03:25",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.3.1",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.3.0",
+        "pushed_at": "2025-11-03 15:39:06",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.3.0",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.2.0",
+        "pushed_at": "2025-09-28 15:40:24",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.2.0",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.1.0",
+        "pushed_at": "2025-09-28 15:40:19",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.1.0",
+        "release_type": "dev"
+      },
+      {
+        "tag": "v2.0.1",
+        "pushed_at": "2025-09-28 15:40:13",
+        "pull_command": "docker pull harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.0.1",
+        "release_type": "dev"
+      }
+    ]
+  },
+  "selection": {
+    "exporter": "hcu-exporter:v3.0.0",
+    "basis": "Official resource-center YAML and offline image filename; not the older dcu-exporter image catalog. Image pull/load was not tested.",
+    "grafana": "Official downloads still use dcu_* / vdcu_*; preserved as legacy references.",
+    "prometheus": "Official downloaded Deployment uses prom/prometheus:v2.0.0; reference only."
+  }
+}

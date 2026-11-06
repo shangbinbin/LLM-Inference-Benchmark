@@ -1,0 +1,29 @@
+{
+  "name": "hygon-hcu-v3-template",
+  "status": "template",
+  "gpu_profile": "gpu/hygon/model-agnostic-hcu-v3",
+  "nodes": [
+    {
+      "name": "REPLACE_NODE",
+      "gpu_target": "REPLACE_HOST:16080",
+      "gpus": 1
+    }
+  ],
+  "inference": {
+    "engine": "sglang",
+    "deployment": "hygon-inference",
+    "group": "hygon-inference-group-0",
+    "model": "REPLACE_MODEL",
+    "tp": 1,
+    "pp": 1,
+    "metrics_target": "REPLACE_MASTER:30000",
+    "log_files": [
+      "/var/log/inference/rank-0.log"
+    ]
+  },
+  "network": null,
+  "services": {
+    "prometheus_url": "http://prometheus:9090",
+    "loki_url": "http://loki:3100"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "checked_on": "2026-11-06",
+  "source": "https://download.sourcefind.cn:65024/5/main/Kubernetes%E6%8F%92%E4%BB%B6",
+  "files": [
+    {
+      "name": "hcu-exporter",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/hcu-exporter",
+      "modified_at": "2026-09-02 16:48:24",
+      "listed_size": "53.71MB",
+      "downloaded": false
+    },
+    {
+      "name": "hcu-exporter-v3.0.0.tar",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/hcu-exporter-v3.0.0.tar",
+      "modified_at": "2026-09-02 16:57:26",
+      "listed_size": "208.71MB",
+      "downloaded": false
+    },
+    {
+      "name": "hcu-exporter.yaml",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/hcu-exporter.yaml",
+      "modified_at": "2026-09-02 16:53:01",
+      "listed_size": "5.95KB",
+      "downloaded": true,
+      "path": "upstream/exporter/hcu-exporter.yaml",
+      "sha256": "953e437af8f0a560bc744ce4b88302a8b04c3b971896d574c47c191062da4471",
+      "bytes": 6088
+    },
+    {
+      "name": "configmap.yaml",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/prometheus/configmap.yaml",
+      "modified_at": "2022-05-18 09:21:08",
+      "listed_size": "5.50KB",
+      "downloaded": true,
+      "path": "upstream/prom/configmap.yaml",
+      "sha256": "5e5f2b962c5a9cccb75a51ef281e39163194bde401d81f184ff5174e26ce7b7b",
+      "bytes": 5631
+    },
+    {
+      "name": "prometheus.tar",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/prometheus/prometheus.tar",
+      "modified_at": "2022-05-18 10:06:33",
+      "listed_size": "77.91MB",
+      "downloaded": false
+    },
+    {
+      "name": "prometheus.yaml",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/prometheus/prometheus.yaml",
+      "modified_at": "2022-05-18 09:20:54",
+      "listed_size": "1.32KB",
+      "downloaded": true,
+      "path": "upstream/prom/prometheus.yaml",
+      "sha256": "017701828e5c9667ba3d14ca78d9e70d2695e448e3d998d8a4149bb745624a2d",
+      "bytes": 1350
+    },
+    {
+      "name": "rbac-setup.yaml",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/prometheus/rbac-setup.yaml",
+      "modified_at": "2022-05-18 09:21:01",
+      "listed_size": "716B",
+      "downloaded": true,
+      "path": "upstream/prom/rbac-setup.yaml",
+      "sha256": "c338d7425cc6882f00d417d948fba6c6da331ae6d3412cadf418af90fa8af679",
+      "bytes": 716
+    },
+    {
+      "name": "dcu-cluster-monitor.json",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/grafana/dcu-cluster-monitor.json",
+      "modified_at": "2026-02-12 17:37:58",
+      "listed_size": "71.62KB",
+      "downloaded": true,
+      "path": "upstream/grafana/dcu-cluster-monitor.json",
+      "sha256": "cc945115452f47122cad3a530f04e5bd1aee2c59912ab75d0ff07d29aecf4f11",
+      "bytes": 73335
+    },
+    {
+      "name": "dcu-exporter-dashboard.json",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/grafana/dcu-exporter-dashboard.json",
+      "modified_at": "2026-02-12 17:37:58",
+      "listed_size": "42.03KB",
+      "downloaded": true,
+      "path": "upstream/grafana/dcu-exporter-dashboard.json",
+      "sha256": "fd38d039817676307459eef68ae6a65564ab235f3cc8f10ee002fbbac41771e7",
+      "bytes": 43035
+    },
+    {
+      "name": "dcu-exporter-k8s-dashboard.json",
+      "url": "https://download.sourcefind.cn:65024/file/5/Kubernetes%E6%8F%92%E4%BB%B6/dcu-exporter/grafana/dcu-exporter-k8s-dashboard.json",
+      "modified_at": "2026-02-12 17:37:58",
+      "listed_size": "38.49KB",
+      "downloaded": true,
+      "path": "upstream/grafana/dcu-exporter-k8s-dashboard.json",
+      "sha256": "16b9d9767ae7eea89988b73840268a7a8dd308cef8ea9ad0a82a43f168b41744",
+      "bytes": 39418
+    }
+  ]
+}

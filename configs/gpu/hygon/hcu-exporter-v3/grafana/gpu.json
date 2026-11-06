@@ -1,0 +1,254 @@
+{
+  "uid": "hygon-hcu-v3-overview",
+  "title": "Hygon HCU v3 — 基础设备指标",
+  "description": "本项目根据官方 2026-10-27 文档制作，非官方 Dashboard 原件；尚未实机验证。",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "hygon",
+    "hcu-v3",
+    "reference"
+  ],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "benchmark-prometheus"
+        },
+        "query": "label_values(up{job=\"hygon-hcu-exporter\"}, node)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      },
+      {
+        "name": "device_id",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "benchmark-prometheus"
+        },
+        "query": "label_values(hcu_memorycap_bytes{job=\"hygon-hcu-exporter\",node=~\"$node\"}, device_id)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Exporter UP",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"hygon-hcu-exporter\",node=~\"$node\"}",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "计算单元瞬时利用率（原始值）",
+      "description": "最新文档称为低成本 HCUUse；范围与单位需对照实际 /metrics 和设备工具。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_utilizationrate{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "已用显存",
+      "description": "官方指标名称为 bytes。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_usedmemory_bytes{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "显存总量",
+      "description": "官方指标名称为 bytes。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_memorycap_bytes{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "显存使用率",
+      "description": "官方文档明示百分比。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_vram_percent{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "显存温度",
+      "description": "官方文档明示摄氏度。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_temp_mem{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "当前功耗（原始值）",
+      "description": "最新在线表格未明确单位；确认单位后再改为 W，不预设缩放。 如未启用该指标，显示无数据。",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "benchmark-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hcu_power_usage{job=\"hygon-hcu-exporter\",node=~\"$node\",device_id=~\"$device_id\"}",
+          "legendFormat": "{{node}} / {{device_id}} / {{minor_number}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "vendor": "hygon",
+  "model": "unspecified",
+  "adapter": "gpu/hygon/hcu-exporter-v3",
+  "status": "reference",
+  "notes": "按用户要求暂不限定卡型号；不表示所有型号兼容，驱动和硬件需现场验证。"
+}

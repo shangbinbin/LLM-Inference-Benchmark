@@ -52,6 +52,26 @@ class RenderTests(unittest.TestCase):
             self.assertFalse((out / 'prometheus/rules').exists())
             self.assertIn('TEMPLATE PREVIEW ONLY', text)
 
+    def test_hcu_v3_preview_uses_documented_metrics_and_bound_datasource(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'out'
+            self.render('hygon-hcu-v3-template', out, True)
+            prom = json.loads((out / 'prometheus/prometheus.yml').read_text())
+            self.assertEqual(prom['scrape_configs'][1]['job_name'], 'hygon-hcu-exporter')
+            self.assertEqual(prom['scrape_configs'][1]['static_configs'][0]['targets'],
+                             ['REPLACE_HOST:16080'])
+            dashboard = json.loads((out / 'grafana/dashboards/gpu.json').read_text())
+            contract = json.loads((ROOT / 'configs/gpu/hygon/hcu-exporter-v3/metric-contract.json').read_text())
+            expressions = [p['targets'][0]['expr'] for p in dashboard['panels']]
+            self.assertEqual({e.split('{')[0] for e in expressions}, {'up', *contract['metrics']})
+            for panel in dashboard['panels']:
+                self.assertEqual(panel['datasource']['uid'], 'benchmark-prometheus')
+            self.assertNotIn('dcu_', json.dumps(dashboard))
+            self.assertNotIn('${DS_', json.dumps(dashboard))
+            self.assertIsNone(contract['metrics']['hcu_power_usage']['unit'])
+            self.assertIsNone(contract['metrics']['hcu_utilizationrate']['unit'])
+            self.assertFalse((out / 'grafana/dashboards/network.json').exists())
+
     def test_log_validation_and_vendor_boundary(self):
         env = json.loads((ROOT / 'configs/environments/nvidia-h200-3node-8gpu/environment.json').read_text())
         profile = {'vendor': 'nvidia', 'status': 'reference'}

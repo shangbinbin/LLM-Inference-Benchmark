@@ -33,3 +33,7 @@
 上表新配置路径均相对于 `configs/`。更早的 2026-11-05 整理把 `configs/<组件>/` 移到旧平台参考目录；现在请从[配置入口](../configs/README.md)使用四层组合结构。
 
 新增海光型号请按[海光说明](../configs/gpu/hygon/README.md)扩展，避免按型号复制整套日志与监控链路。数据集实体、测试输出和密码不放配置目录；运行输出放 `results/<run-id>/`，需版本化的精选报告放 `docs/reports/`。
+
+## 海光官方资料补充
+
+`references/hygon-official/<核对日期>/upstream/` 保存官方配置原件；`downloads.json` 记录精确下载 URL 与校验值。`configs/gpu/hygon/hcu-exporter-v3/` 保存本项目的新版采集与面板配置，`model-agnostic-hcu-v3/` 暂不限定型号；操作说明见[官方监控接入指南](hygon-official-monitoring.md)。

@@ -1,6 +1,8 @@
 # 海光 DCU 适配入口
 
-目前仅确认厂商为海光。具体型号、驱动/运行时、Exporter 和原生指标以之后上传的资料为准；当前没有经过验证的海光性能指标配置。
+已根据 2026-11-06 检索到的官方资料增加 [HCU-Exporter v3 参考适配器](hcu-exporter-v3/README.md)。默认推荐从 `configs/environments/hygon-hcu-v3-template/environment.json` 开始，暂不限定卡型号。官方文档、具体下载链接和版本差异见[接入指南](../../../docs/hygon-official-monitoring.md)。配置已按文档核对，但尚未实机验证。
+
+下面的原始空模板保留给其他 Exporter/版本使用，独立于 HCU v3 适配器。
 
 ## 后续接入流程
 
