@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "project": "llm-slo-mac",
+  "simulation": true,
+  "runtime": [
+    "docker"
+  ],
+  "storage": {
+    "root": "generated/mac-slo",
+    "logs": "generated/mac-slo-logs",
+    "tokenizer": "configs/fixtures/mock-tokenizer"
+  },
+  "images": {
+    "toolbox": "llm-benchmark-toolbox:slo-arm64",
+    "aisbench": "llm-benchmark-aisbench:e330dc1-arm64",
+    "prometheus": "prom/prometheus:v3.5.0",
+    "grafana": "grafana/grafana:12.0.2",
+    "loki": "grafana/loki:3.5.0",
+    "alloy": "grafana/alloy:v1.8.3",
+    "node-exporter": "prom/node-exporter:v1.9.1",
+    "nvidia_exporter": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
+    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
+  },
+  "gpu": {
+    "vendor": "nvidia",
+    "deployment": "local",
+    "nodes": [
+      {
+        "name": "single-node",
+        "gpus": 1
+      }
+    ]
+  },
+  "inference": {
+    "base_url": "http://fixture:18000/",
+    "model": "mock-model",
+    "api": "completions"
+  },
+  "topology": {
+    "kind": "single",
+    "tp": 1,
+    "pp": 1,
+    "metrics_endpoints": [
+      {
+        "target": "fixture:18000",
+        "role": "master"
+      }
+    ]
+  },
+  "log_files": [
+    "server.log"
+  ],
+  "ports": {
+    "grafana": 33002,
+    "prometheus": 39092,
+    "loki": 33102
+  },
+  "startup_timeout": 180,
+  "benchmark": {
+    "dataset_type": "string",
+    "input_length": 32,
+    "output_length": 16,
+    "request_count": 12,
+    "concurrency": 1,
+    "request_rate": 0,
+    "warmups": 1,
+    "mode": "perf",
+    "generation_kwargs": {
+      "temperature": 0,
+      "ignore_eos": true
+    }
+  },
+  "platform": "linux/arm64",
+  "simulation_latency": {
+    "capacity": 2,
+    "overload_delay_seconds": 0.4
+  }
+}

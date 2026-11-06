@@ -8,6 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOCK = threading.Lock()
 REQUESTS = 0
+ACTIVE = 0
+CAPACITY = int(os.environ.get('MOCK_CAPACITY', '0'))
+OVERLOAD_DELAY = float(os.environ.get('MOCK_OVERLOAD_DELAY_SECONDS', '0'))
 VENDOR = os.environ.get('MOCK_GPU_VENDOR', 'nvidia')
 LOG = Path('/logs/server.log')
 
@@ -42,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        global REQUESTS
+        global REQUESTS, ACTIVE
         if self.path not in ('/v1/completions', '/v1/chat/completions'):
             self.send_error(404)
             return
@@ -51,15 +54,22 @@ class Handler(BaseHTTPRequestHandler):
         count = min(int(data.get('max_tokens', 16)), 4096)
         with LOCK:
             REQUESTS += 1
+            ACTIVE += 1
+            active = ACTIVE
             LOG.parent.mkdir(parents=True, exist_ok=True)
             with LOG.open('a') as f:
-                f.write(json.dumps({'simulation': True, 'request': REQUESTS, 'output_tokens': count})+'\n')
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/event-stream')
-        self.send_header('Cache-Control', 'no-cache')
-        self.end_headers()
+                f.write(json.dumps({'simulation': True, 'request': REQUESTS, 'output_tokens': count,
+                                    'active_at_start': active})+'\n')
         chat = self.path.endswith('/chat/completions')
         try:
+            # A controlled overload knee exercises the search using real measured HTTP latency.
+            # It is independent of the searcher's thresholds and does not fabricate AISBench reports.
+            if CAPACITY and active > CAPACITY:
+                time.sleep(OVERLOAD_DELAY)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
             for index in range(count):
                 time.sleep(0.005)
                 choice = {'index': 0, 'finish_reason': None}
@@ -73,6 +83,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        finally:
+            with LOCK:
+                ACTIVE -= 1
 
 
+ThreadingHTTPServer.request_queue_size = 128
 ThreadingHTTPServer(('0.0.0.0', 18000), Handler).serve_forever()

@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -41,6 +42,15 @@ def load_config(path):
     if cfg['storage']['root'] == cfg['storage']['logs']:
         raise ValueError('storage.root and storage.logs must differ')
     cfg.setdefault('runtime', ['docker'])
+    latency = cfg.get('simulation_latency')
+    if latency is not None:
+        if not cfg.get('simulation') or not isinstance(latency, dict) or set(latency) != {'capacity', 'overload_delay_seconds'}:
+            raise ValueError('simulation_latency is only for simulation and requires capacity/overload_delay_seconds')
+        if type(latency['capacity']) is not int or latency['capacity'] < 1:
+            raise ValueError('Simulation capacity must be a positive integer')
+        delay = latency['overload_delay_seconds']
+        if type(delay) not in (int, float) or not math.isfinite(delay) or delay <= 0:
+            raise ValueError('Simulation overload delay must be finite and positive')
     if cfg.get('platform') not in ('linux/amd64', 'linux/arm64'):
         raise ValueError('platform must explicitly be linux/amd64 or linux/arm64')
     if not cfg.get('simulation') and cfg['platform'] != 'linux/amd64':
@@ -282,6 +292,10 @@ class Stack:
             specs.append({'name': 'fixture', 'args': log_mount+['--entrypoint','python','-e','MOCK_GPU_VENDOR='+self.vendor],
                           'image': images['toolbox'], 'command': ['/opt/benchmark/mock_server.py'],
                           'ready': ('http://fixture:18000/v1/models', 'mock-model')})
+            if self.cfg.get('simulation_latency'):
+                latency = self.cfg['simulation_latency']
+                specs[-1]['args'] += ['-e', 'MOCK_CAPACITY='+str(latency['capacity']),
+                                     '-e', 'MOCK_OVERLOAD_DELAY_SECONDS='+str(latency['overload_delay_seconds'])]
         if self.cfg['gpu']['deployment'] == 'local' and not self.cfg.get('simulation'):
             if self.vendor == 'nvidia':
                 args = ['--gpus','all','--cap-add','SYS_ADMIN','-e','DCGM_EXPORTER_KUBERNETES=false']

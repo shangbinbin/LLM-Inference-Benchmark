@@ -1,0 +1,380 @@
+{
+  "simulation_only": true,
+  "local_date": "2026-11-07",
+  "platform": "linux/arm64",
+  "aisbench_commit": "e330dc134c33f47671926144d9c143b554bc71cc",
+  "fixture": {
+    "capacity": 2,
+    "overload_delay_seconds": 0.4
+  },
+  "full_search": {
+    "schema_version": 1,
+    "policy": {
+      "step": 1,
+      "repeats": 2,
+      "strategy": "verified_max",
+      "statistic": "P99",
+      "max_rounds": 6,
+      "max_duration_seconds": 600,
+      "trial_timeout_seconds": 60,
+      "cooldown_seconds": 1,
+      "min_requests": 12,
+      "min_concurrency": 1,
+      "max_concurrency": 6,
+      "thresholds_ms": {
+        "TTFT": 200,
+        "TPOT": 50,
+        "E2EL": 1000
+      }
+    },
+    "started_at": "2026-11-06T17:05:58.528499+00:00",
+    "rounds": [
+      {
+        "round": 1,
+        "phase": "lower_bound",
+        "concurrency": 1,
+        "status": "PASS",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:05:58.529013+00:00",
+            "status": "PASS",
+            "latencies_ms": {
+              "TTFT": 12.4,
+              "TPOT": 6.4,
+              "E2EL": 107.5
+            },
+            "violations": [],
+            "success_requests": 12,
+            "output_tokens_per_second": 156.8168,
+            "report": "results/20261106_170559/performances/aisbench-target/synthetic.json",
+            "directory": "round-001-c1-r1",
+            "finished_at": "2026-11-06T17:06:08.083083+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:06:09.088369+00:00",
+            "status": "PASS",
+            "latencies_ms": {
+              "TTFT": 11.4,
+              "TPOT": 7.1,
+              "E2EL": 116.6
+            },
+            "violations": [],
+            "success_requests": 12,
+            "output_tokens_per_second": 155.5393,
+            "report": "results/20261106_170610/performances/aisbench-target/synthetic.json",
+            "directory": "round-001-c1-r2",
+            "finished_at": "2026-11-06T17:06:18.209453+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:05:58.528532+00:00",
+        "finished_at": "2026-11-06T17:06:18.209741+00:00"
+      },
+      {
+        "round": 2,
+        "phase": "upper_bound",
+        "concurrency": 6,
+        "status": "SLO_FAIL",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:06:19.215181+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 413.2,
+              "TPOT": 6.2,
+              "E2EL": 503.8
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 185.9693,
+            "report": "results/20261106_170620/performances/aisbench-target/synthetic.json",
+            "directory": "round-002-c6-r1",
+            "finished_at": "2026-11-06T17:06:28.397452+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:06:29.402867+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 413.8,
+              "TPOT": 6.2,
+              "E2EL": 504.7
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 185.8327,
+            "report": "results/20261106_170630/performances/aisbench-target/synthetic.json",
+            "directory": "round-002-c6-r2",
+            "finished_at": "2026-11-06T17:06:38.752421+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:06:18.209932+00:00",
+        "finished_at": "2026-11-06T17:06:38.752755+00:00"
+      },
+      {
+        "round": 3,
+        "phase": "binary",
+        "concurrency": 3,
+        "status": "SLO_FAIL",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:06:39.758253+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 414.9,
+              "TPOT": 6.4,
+              "E2EL": 508.3
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 112.0537,
+            "report": "results/20261106_170640/performances/aisbench-target/synthetic.json",
+            "directory": "round-003-c3-r1",
+            "finished_at": "2026-11-06T17:06:48.935423+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:06:49.940928+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 415.1,
+              "TPOT": 6.9,
+              "E2EL": 516.4
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 112.9655,
+            "report": "results/20261106_170651/performances/aisbench-target/synthetic.json",
+            "directory": "round-003-c3-r2",
+            "finished_at": "2026-11-06T17:06:58.910865+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:06:38.752981+00:00",
+        "finished_at": "2026-11-06T17:06:58.911259+00:00"
+      },
+      {
+        "round": 4,
+        "phase": "binary",
+        "concurrency": 2,
+        "status": "PASS",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:06:59.916853+00:00",
+            "status": "PASS",
+            "latencies_ms": {
+              "TTFT": 11.4,
+              "TPOT": 6.2,
+              "E2EL": 103.4
+            },
+            "violations": [],
+            "success_requests": 12,
+            "output_tokens_per_second": 316.8112,
+            "report": "results/20261106_170700/performances/aisbench-target/synthetic.json",
+            "directory": "round-004-c2-r1",
+            "finished_at": "2026-11-06T17:07:07.924026+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:07:08.929646+00:00",
+            "status": "PASS",
+            "latencies_ms": {
+              "TTFT": 14.0,
+              "TPOT": 6.1,
+              "E2EL": 104.1
+            },
+            "violations": [],
+            "success_requests": 12,
+            "output_tokens_per_second": 323.8214,
+            "report": "results/20261106_170709/performances/aisbench-target/synthetic.json",
+            "directory": "round-004-c2-r2",
+            "finished_at": "2026-11-06T17:07:16.980047+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:06:58.911520+00:00",
+        "finished_at": "2026-11-06T17:07:16.980441+00:00"
+      },
+      {
+        "round": 5,
+        "phase": "verify_higher",
+        "concurrency": 5,
+        "status": "SLO_FAIL",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:07:17.986029+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 413.7,
+              "TPOT": 6.2,
+              "E2EL": 503.3
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 176.6721,
+            "report": "results/20261106_170719/performances/aisbench-target/synthetic.json",
+            "directory": "round-005-c5-r1",
+            "finished_at": "2026-11-06T17:07:26.966033+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:07:27.971513+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 413.7,
+              "TPOT": 7.2,
+              "E2EL": 501.9
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 171.6017,
+            "report": "results/20261106_170729/performances/aisbench-target/synthetic.json",
+            "directory": "round-005-c5-r2",
+            "finished_at": "2026-11-06T17:07:36.877260+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:07:16.980720+00:00",
+        "finished_at": "2026-11-06T17:07:36.877778+00:00"
+      },
+      {
+        "round": 6,
+        "phase": "verify_higher",
+        "concurrency": 4,
+        "status": "SLO_FAIL",
+        "trials": [
+          {
+            "repeat": 1,
+            "started_at": "2026-11-06T17:07:37.880351+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 413.8,
+              "TPOT": 6.1,
+              "E2EL": 504.1
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 126.394,
+            "report": "results/20261106_170738/performances/aisbench-target/synthetic.json",
+            "directory": "round-006-c4-r1",
+            "finished_at": "2026-11-06T17:07:46.943148+00:00"
+          },
+          {
+            "repeat": 2,
+            "started_at": "2026-11-06T17:07:47.945186+00:00",
+            "status": "SLO_FAIL",
+            "latencies_ms": {
+              "TTFT": 412.7,
+              "TPOT": 6.2,
+              "E2EL": 505.2
+            },
+            "violations": [
+              "TTFT"
+            ],
+            "success_requests": 12,
+            "output_tokens_per_second": 125.6749,
+            "report": "results/20261106_170749/performances/aisbench-target/synthetic.json",
+            "directory": "round-006-c4-r2",
+            "finished_at": "2026-11-06T17:07:56.894391+00:00"
+          }
+        ],
+        "started_at": "2026-11-06T17:07:36.878130+00:00",
+        "finished_at": "2026-11-06T17:07:56.894877+00:00"
+      }
+    ],
+    "status": "complete",
+    "best_observed_concurrency": 2,
+    "recommended_concurrency": 2,
+    "maximum_verified": true,
+    "conditional_on_monotonicity": false,
+    "elapsed_seconds": 118.48,
+    "trial_count": 12,
+    "stop_reason": "boundary_found",
+    "finished_at": "2026-11-06T17:07:56.895214+00:00"
+  },
+  "stop_conditions": [
+    {
+      "case": "round-budget",
+      "exit_code": 1,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T170949308899Z/search-results.json",
+      "status": "stopped",
+      "stop_reason": "round_budget",
+      "recommended_concurrency": null,
+      "cleanup_verified": true,
+      "best_observed_concurrency": 1,
+      "maximum_verified": false
+    },
+    {
+      "case": "trial-timeout",
+      "exit_code": 1,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T170959003983Z/search-results.json",
+      "status": "stopped",
+      "stop_reason": "trial_timeout",
+      "recommended_concurrency": null,
+      "cleanup_verified": true,
+      "best_observed_concurrency": null,
+      "maximum_verified": false
+    },
+    {
+      "case": "time-budget",
+      "exit_code": 1,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T171000186316Z/search-results.json",
+      "status": "stopped",
+      "stop_reason": "time_budget",
+      "recommended_concurrency": null,
+      "cleanup_verified": true,
+      "best_observed_concurrency": null,
+      "maximum_verified": false
+    },
+    {
+      "case": "upper-bound",
+      "exit_code": 0,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T171000287872Z/search-results.json",
+      "status": "complete",
+      "stop_reason": "upper_bound_passed",
+      "recommended_concurrency": 2,
+      "cleanup_verified": true,
+      "best_observed_concurrency": 2,
+      "maximum_verified": true
+    },
+    {
+      "case": "no-feasible",
+      "exit_code": 1,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T171018894035Z/search-results.json",
+      "status": "complete",
+      "stop_reason": "no_feasible_concurrency",
+      "recommended_concurrency": null,
+      "cleanup_verified": true,
+      "best_observed_concurrency": null,
+      "maximum_verified": true
+    },
+    {
+      "case": "sigterm-and-exclusive-lock",
+      "exit_code": 1,
+      "report": "generated/mac-slo/data/results/slo-search/20261106T171118757452Z/search-results.json",
+      "stop_reason": "interrupted",
+      "recommended_concurrency": null,
+      "lock_conflict_rejected": true,
+      "cleanup_verified": true,
+      "best_observed_concurrency": null,
+      "maximum_verified": false
+    }
+  ],
+  "unit_tests": 28
+}

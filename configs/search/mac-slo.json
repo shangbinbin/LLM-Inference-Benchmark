@@ -1,0 +1,18 @@
+{
+  "min_concurrency": 1,
+  "max_concurrency": 6,
+  "step": 1,
+  "repeats": 2,
+  "strategy": "verified_max",
+  "statistic": "P99",
+  "thresholds_ms": {
+    "TTFT": 200,
+    "TPOT": 50,
+    "E2EL": 1000
+  },
+  "min_requests": 12,
+  "max_rounds": 6,
+  "max_duration_seconds": 600,
+  "trial_timeout_seconds": 60,
+  "cooldown_seconds": 1
+}
