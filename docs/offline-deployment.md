@@ -2,7 +2,9 @@
 
 推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
 
-本文说明当前工程所需物料与操作。仓库尚未提供统一的 `offline: true` 开关，也没有完成隔绝公网条件下的整栈验收；已有 Mac 验证不等同于离线 Linux/GPU 验证。
+本文说明当前工程所需物料与操作。仓库尚未提供统一的 `offline: true` 开关，也没有完成隔绝公网条件下真实 Linux 服务器的整栈验收；已有 Mac 验证不等同于离线 Linux/GPU 验证。
+
+可在 Apple Silicon Mac 提前检查离线流程，运行 `python3 docs/examples/verify_offline_mac.py`。需要先准备 Mac 模拟模板选用的七个 arm64 镜像。该验证入口在独立内部网络中运行实际 AISBench 和观测组件，拦截构建/源码下载，并为容器启动强制添加 `--pull=never`；不修改 Docker Desktop 全局网络，不删除镜像或已有模拟栈。它是测试用隔离入口，**不会为普通 up 命令自动开启离线保护**。验证范围与已观察到的外联请求见 [Mac 离线模拟报告](reports/mac-offline-validation-2026-11-07.md)。
 
 ## 1. 必须准备的内容
 
