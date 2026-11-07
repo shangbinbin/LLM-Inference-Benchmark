@@ -1,5 +1,7 @@
 # AISBench 多测试例顺序执行
 
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
 离线运行时，在启动栈的 JSON 中设置 `"offline": true`，后续使用同一配置。客户端和就绪探测自动禁止拉取，缺少 AISBench/toolbox 会在发压前列出清单；完整准备步骤见 [离线部署手册](offline-deployment.md)。
 
 **支持。** 本项目固定的 AISBench 提交已包含 2026-11-04 新增的多并发档扫描：一次命令按列表展开各档，默认串行，普通 runner 在相邻任务间冷却 5 秒，并输出批量 CSV/HTML。不同输入输出长度、数据类型和压力模式的任意用例清单，可以使用本项目的顺序调度脚本，复用已启动的观测链路。
@@ -9,7 +11,7 @@
 | 需求 | 使用方式 |
 | --- | --- |
 | 同一个输入输出配置，依次扫描并发 1/8/16/32 | 原生多档扫描，栈 JSON 的 concurrency_levels / requests_per_level |
-| 依次执行不同长度、不同 QPS、string/tokenid、perf/pressure | `run_aisbench_suite.py` + suite JSON |
+| 依次执行不同长度、不同 QPS、string/tokenid、perf/pressure | `llm-bench up --cases` + suite JSON |
 | 已熟悉 AISBench，组合多个模型和数据集 | 原生 Python models/datasets + model_dataset_combinations；显式 max_num_workers=1 |
 
 “任务串行”与“请求并发”是两个维度：同时只有一个测试例运行，但该测试例可以有 32 个在途请求。不要通过提高 max_num_workers 加速针对同一被测服务的性能对比，否则不同用例会互相抢占服务资源。
@@ -40,7 +42,7 @@
 3. 启动：
 
 ```bash
-python3 scripts/benchmark_stack.py up --config /absolute/path/site-sweep.json
+llm-bench up --config /absolute/path/site-sweep.json
 ```
 
 实际按 `(并发1,64条) → (并发8,128条) → (并发16,256条) → (并发32,512条)` 执行；不是两个数组的笛卡尔积。此时 `concurrency` 被各档覆盖。request_count 是每档合成样本池大小，必须不小于最大的 requests_per_level；每档预热独立，不计入正式条数。列表长度一致、并发档唯一，当前入口只允许 perf 模式，组合不超过 200。
@@ -68,16 +70,15 @@ ais_bench /config/aisbench.py --mode perf --max-num-workers 1 \
 
 ## 方式二：预设异构用例清单，严格按数组顺序运行
 
-本仓库提供 `scripts/run_aisbench_suite.py`。它按 cases 数组顺序启动独立 AISBench 容器，等待上一例退出并检查报告后再启动下一例；观测容器保持运行。每例保存配置快照、客户端日志、独立报告和起止时间，便于对照 Grafana/Loki。
+本仓库提供 `llm-bench bench suite`。它按 cases 数组顺序启动独立 AISBench 容器，等待上一例退出并检查报告后再启动下一例；观测容器保持运行。每例保存配置快照、客户端日志、独立报告和起止时间，便于对照 Grafana/Loki。
 
 ### Mac 可直接运行的示例
 
 ```bash
-# 若此前已有栈，无需再次 up；确保其单次压测已结束
-python3 scripts/benchmark_stack.py up --config configs/stacks/mac-simulation.json --no-benchmark
-python3 scripts/run_aisbench_suite.py \
-  --config configs/stacks/mac-simulation.json \
-  --suite configs/suites/mac-smoke.json
+llm-bench up --profile mac-simulation --cases configs/suites/mac-smoke.json
+
+# 同一套观测栈上再次执行清单
+llm-bench bench suite --cases configs/suites/mac-smoke.json
 ```
 
 示例依次运行 string 32/16、tokenid 64/8、3 秒持续压力三个用例。所有客户端和观测组件为实际容器，仅推理响应/GPU 指标由 fixture 提供。
@@ -108,10 +109,8 @@ python3 scripts/run_aisbench_suite.py \
 ```
 
 ```bash
-python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
-python3 scripts/run_aisbench_suite.py \
-  --config /absolute/path/site.json --suite /absolute/path/suite.json
-python3 scripts/benchmark_stack.py down --config /absolute/path/site.json
+llm-bench up --config /absolute/path/site.json --cases /absolute/path/suite.json
+llm-bench down --config /absolute/path/site.json
 ```
 
 覆盖规则与运行语义：

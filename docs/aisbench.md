@@ -1,5 +1,7 @@
 # AISBench 合成数据与推理服务压测
 
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
 客户端使用 [AISBench/benchmark](https://github.com/AISBench/benchmark)，本项目固定源码提交 [`e330dc134c33f47671926144d9c143b554bc71cc`](https://github.com/AISBench/benchmark/tree/e330dc134c33f47671926144d9c143b554bc71cc)（2026-11-05）。容器内为 Python 3.11 和 CPU PyTorch，不占用被测 GPU。容器记录完整依赖清单 `/opt/aisbench/dependencies.txt`；主机只需 Python 标准库和容器运行时。
 
 AISBench 内置后端名称仍包含 `vllm_api_*`，这是它的 OpenAI 兼容协议实现类，不是 `vllm bench serve` 命令，也不会启动 vLLM 服务。项目默认为流式 `/v1/completions`，可用 `inference.api: chat` 选择 `/v1/chat/completions`，对 SGLang 等兼容服务需确认请求字段与 usage 响应。
@@ -68,7 +70,7 @@ AISBench string 原生支持 uniform、gaussian、zipf，可在生成的 Python 
 推荐使用完整栈入口，自动等待观测链路和服务就绪：
 
 ```bash
-python3 scripts/benchmark_stack.py up --config /path/to/site.json
+llm-bench up --config /path/to/site.json
 ```
 
 如果观测链路已经由其他系统管理，可直接用同一 AISBench 镜像与 Python 配置（路径按实际生成目录修改）：

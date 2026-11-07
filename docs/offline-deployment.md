@@ -1,5 +1,7 @@
 # 离线环境准备与部署
 
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
 推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
 
 当前正式启动器支持顶层 `"offline": true`：启动前一次检查所有选用镜像及架构；缺失时直接列出清单并退出，不创建容器或网络；禁止构建、源码下载和自动拉取，并关闭已知组件外联功能。默认 offline=false，兼容原有在线流程。
@@ -10,7 +12,7 @@ Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用
 
 | 类别 | 准备内容 | 说明 |
 | --- | --- | --- |
-| 工程 | 固定 Git 提交的源码包，包含 scripts、configs、containers、docs、tests | 启动器依赖仓库相对结构；不要只复制一个 Python 文件 |
+| 工程 | 固定 Git 提交的源码包，包含 bin、scripts、configs、containers、docs、tests | 启动器依赖仓库相对结构；不要只复制一个 Python 文件 |
 | 主机运行工具 | Python 3.9+、Docker Engine/CLI 及依赖安装包；可选 Git、tar、校验工具 | 主机脚本只用 Python 标准库；Compose 不是必需项；用源码压缩包时运行不要求 Git |
 | 项目镜像 | AISBench 与 toolbox 的 **linux/amd64** 完整镜像 | 生产服务器都是 x86，不要带 Mac 的 arm64 镜像冒充 amd64 |
 | 观测镜像 | Prometheus、Grafana、Loki、Alloy、node_exporter | logrotate/就绪探测已包含在 toolbox 中 |
@@ -185,20 +187,20 @@ tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
 从解包后的仓库根目录执行：
 
 ```bash
-python3 scripts/benchmark_stack.py check-images --config /absolute/path/site.json
-python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
-python3 scripts/slo_search.py --config /absolute/path/site.json \
-  --search /absolute/path/search.json
-# 或使用 run_aisbench_suite.py 执行预设清单
+llm-bench images check --config /absolute/path/site.json
+llm-bench up --config /absolute/path/site.json --no-benchmark
+llm-bench bench slo --config /absolute/path/site.json \
+  --policy /absolute/path/search.json
+# 或使用 llm-bench bench suite --cases cases.json 执行预设清单
 ```
 
-site.json 必须包含顶层 `"offline": true`。`check-images` 检查全部选用镜像，`up` 自动复查；`plan` 仅渲染计划，不检查镜像。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
+site.json 必须包含顶层 `"offline": true`。`images check` 检查全部选用镜像，`up` 自动复查；`plan` 仅渲染计划，不检查镜像。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
 
 ## 5. 正式离线策略与错误处理
 
 | 环节 | offline=true 的行为 |
 | --- | --- |
-| check-images / up | 一次检查全部所需镜像，汇总缺失、架构错误和检查故障；up 在创建容器/网络前完成检查 |
+| images check / up | 一次检查全部所需镜像，汇总缺失、架构错误和检查故障；up 在创建容器/网络前完成检查 |
 | build | 直接拒绝，包括缓存已有源码的情况；不会执行 apt/pip 或下载源码 |
 | up 缺少 toolbox/AISBench/公共镜像 | 列出缺失项和使用组件，不自动构建或拉取 |
 | run/create | 全部带 --pull=never，防止预检查后镜像被删除而意外补拉 |
@@ -220,7 +222,7 @@ Missing images (2):
 Import matching images into the configured runtime/namespace and retry.
 ```
 
-补齐并导入清单中的镜像后，重新运行 check-images 和 up 即可。只启动观测链路时可为两条命令加 `--no-benchmark`，此时不要求 AISBench 镜像；后续压测仍必须准备它。检查失败可能留下生成配置目录，但不会产生运行 state.json 或本次容器/网络，不需要 down。
+补齐并导入清单中的镜像后，重新运行 images check 和 up 即可。只启动观测链路时可为两条命令加 `--no-benchmark`，此时不要求 AISBench 镜像；后续压测仍必须准备它。检查失败可能留下生成配置目录，但不会产生运行 state.json 或本次容器/网络，不需要 down。
 
 [Grafana 离线覆盖配置](../configs/common/grafana/offline.ini)基于固定 12.0.2 镜像。`check_for_plugin_updates=false` 同时关闭动态 Angular 检测规则更新；`public_key_retrieval_disabled=true` 使用内置公钥，**不关闭插件签名校验**。当前面板使用内置组件，不要求额外插件。更换组件版本或添加插件时需重新核对其离线兼容性。[Grafana 配置说明](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)、[固定版本 Angular 更新条件](https://github.com/grafana/grafana/blob/v12.0.2/pkg/services/pluginsintegration/angulardetectorsprovider/dynamic.go)、[Alloy run 参数](https://grafana.com/docs/alloy/latest/reference/cli/run/)。
 

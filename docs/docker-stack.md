@@ -1,5 +1,7 @@
 # 配置驱动的容器压测链路
 
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
 本入口以 AISBench 为唯一发压客户端，启动已有推理服务之外的观测组件。生产模式不会启动或改动被测推理服务；`simulation: true` 才创建明确标识的测试 fixture，以便 Mac 无 GPU 验证。
 
 无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置，并在栈 JSON 中设置 `"offline": true`。未设置时默认保持在线行为。
@@ -9,21 +11,21 @@
 前提：Docker Desktop 已运行，主机有 Python 3.9+，能够拉取镜像及 AISBench 官方源码/依赖。无需 Compose。首次运行会构建缺失的工具与 AISBench 镜像，耗时取决于网络；后续复用镜像。
 
 ```bash
-python3 scripts/benchmark_stack.py up --config configs/stacks/mac-simulation.json
+llm-bench up --config configs/stacks/mac-simulation.json
 ```
 
 其余操作：
 
 ```bash
 # 只渲染配置和打印容器计划，不启动容器
-python3 scripts/benchmark_stack.py plan --config configs/stacks/mac-simulation.json
+llm-bench plan --config configs/stacks/mac-simulation.json
 # 提前构建客户端/辅助镜像（源码归档有固定提交与 SHA-256）
-python3 scripts/benchmark_stack.py build --config configs/stacks/mac-simulation.json
+llm-bench images build --config configs/stacks/mac-simulation.json
 # 只启动观测链路
-python3 scripts/benchmark_stack.py up --config configs/stacks/mac-simulation.json --no-benchmark
-python3 scripts/benchmark_stack.py status --config configs/stacks/mac-simulation.json
+llm-bench up --config configs/stacks/mac-simulation.json --no-benchmark
+llm-bench status --config configs/stacks/mac-simulation.json
 # 删除本项目创建的容器和网络，保留数据/结果/日志
-python3 scripts/benchmark_stack.py down --config configs/stacks/mac-simulation.json
+llm-bench down --config configs/stacks/mac-simulation.json
 ```
 
 完整启动使用新的项目状态；已有状态时会拒绝重复启动。更改配置后先 `down`，再执行 `up`。失败时保留容器及日志用于诊断，不继续发压。不要在进程运行中修改配置或执行 down。
@@ -34,13 +36,13 @@ python3 scripts/benchmark_stack.py down --config configs/stacks/mac-simulation.j
 
 ```bash
 # 检查全部选用镜像的本地存在性和架构，不构建/拉取、不创建容器或网络
-python3 scripts/benchmark_stack.py check-images --config /path/to/site.json
-python3 scripts/benchmark_stack.py up --config /path/to/site.json
+llm-bench images check --config /path/to/site.json
+llm-bench up --config /path/to/site.json
 ```
 
-`up` 在创建网络/容器前自动执行相同检查，一次列出所有缺失镜像、组件用途和架构错误。相同镜像只检查一次；只检查实际选用厂商的本地 Exporter，simulation/external 不要求本地硬件 Exporter 镜像。`check-images --no-benchmark` 与 `up --no-benchmark` 只要求观测链路镜像；以后运行客户端时仍需 AISBench 镜像。
+`up` 在创建网络/容器前自动执行相同检查，一次列出所有缺失镜像、组件用途和架构错误。相同镜像只检查一次；只检查实际选用厂商的本地 Exporter，simulation/external 不要求本地硬件 Exporter 镜像。`images check --no-benchmark` 与 `up --no-benchmark` 只要求观测链路镜像；以后运行客户端时仍需 AISBench 镜像。
 
-离线时 build 命令直接拒绝，所有 run/create（包括就绪探测、顺序压测和 SLO 搜索）使用 `--pull=never`。镜像在预检查后被删除也会报错，不会自动拉取。`plan` 只渲染计划，不代替 check-images。
+离线时 build 命令直接拒绝，所有 run/create（包括就绪探测、顺序压测和 SLO 搜索）使用 `--pull=never`。镜像在预检查后被删除也会报错，不会自动拉取。`plan` 只渲染计划，不代替 images check。
 
 Grafana 自动合并 [离线覆盖配置](../configs/common/grafana/offline.ini)，关闭统计、更新检查、插件预安装/在线管理、签名公钥下载和新闻源；签名校验仍保留。Alloy 关闭统计上报，Loki 保持统计禁用，AISBench 显式使用本地 Hugging Face 数据/模型并禁用其 telemetry。
 
@@ -49,9 +51,9 @@ Grafana 自动合并 [离线覆盖配置](../configs/common/grafana/offline.ini)
 Mac 示例（需已准备 arm64 镜像）：
 
 ```bash
-python3 scripts/benchmark_stack.py check-images --config configs/stacks/mac-offline.json
-python3 scripts/benchmark_stack.py up --config configs/stacks/mac-offline.json
-python3 scripts/benchmark_stack.py down --config configs/stacks/mac-offline.json
+llm-bench images check --config configs/stacks/mac-offline.json
+llm-bench up --config configs/stacks/mac-offline.json
+llm-bench down --config configs/stacks/mac-offline.json
 ```
 
 要在独立内部网络中自动验证缺镜像、两种厂商模拟指标、顺序用例及 SLO 搜索，可执行 `python3 docs/examples/verify_offline_mac.py`，见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。
@@ -76,8 +78,8 @@ python3 scripts/benchmark_stack.py down --config configs/stacks/mac-offline.json
 复制 [nvidia-single.json](../configs/stacks/nvidia-single.json)，填写推理服务地址、模型名称和存储路径。实际发压入口是 `inference.base_url`（服务根 URL，不含 `/v1/completions`），指标入口单独填写。服务必须可从 Docker 网络访问；不要把容器内 `localhost` 当成宿主机。可使用宿主机实际局域网 IP。
 
 ```bash
-python3 scripts/benchmark_stack.py plan --config /path/to/site.json
-python3 scripts/benchmark_stack.py up --config /path/to/site.json
+llm-bench plan --config /path/to/site.json
+llm-bench up --config /path/to/site.json
 ```
 
 主机需已装 NVIDIA 驱动及 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)。`gpu.vendor: auto` 通过本机可用的设备工具识别厂商；不能唯一识别时会停止，绝不默认当成 NVIDIA。远程指标端点或两厂商工具同时可用时显式指定 `nvidia` / `hygon`。GPU Exporter 的镜像版本在 `images` 中固定，可按目标驱动兼容性更换。

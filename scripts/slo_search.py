@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import re
 import signal
+import sys
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -210,14 +211,9 @@ def search(policy, measure, checkpoint=lambda _: None, clock=time.monotonic, sle
     return result
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, required=True)
-    parser.add_argument('--search', type=Path, required=True, help='SLO search policy JSON')
-    args = parser.parse_args()
+def run_search(cfg, raw_policy):
     try:
-        cfg = load_config(args.config)
-        policy = validate_policy(json.loads(args.search.read_text()), cfg)
+        policy = validate_policy(raw_policy, cfg)
         run = Path(cfg['storage']['root']) / 'data/results/slo-search' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         run.mkdir(parents=True)
         write_json(run / 'stack.json', cfg)
@@ -263,7 +259,19 @@ def main():
             failed.update(status='stopped', stop_reason=reason, error=str(exc),
                           recommended_concurrency=None, maximum_verified=False, finished_at=utc_now())
             write_json(output, failed)
-        parser.exit(130 if isinstance(exc, KeyboardInterrupt) else (1 if reason == 'time_budget' else 2), f'ERROR: {exc}\n')
+        print(f'ERROR: {exc}', file=sys.stderr)
+        return 130 if isinstance(exc, KeyboardInterrupt) else (1 if reason == 'time_budget' else 2)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--search', type=Path, required=True, help='SLO search policy JSON')
+    args = parser.parse_args()
+    try:
+        return run_search(load_config(args.config), json.loads(args.search.read_text()))
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        parser.exit(2, f'ERROR: {exc}\n')
 
 
 if __name__ == '__main__':

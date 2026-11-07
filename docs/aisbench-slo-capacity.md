@@ -1,6 +1,8 @@
 # AISBench：自动筛选满足 SLO 的推理服务容量
 
-需要根据每轮结果自动调整并发时，使用新增的 [SLO 自适应搜索功能](aisbench-auto-slo.md)和 `scripts/slo_search.py`。本页保留固定候选扫描、离线报告筛选和 SLO 业务口径说明；两种入口均不调整被测推理服务。
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
+需要根据每轮结果自动调整并发时，使用新增的 [SLO 自适应搜索功能](aisbench-auto-slo.md)和 `llm-bench bench slo`。本页保留固定候选扫描、离线报告筛选和 SLO 业务口径说明；两种入口均不调整被测推理服务。
 
 ## 1. 先明确搜索目标与版本能力
 
@@ -11,9 +13,9 @@ SLO（服务等级目标）是业务给定的约束，例如 P99 TTFT ≤ 1000 m
 | 能力 | 当前可用方式 |
 | --- | --- |
 | 顺序扫描多个并发档 | AISBench 原生 `--batch-size` / `--num-prompts` 配对列表 |
-| 不同长度、并发、QPS 的测试例顺序执行 | 本工程 `run_aisbench_suite.py` |
+| 不同长度、并发、QPS 的测试例顺序执行 | 本工程 `llm-bench bench suite` |
 | 自动按业务时延阈值筛选已测档位 | 本手册配套的只读示例 `docs/examples/select_aisbench_slo.py` |
-| 根据上一轮 SLO 结果自动调整并发 | 本工程 `slo_search.py`，支持二分和更高候选验证；上游 AISBench CLI 没有该闭环 |
+| 根据上一轮 SLO 结果自动调整并发 | 本工程 `llm-bench bench slo`，支持二分和更高候选验证；上游 AISBench CLI 没有该闭环 |
 | 自动修改服务参数、重启服务并寻优 | 不在当前工程执行范围；与客户端容量扫描是不同任务 |
 
 不要把 AISBench 的 `--search` 当作 SLO 搜索：它只查找模型/数据集/summarizer 的配置路径。本手册中的阈值字段也是本工程示例策略文件的字段，不是 AISBench 原生 CLI 参数。
@@ -46,7 +48,7 @@ SLO（服务等级目标）是业务给定的约束，例如 P99 TTFT ≤ 1000 m
 5. 只启动观测组件，避免先发送默认 workload：
 
 ```bash
-python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
+llm-bench up --config /absolute/path/site.json --no-benchmark
 ```
 
 已有同一配置的观测栈且状态 ready/complete 时直接复用。不能同时运行其他压测。SGLang 服务应启用指标；PD 场景把 inference.base_url 指向对外路由入口，分别采集 prefill/decode 角色，不把不同角色的重复请求计数直接相加。
@@ -94,9 +96,9 @@ for name, value in [('policy.json', policy), ('suite.json', suite)]:
 ## 5. 执行 AISBench 扫描
 
 ```bash
-python3 scripts/run_aisbench_suite.py \
+llm-bench bench suite \
   --config /absolute/path/site.json \
-  --suite generated/slo-capacity/suite.json
+  --cases generated/slo-capacity/suite.json
 ```
 
 每例顺序运行并保留独立配置、client.log、性能 JSON/CSV/明细。脚本最后打印本次 `Suite report: .../suite-results.json`，记录这个**精确路径**；后续筛选不要使用不受控的 `latest` 或混入上次实验数据。

@@ -1,8 +1,10 @@
 # 基于 SLO 自动搜索最大并发
 
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
 离线运行时，在启动栈的 JSON 中设置 `"offline": true`，后续使用同一配置。客户端和就绪探测自动禁止拉取，缺少 AISBench/toolbox 会在发压前列出清单；完整准备步骤见 [离线部署手册](offline-deployment.md)。
 
-`scripts/slo_search.py` 在每轮 AISBench 完成后读取真实报告，检查 SLO，自动选择下一档并发。它复用已启动的观测栈与同一个被测服务，支持搜索范围、重复次数、轮数/时间预算和单次压测超时。AISBench 仍是唯一发压客户端；搜索控制由本工程实现，不是上游 AISBench 新增的 CLI 参数。
+`llm-bench bench slo` 在每轮 AISBench 完成后读取真实报告，检查 SLO，自动选择下一档并发。它复用已启动的观测栈与同一个被测服务，支持搜索范围、重复次数、轮数/时间预算和单次压测超时。AISBench 仍是唯一发压客户端；搜索控制由本工程实现，不是上游 AISBench 新增的 CLI 参数。
 
 ## 快速开始：Mac 实测流程
 
@@ -14,15 +16,15 @@ docker build --platform linux/arm64 -t llm-benchmark-toolbox:slo-arm64 \
   -f containers/toolbox/Dockerfile .
 
 # 独立于原 mac-simulation 栈的名称、数据目录与端口
-python3 scripts/benchmark_stack.py up \
+llm-bench up \
   --config configs/stacks/mac-slo-search.json --no-benchmark
 
-python3 scripts/slo_search.py \
+llm-bench bench slo \
   --config configs/stacks/mac-slo-search.json \
-  --search configs/search/mac-slo.json
+  --policy configs/search/mac-slo.json
 ```
 
-`up --no-benchmark` 不构建 AISBench 镜像。首次没有该镜像时，先执行 `python3 scripts/benchmark_stack.py build --config configs/stacks/mac-slo-search.json`。搜索器会检查镜像存在及架构，不在搜索预算中下载/构建镜像。
+`up --no-benchmark` 不构建 AISBench 镜像。首次没有该镜像时，先执行 `llm-bench images build --config configs/stacks/mac-slo-search.json`。搜索器会检查镜像存在及架构，不在搜索预算中下载/构建镜像。
 
 模拟服务在同时处理请求数超过 2 时，增加 400 ms 响应延迟。搜索范围 1–6，每个候选实际运行两次 AISBench，TTFT P99 阈值为 200 ms。预期最大达标并发为 2；结果必须来自实际压测报告，模拟服务不会给搜索器提供答案。Mac 调度若异常拥塞，也可能触发停止/不达标，不能硬编码期望结果或跳过校验。
 
@@ -31,7 +33,7 @@ python3 scripts/slo_search.py \
 查看 Grafana：`http://localhost:33002`。完成后可执行：
 
 ```bash
-python3 scripts/benchmark_stack.py down --config configs/stacks/mac-slo-search.json
+llm-bench down --config configs/stacks/mac-slo-search.json
 ```
 
 保留 data/results/slo-search 的原始结果。模拟服务只验证控制流程，不代表真实 GPU 的容量或曲线。
@@ -45,8 +47,8 @@ python3 scripts/benchmark_stack.py down --config configs/stacks/mac-slo-search.j
 5. 复制并修改 `configs/search/slo-capacity.json` 中的业务阈值及预算，然后执行：
 
 ```bash
-python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
-python3 scripts/slo_search.py --config /absolute/path/site.json --search /absolute/path/search.json
+llm-bench up --config /absolute/path/site.json --no-benchmark
+llm-bench bench slo --config /absolute/path/site.json --policy /absolute/path/search.json
 ```
 
 如果栈已以相同配置启动且为 ready/complete，直接执行搜索即可。不要并行运行其他客户端；搜索与本工程 suite 共用 `storage.root/suite.lock`，down 在锁存在时会拒绝清理组件。直接从外部启动的压测客户端无法由此锁隔离，需要实验环境保证独占测试窗口。

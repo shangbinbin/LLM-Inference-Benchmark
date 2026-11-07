@@ -2,6 +2,8 @@
 """Run heterogeneous AISBench cases strictly in JSON order on an existing stack."""
 import argparse
 import copy
+from dataclasses import dataclass
+import math
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -10,53 +12,72 @@ import subprocess
 import time
 
 from benchmark_stack import (load_config, ais_config, Stack, LABEL, write_json,
-                             runtime_command, aisbench_environment, check_local_images)
+                             runtime_command, aisbench_environment, check_local_images, validate_config)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, required=True)
-    parser.add_argument('--suite', type=Path, required=True)
-    args = parser.parse_args()
-    cfg = load_config(args.config)
-    root = Path(cfg['storage']['root'])
-    state = json.loads((root/'state.json').read_text())
-    if state['project'] != cfg['project'] or state['status'] not in ('ready', 'complete'):
-        parser.error('Start the matching stack with up --no-benchmark first, or wait for its benchmark to complete')
-    directory = Path(state['config_dir'])
-    manifest = json.loads((directory/'manifest.json').read_text())
-    if manifest['stack'] != cfg:
-        parser.error('Config differs from the running stack; use the original config')
-    stack = Stack(cfg, directory, manifest['vendor'])
-    suite = json.loads(args.suite.read_text())
+@dataclass
+class Suite:
+    cases: list
+    cooldown: float
+    stop_on_failure: bool
+
+
+def prepare_suite(cfg, suite):
     cases = suite['cases']
-    names = [c['name'] for c in cases]
-    if not cases or len(set(names)) != len(names) or any(not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', n) for n in names):
-        parser.error('Case names must be unique short lowercase identifiers')
+    if not isinstance(cases, list) or not cases:
+        raise ValueError('cases must be a nonempty array')
     cooldown = suite.get('cooldown_seconds', 5)
-    if not isinstance(cooldown, (float, int)) or cooldown < 0:
-        parser.error('cooldown_seconds must be nonnegative')
-    run = root/'data/results/suites'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-    run.mkdir(parents=True)
-    # Validate every case before sending any request. Preserve common storage and target.
+    if type(cooldown) not in (int, float) or not math.isfinite(cooldown) or cooldown < 0:
+        raise ValueError('cooldown_seconds must be finite and nonnegative')
+    stop = suite.get('stop_on_failure', True)
+    if type(stop) is not bool:
+        raise ValueError('stop_on_failure must be a JSON boolean')
     prepared = []
+    names = set()
     for case in cases:
-        case_cfg = copy.deepcopy(cfg)
-        unknown = set(case.get('benchmark', {})) - {
+        name = case['name']
+        if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', name) or name in names:
+            raise ValueError('Case names must be unique short lowercase identifiers')
+        names.add(name)
+        overrides = case.get('benchmark', {})
+        if not isinstance(overrides, dict):
+            raise ValueError(f'{name}: benchmark must be an object')
+        unknown = set(overrides) - {
             'dataset_type','input_length','output_length','request_count','concurrency',
             'request_rate','warmups','mode','generation_kwargs','retry','prefix_length','pressure_seconds'}
         if unknown:
-            parser.error('Unsupported per-case fields: '+str(sorted(unknown)))
+            raise ValueError(f'{name}: unsupported per-case fields: {sorted(unknown)}')
+        case_cfg = copy.deepcopy(cfg)
         case_cfg['benchmark'].pop('concurrency_levels', None)
         case_cfg['benchmark'].pop('requests_per_level', None)
-        case_cfg['benchmark'].update(case.get('benchmark', {}))
-        folder = run/case['name']
+        case_cfg['benchmark'].update(overrides)
+        try:
+            prepared.append((name, validate_config(case_cfg)))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f'{name}: {exc}') from exc
+    return Suite(prepared, cooldown, stop)
+
+
+def run_suite(cfg, suite):
+    root = Path(cfg['storage']['root'])
+    state = json.loads((root/'state.json').read_text())
+    if state['project'] != cfg['project'] or state['status'] not in ('ready', 'complete'):
+        raise ValueError('Start the matching stack with up --no-benchmark first, or wait for its benchmark to complete')
+    directory = Path(state['config_dir'])
+    manifest = json.loads((directory/'manifest.json').read_text())
+    if manifest['stack'] != cfg:
+        raise ValueError('Config differs from the running stack; use the original config')
+    stack = Stack(cfg, directory, manifest['vendor'])
+    run = root/'data/results/suites'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    run.mkdir(parents=True)
+    prepared = []
+    for name, case_cfg in suite.cases:
+        folder = run/name
         folder.mkdir()
         write_json(folder/'stack.json', case_cfg)
-        case_cfg = load_config(folder/'stack.json')
         (folder/'aisbench.py').write_text(ais_config(case_cfg))
         (folder/'results').mkdir()
-        prepared.append((case['name'], case_cfg, folder))
+        prepared.append((name, case_cfg, folder))
     lock = root/'suite.lock'
     summary = []
     with lock.open('x') as handle:
@@ -71,7 +92,7 @@ def main():
             stack.check_image(cfg['images']['aisbench'])
         for index, (name, case_cfg, folder) in enumerate(prepared):
             if index:
-                time.sleep(cooldown)
+                time.sleep(suite.cooldown)
             for container in state['containers']:
                 info = stack.inspect(container)
                 if container.endswith('-aisbench'):
@@ -106,13 +127,26 @@ def main():
             summary.append(entry)
             write_json(run/'suite-results.json',summary)
             print(('PASS ' if passed else 'FAIL ')+name, flush=True)
-            if not passed and suite.get('stop_on_failure',True):
+            if not passed and suite.stop_on_failure:
                 break
     finally:
         lock.unlink()
     print('Suite report: '+str(run/'suite-results.json'))
-    if len(summary)!=len(cases) or not all(c['passed'] for c in summary):
-        raise SystemExit(1)
+    return 0 if len(summary)==len(prepared) and all(c['passed'] for c in summary) else 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--suite', type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        cfg = load_config(args.config)
+        code = run_suite(cfg, prepare_suite(cfg, json.loads(args.suite.read_text())))
+    except (OSError, KeyError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        parser.exit(1, f'ERROR: {exc}\n')
+    if code:
+        raise SystemExit(code)
 
 
 if __name__=='__main__':

@@ -4,21 +4,21 @@
 
 ## 快速开始
 
-Docker Desktop 已启动时，在 Mac 上一键运行无 GPU 模拟链路：
+在仓库根目录将 CLI 加入当前 shell 的 PATH。Apple Silicon Mac 上启动 Docker Desktop 后，以下命令启动观测栈，再依次执行仓库自带的三个 AISBench 用例。
 
 ```bash
-python3 scripts/benchmark_stack.py up --config configs/stacks/mac-simulation.json
+export PATH="$PWD/bin:$PATH"
+llm-bench up --profile mac-simulation --cases configs/suites/mac-smoke.json
+llm-bench status
+llm-bench bench run --concurrency 2 --requests 8
+llm-bench down
 ```
 
-真实运行 AISBench 与观测组件，以测试端点模拟推理响应和 GPU 指标。结果保存在 `generated/mac-smoke/data/results/`；Grafana 打开 `http://localhost:33000`。生产 NVIDIA 单机从 `configs/stacks/nvidia-single.json` 复制并填写地址、模型及存储路径。
-
-```bash
-python3 scripts/benchmark_stack.py down --config configs/stacks/mac-simulation.json
-python3 -m unittest discover -s tests -v
-```
+结果位于 `generated/mac-smoke/data/results/suites/`，Grafana 入口为 `http://localhost:33000`。已有环境可直接执行 `llm-bench up --config site.json --cases cases.json`。Linux 单机支持直接指定服务地址、模型、tokenizer 和存储路径；生产镜像为 linux/amd64。
 
 | 入口 | 内容 |
 | --- | --- |
+| [CLI 使用手册](docs/cli.md) | 快速上手、参数优先级、顺序用例、复用观测栈、结果及排障 |
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |

@@ -76,7 +76,10 @@ def check_local_images(cfg, images, call):
 
 
 def load_config(path):
-    cfg = json.loads(path.read_text())
+    return validate_config(json.loads(path.read_text()))
+
+
+def validate_config(cfg):
     if cfg.get('schema_version') != 1:
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
@@ -404,19 +407,20 @@ class Stack:
         self.call('run','--rm','--platform',self.cfg['platform'],'--network',self.network,self.cfg['images']['toolbox'],
                   'probe',url,'--timeout',str(self.cfg.get('startup_timeout',120)),'--contains',contains)
 
-    def up(self, run_benchmark=True):
+    def up(self, run_benchmark=True, *, needs_client=False):
+        needs_client = run_benchmark or needs_client
         if self.statefile.exists():
             raise ValueError('Stack state exists; use status/down before starting a new run')
         self.call('info',capture=True)
         if self.cfg.get('offline', False):
-            self.preflight_images(run_benchmark)
+            self.preflight_images(needs_client)
         else:
-            for name in (('toolbox', 'aisbench') if run_benchmark else ('toolbox',)):
+            for name in (('toolbox', 'aisbench') if needs_client else ('toolbox',)):
                 if self.call('image', 'inspect', self.cfg['images'][name], capture=True, check=False).returncode:
                     self.build_one(name)
         if not self.cfg.get('simulation') and self.cfg['gpu']['deployment']=='local' and platform.system()!='Linux':
             raise ValueError('Real local GPU exporters require Linux; use simulation on macOS')
-        for name in (('toolbox', 'aisbench') if run_benchmark else ('toolbox',)):
+        for name in (('toolbox', 'aisbench') if needs_client else ('toolbox',)):
             self.check_image(self.cfg['images'][name])
         if self.inspect(self.network):
             raise ValueError('Name collision; choose a different project')
