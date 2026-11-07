@@ -2,7 +2,7 @@
 
 本入口以 AISBench 为唯一发压客户端，启动已有推理服务之外的观测组件。生产模式不会启动或改动被测推理服务；`simulation: true` 才创建明确标识的测试 fixture，以便 Mac 无 GPU 验证。
 
-无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置；默认启动器仍可能在缺镜像时尝试构建或拉取。
+无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置，并在栈 JSON 中设置 `"offline": true`。未设置时默认保持在线行为。
 
 ## Mac 一键模拟
 
@@ -28,12 +28,40 @@ python3 scripts/benchmark_stack.py down --config configs/stacks/mac-simulation.j
 
 完整启动使用新的项目状态；已有状态时会拒绝重复启动。更改配置后先 `down`，再执行 `up`。失败时保留容器及日志用于诊断，不继续发压。不要在进程运行中修改配置或执行 down。
 
+## 正式离线模式
+
+在 site.json 顶层设置 `"offline": true`，之后所有命令使用同一个配置文件。该字段也随配置传递到顺序用例和 SLO 搜索，无需每次重新加命令行开关。
+
+```bash
+# 检查全部选用镜像的本地存在性和架构，不构建/拉取、不创建容器或网络
+python3 scripts/benchmark_stack.py check-images --config /path/to/site.json
+python3 scripts/benchmark_stack.py up --config /path/to/site.json
+```
+
+`up` 在创建网络/容器前自动执行相同检查，一次列出所有缺失镜像、组件用途和架构错误。相同镜像只检查一次；只检查实际选用厂商的本地 Exporter，simulation/external 不要求本地硬件 Exporter 镜像。`check-images --no-benchmark` 与 `up --no-benchmark` 只要求观测链路镜像；以后运行客户端时仍需 AISBench 镜像。
+
+离线时 build 命令直接拒绝，所有 run/create（包括就绪探测、顺序压测和 SLO 搜索）使用 `--pull=never`。镜像在预检查后被删除也会报错，不会自动拉取。`plan` 只渲染计划，不代替 check-images。
+
+Grafana 自动合并 [离线覆盖配置](../configs/common/grafana/offline.ini)，关闭统计、更新检查、插件预安装/在线管理、签名公钥下载和新闻源；签名校验仍保留。Alloy 关闭统计上报，Loki 保持统计禁用，AISBench 显式使用本地 Hugging Face 数据/模型并禁用其 telemetry。
+
+离线模式保留到推理服务和 Exporter 的内网通信，不自动把生产 Docker 网络改成 internal，也不是主机防火墙。新增插件、远程数据源或更换组件版本时需重新验证其联网行为。已有栈不能原地切换配置：用旧配置 down 后，再修改 offline 并 up，持久化数据保留。
+
+Mac 示例（需已准备 arm64 镜像）：
+
+```bash
+python3 scripts/benchmark_stack.py check-images --config configs/stacks/mac-offline.json
+python3 scripts/benchmark_stack.py up --config configs/stacks/mac-offline.json
+python3 scripts/benchmark_stack.py down --config configs/stacks/mac-offline.json
+```
+
+要在独立内部网络中自动验证缺镜像、两种厂商模拟指标、顺序用例及 SLO 搜索，可执行 `python3 docs/examples/verify_offline_mac.py`，见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。
+
 默认本机入口：Grafana `http://localhost:33000`，Prometheus `http://localhost:39090`，Loki `http://localhost:33100`。端口可在配置中修改，默认仅绑定回环地址。Grafana 初始账号遵循镜像默认值 admin/admin，首次登录修改密码；数据目录会持久化此修改。
 
 ## 启动依赖
 
 ```text
-配置校验/渲染 → 构建缺失的项目镜像 → 创建隔离网络
+配置校验/渲染 → 离线：全量本地镜像检查；在线：构建缺失的项目镜像 → 创建容器网络
 → 模拟端点（仅模拟）或本机 GPU Exporter（仅真实 local）
 → node_exporter → Loki /ready
 → logrotate → Alloy /-/ready → Prometheus /-/ready → Grafana /api/health
@@ -63,6 +91,7 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `schema_version` | 当前为 1 |
 | `project` | 独立容器/网络名称前缀；并行栈必须不同 |
 | `runtime` | CLI 参数数组，默认 `["docker"]` |
+| `offline` | 可选 JSON 布尔值，默认 false；true 时完整本地镜像预检查、禁构建/拉取，并关闭组件已知外联功能 |
 | `platform` | 生产固定 linux/amd64；Apple Silicon Mac 模拟 linux/arm64，启动前校验缓存镜像架构 |
 | `simulation` | 仅测试时 true；模拟数值不能作为真实性能数据 |
 | `storage.root` | 生成配置、组件数据、运行状态、AISBench 输出所在目录 |

@@ -1,0 +1,199 @@
+{
+  "platform": "linux/arm64",
+  "simulation": true,
+  "offline": true,
+  "run_id": "ac95ea40",
+  "started_at_utc": "2026-11-07T00:52:21.472032+00:00",
+  "images": [
+    {
+      "image": "llm-benchmark-toolbox:local-arm64",
+      "id": "sha256:9922c7b3d6ffdb953ae6c614196e45df3a996787a7d46d1f4cad2a39e3d252d5",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "llm-benchmark-aisbench:e330dc1-arm64",
+      "id": "sha256:24767dfb18c9754844a87b6ec34b9f010fb0e5a6fb90f1d1778752f63f975dbd",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "prom/node-exporter:v1.9.1",
+      "id": "sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "grafana/loki:3.5.0",
+      "id": "sha256:4c431d2e6b9b38718694b31c5d56be7c80dc69c513215fde1aeb5b02cd4e2665",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "grafana/alloy:v1.8.3",
+      "id": "sha256:ab04df3936e4d71d31b6f55e0c58a7e749091f59635dd8c2bc731ba1b6c93701",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "prom/prometheus:v3.5.0",
+      "id": "sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996",
+      "platform": "linux/arm64"
+    },
+    {
+      "image": "grafana/grafana:12.0.2",
+      "id": "sha256:b5b59bfc7561634c2d7b136c4543d702ebcc94a3da477f21ff26f89ffd4214fa",
+      "platform": "linux/arm64"
+    }
+  ],
+  "cases": [
+    {
+      "name": "missing-toolbox",
+      "vendor": "nvidia",
+      "status": "passed",
+      "expected_failure": "Local image preflight failed; no new containers or network created.\nMissing images (1):\n  - registry.invalid/offline-missing:ac95ea40-toolbox [fixture, logrotate]\nImport matching images into the configured runtime/namespace and retry.",
+      "cleaned_up": true
+    },
+    {
+      "name": "missing-aisbench",
+      "vendor": "nvidia",
+      "status": "passed",
+      "monitor_only_preflight_passed": true,
+      "expected_failure": "Local image preflight failed; no new containers or network created.\nMissing images (1):\n  - registry.invalid/offline-missing:ac95ea40-aisbench [aisbench]\nImport matching images into the configured runtime/namespace and retry.",
+      "cleaned_up": true
+    },
+    {
+      "name": "missing-public",
+      "vendor": "nvidia",
+      "status": "passed",
+      "expected_failure": "Local image preflight failed; no new containers or network created.\nMissing images (1):\n  - registry.invalid/offline-missing:ac95ea40-node-exporter [node-exporter]\nImport matching images into the configured runtime/namespace and retry.",
+      "cleaned_up": true
+    },
+    {
+      "name": "missing-many",
+      "vendor": "nvidia",
+      "status": "passed",
+      "expected_failure": "Local image preflight failed; no new containers or network created.\nMissing images (3):\n  - registry.invalid/offline-missing:ac95ea40-toolbox [fixture, logrotate]\n  - registry.invalid/offline-missing:ac95ea40-grafana [grafana]\n  - registry.invalid/offline-missing:ac95ea40-aisbench [aisbench]\nImport matching images into the configured runtime/namespace and retry.",
+      "cleaned_up": true
+    },
+    {
+      "name": "nvidia",
+      "vendor": "nvidia",
+      "status": "passed",
+      "internal_network": true,
+      "observations": {
+        "blocked_public_tcp_probes": [
+          {
+            "address": "1.1.1.1",
+            "error": "[Errno 101] Network is unreachable"
+          },
+          {
+            "address": "8.8.8.8",
+            "error": "[Errno 101] Network is unreachable"
+          }
+        ],
+        "targets": [
+          {
+            "url": "http://node-exporter:9100/metrics",
+            "health": "up"
+          },
+          {
+            "url": "http://fixture:18000/gpu-metrics",
+            "health": "up"
+          },
+          {
+            "url": "http://fixture:18000/metrics",
+            "health": "up"
+          }
+        ],
+        "gpu_metric": "DCGM_FI_DEV_GPU_UTIL",
+        "gpu_samples": 1,
+        "grafana_database": "ok",
+        "loki_log_entries": 9
+      },
+      "success_requests": 8,
+      "failed_requests": 0,
+      "report": "nvidia/stack/data/results/20261107_005259/performances/aisbench-target/synthetic.json",
+      "suite_cases_passed": 2,
+      "search_trials": 2,
+      "search_recommended_concurrency": 2,
+      "no_known_external_requests_in_logs": true,
+      "cleaned_up": true
+    },
+    {
+      "name": "hygon",
+      "vendor": "hygon",
+      "status": "passed",
+      "internal_network": true,
+      "observations": {
+        "blocked_public_tcp_probes": [
+          {
+            "address": "1.1.1.1",
+            "error": "[Errno 101] Network is unreachable"
+          },
+          {
+            "address": "8.8.8.8",
+            "error": "[Errno 101] Network is unreachable"
+          }
+        ],
+        "targets": [
+          {
+            "url": "http://fixture:18000/gpu-metrics",
+            "health": "up"
+          },
+          {
+            "url": "http://node-exporter:9100/metrics",
+            "health": "up"
+          },
+          {
+            "url": "http://fixture:18000/metrics",
+            "health": "up"
+          }
+        ],
+        "gpu_metric": "hcu_utilizationrate",
+        "gpu_samples": 1,
+        "grafana_database": "ok",
+        "loki_log_entries": 9
+      },
+      "success_requests": 8,
+      "failed_requests": 0,
+      "report": "hygon/stack/data/results/20261107_005410/performances/aisbench-target/synthetic.json",
+      "no_known_external_requests_in_logs": true,
+      "cleaned_up": true
+    }
+  ],
+  "status": "passed",
+  "audit": {
+    "run_create_count": 42,
+    "all_run_create_pull_never": true,
+    "build_pull_download_attempts": 0
+  },
+  "cli_checks": [
+    {
+      "action": "up",
+      "exit_code": 1,
+      "stderr": "ERROR: Local image preflight failed; no new containers or network created.\nMissing images (3):\n  - registry.invalid/offline-missing:ac95ea40-toolbox [fixture, logrotate]\n  - registry.invalid/offline-missing:ac95ea40-grafana [grafana]\n  - registry.invalid/offline-missing:ac95ea40-aisbench [aisbench]\nImport matching images into the configured runtime/namespace and retry.\n"
+    },
+    {
+      "action": "build",
+      "exit_code": 1,
+      "stderr": "ERROR: Offline mode forbids image builds and source downloads; import prepared images first\n"
+    },
+    {
+      "action": "check-images",
+      "exit_code": 0,
+      "result": "7 images (linux/arm64)"
+    }
+  ],
+  "grafana_effective_settings": {
+    "analytics": {
+      "reporting_enabled": "false",
+      "check_for_updates": "false",
+      "check_for_plugin_updates": "false"
+    },
+    "plugins": {
+      "preinstall_disabled": "true",
+      "public_key_retrieval_disabled": "true",
+      "plugin_admin_enabled": "false"
+    },
+    "news": {
+      "news_feed_enabled": "false"
+    }
+  },
+  "full_saved_logs_checked": true
+}

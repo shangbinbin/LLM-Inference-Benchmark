@@ -1,9 +1,11 @@
 import importlib.util
+import configparser
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -104,6 +106,100 @@ class StackTests(unittest.TestCase):
             cfg['benchmark']['retry']=0
             path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError,'attempt count'):
+                stack.load_config(path)
+
+    def test_offline_aggregates_all_missing_before_creating_resources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);cfg['offline']=True
+            folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)
+            missing={cfg['images'][k] for k in ('toolbox','aisbench','grafana')}
+            inspected=[]
+            def call(*args, **kwargs):
+                if args == ('info',):
+                    return subprocess.CompletedProcess(args,0,'','')
+                self.assertEqual(args[:2],('image','inspect'))
+                inspected.append(args[2])
+                if args[2] in missing:
+                    return subprocess.CompletedProcess(args,1,'','No such image: '+args[2])
+                return subprocess.CompletedProcess(args,0,'[{"Os":"linux","Architecture":"arm64"}]','')
+            with patch.object(s,'call',side_effect=call), patch.object(s,'build_one') as build:
+                with self.assertRaises(ValueError) as error:
+                    s.up()
+                for image in missing:
+                    self.assertIn(image,str(error.exception))
+                self.assertIn('Missing images (3)',str(error.exception))
+                self.assertEqual(len(inspected),7)
+                build.assert_not_called()
+            self.assertFalse(s.statefile.exists())
+
+    def test_offline_preflight_respects_selected_services(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);cfg.update(offline=True,simulation=False)
+            cfg['gpu']['vendor']='hygon';cfg['platform']='linux/amd64'
+            folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)
+            result=subprocess.CompletedProcess([],0,'[{"Os":"linux","Architecture":"amd64"}]','')
+            with patch.object(s,'call',return_value=result) as call:
+                s.preflight_images(False)
+                images=[c.args[2] for c in call.call_args_list]
+                self.assertIn(cfg['images']['hygon_exporter'],images)
+                self.assertNotIn(cfg['images']['nvidia_exporter'],images)
+                self.assertNotIn(cfg['images']['aisbench'],images)
+            cfg['gpu'].update(deployment='external')
+            with patch.object(s,'call',return_value=result) as call:
+                s.preflight_images(False)
+                self.assertNotIn(cfg['images']['hygon_exporter'],[c.args[2] for c in call.call_args_list])
+
+    def test_offline_distinguishes_inspection_error_and_wrong_architecture(self):
+        cfg={'platform':'linux/amd64'}
+        results=[subprocess.CompletedProcess([],1,'','daemon unavailable'),
+                 subprocess.CompletedProcess([],0,'[{"Os":"linux","Architecture":"arm64"}]','')]
+        with self.assertRaises(ValueError) as error:
+            stack.check_local_images(cfg,{'one':['a'],'two':['b']},lambda *a,**k: results.pop(0))
+        self.assertIn('Image inspection errors',str(error.exception))
+        self.assertIn('Image architecture mismatch',str(error.exception))
+        self.assertNotIn('Missing images',str(error.exception))
+
+    def test_offline_build_never_downloads_even_with_empty_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);cfg['offline']=True
+            folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)
+            with patch('benchmark_stack.urllib.request.urlopen') as download, patch.object(s,'call') as call:
+                for name in ('toolbox','aisbench'):
+                    with self.assertRaisesRegex(ValueError,'Offline mode forbids'):
+                        s.build_one(name)
+                download.assert_not_called();call.assert_not_called()
+                self.assertFalse((s.root/'build').exists())
+
+    def test_offline_policy_and_component_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);cfg['offline']=True
+            folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)
+            ini=configparser.ConfigParser();ini.read(folder/'grafana/grafana.ini')
+            for key in ('reporting_enabled','check_for_updates','check_for_plugin_updates'):
+                self.assertFalse(ini.getboolean('analytics',key))
+            self.assertTrue(ini.getboolean('plugins','public_key_retrieval_disabled'))
+            self.assertTrue(ini.getboolean('plugins','preinstall_disabled'))
+            self.assertFalse(ini.getboolean('news','news_feed_enabled'))
+            alloy=next(spec for spec in s.specs() if spec['name']=='alloy')
+            self.assertIn('--disable-reporting',alloy['command'])
+            self.assertIn('HF_HUB_DISABLE_TELEMETRY=1',stack.aisbench_environment(cfg))
+            cfg['runtime']=['nerdctl','--namespace','benchmark']
+            for action in ('run','create'):
+                cmd=stack.runtime_command(cfg,[action,'some-image'])
+                self.assertEqual(cmd,['nerdctl','--namespace','benchmark',action,'--pull=never','some-image'])
+            for action in ('build','pull'):
+                with self.assertRaisesRegex(ValueError,'Offline mode forbids'):
+                    stack.runtime_command(cfg,[action,'some-image'])
+            cfg['offline']=False
+            self.assertNotIn('--pull=never',stack.runtime_command(cfg,['run','some-image']))
+            folder,_=stack.prepare(cfg)
+            self.assertNotIn('preinstall_disabled',(folder/'grafana/grafana.ini').read_text())
+
+    def test_offline_requires_boolean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=json.loads((ROOT/'configs/stacks/mac-simulation.json').read_text());cfg['offline']='true'
+            path=Path(tmp)/'cfg.json';path.write_text(json.dumps(cfg))
+            with self.assertRaisesRegex(ValueError,'JSON boolean'):
                 stack.load_config(path)
 
 

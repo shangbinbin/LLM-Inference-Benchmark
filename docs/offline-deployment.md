@@ -2,9 +2,9 @@
 
 推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
 
-本文说明当前工程所需物料与操作。仓库尚未提供统一的 `offline: true` 开关，也没有完成隔绝公网条件下真实 Linux 服务器的整栈验收；已有 Mac 验证不等同于离线 Linux/GPU 验证。
+当前正式启动器支持顶层 `"offline": true`：启动前一次检查所有选用镜像及架构；缺失时直接列出清单并退出，不创建容器或网络；禁止构建、源码下载和自动拉取，并关闭已知组件外联功能。默认 offline=false，兼容原有在线流程。
 
-可在 Apple Silicon Mac 提前检查离线流程，运行 `python3 docs/examples/verify_offline_mac.py`。需要先准备 Mac 模拟模板选用的七个 arm64 镜像。该验证入口在独立内部网络中运行实际 AISBench 和观测组件，拦截构建/源码下载，并为容器启动强制添加 `--pull=never`；不修改 Docker Desktop 全局网络，不删除镜像或已有模拟栈。它是测试用隔离入口，**不会为普通 up 命令自动开启离线保护**。验证范围与已观察到的外联请求见 [Mac 离线模拟报告](reports/mac-offline-validation-2026-11-07.md)。
+Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用正式离线策略，只额外注入内部网络隔离，不再替正式代码补充禁止拉取参数。需提前备齐 Mac 模板的七个 arm64 镜像；不修改 Docker Desktop 全局网络，不删除镜像或已有模拟栈。见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。Mac 模拟不等同于真实 Linux/GPU 或整机断网验收。
 
 ## 1. 必须准备的内容
 
@@ -17,7 +17,7 @@
 | 设备采集 | NVIDIA DCGM Exporter 或海光 HCU Exporter 镜像 | 根据实际厂商准备；external 模式在各设备节点准备，不一定在观测主机启动 |
 | 设备驱动/运行时 | 目标 OS/内核兼容的驱动、设备容器运行时及完整依赖 | 容器镜像不包含可替代宿主机驱动的安装环境 |
 | tokenizer | 被测模型对应的完整本地 tokenizer 文件 | string 和 tokenid 的性能汇总都需要，不能使用模拟词表替代真实模型词表 |
-| 测试配置 | site.json、suite JSON、SLO search JSON | 包含内网地址、模型 ID、GPU 厂商、挂载路径、负载与停止条件 |
+| 测试配置 | site.json、suite JSON、SLO search JSON | 设置 offline=true，包含内网地址、模型 ID、GPU 厂商、挂载路径、负载与停止条件 |
 | 网络与证书 | 内网 DNS/IP、必要端口、内网 CA、时间同步源 | 离线指无公网，不是容器之间或到推理服务完全无网络 |
 | 存储 | 配置/状态目录、日志目录、指标/日志数据、AISBench 报告空间 | 预估解包、镜像层、压测明细与监控保留空间，不能只按压缩包大小规划 |
 | 被测服务 | 推理服务镜像、权重、模型配置和部署依赖 | 由服务部署方另外准备，本工程不部署真实推理服务；AISBench 客户端本身不需要模型权重 |
@@ -138,7 +138,7 @@ docker run --rm --platform linux/amd64 --network none \
 
 将匹配目标系统的运行时安装包放 runtime/，设备驱动/设备运行时包及安装说明放 drivers/，现场配置放 site/。同一套 rpm/deb 不能默认适用于其他发行版、版本或内核。NVIDIA 需准备 NVIDIA Container Toolkit 及驱动；海光需准备对应驱动/运行库、hy-smi 与 HCU Exporter 所需宿主机路径。
 
-site.json 可从 `configs/stacks/nvidia-single.json` 复制后修改：保持 `platform: linux/amd64`、`simulation: false`，填写真实存储路径、推理服务地址/模型、指标端点及 node_exporter_target。GPU 在本机时可用 auto 识别；观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入 Docker/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
+site.json 可从 `configs/stacks/nvidia-single.json` 复制后修改：设置 `offline: true`，保持 `platform: linux/amd64`、`simulation: false`，填写真实存储路径、推理服务地址/模型、指标端点及 node_exporter_target。GPU 在本机时可用 auto 识别；观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入 Docker/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
 
 在全部物料放齐后生成 SHA-256 清单（流式计算，避免把大镜像归档一次读入内存）：
 
@@ -185,43 +185,48 @@ tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
 从解包后的仓库根目录执行：
 
 ```bash
-python3 scripts/benchmark_stack.py plan --config /absolute/path/site.json
+python3 scripts/benchmark_stack.py check-images --config /absolute/path/site.json
 python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
 python3 scripts/slo_search.py --config /absolute/path/site.json \
   --search /absolute/path/search.json
 # 或使用 run_aisbench_suite.py 执行预设清单
 ```
 
-`plan` 不启动容器，也不检查所有镜像是否已经导入。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
+site.json 必须包含顶层 `"offline": true`。`check-images` 检查全部选用镜像，`up` 自动复查；`plan` 仅渲染计划，不检查镜像。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
 
-## 5. 当前工程可能触发的联网行为
+## 5. 正式离线策略与错误处理
 
-| 环节 | 当前行为 | 离线处理 |
-| --- | --- | --- |
-| build 命令 | 构建 Dockerfile，访问 apt/pip/基础镜像；AISBench 归档不存在时下载源码 | 在线完成构建，离线直接 load 成品镜像 |
-| up 缺少 toolbox/AISBench | 自动尝试构建缺失项目镜像 | 首次启动前检查镜像齐全；当前无“离线禁止构建”开关 |
-| up 缺少公共镜像 | docker run 可能尝试从 registry 拉取 | 预先导入，或使用已准备的内网 registry；当前未统一传 --pull=never |
-| SLO 搜索 | 先检查 AISBench/toolbox 镜像存在及架构 | 缺镜像会报错；不能用此检查代替所有组件的离线准备 |
-| tokenizer | 镜像设置 HF_HUB_OFFLINE=1，使用本地路径 | 准备完整文件及依赖，执行无网络加载检查 |
-| Loki | common 配置已设置 analytics.reporting_enabled=false | 保留此设置 |
-| Grafana 12.0.2 | 当前 common 配置未关闭默认统计、更新检查与插件预安装 | 在交付配置中关闭，见下文 |
-| Alloy 1.8.3 | 当前启动器未传 --disable-reporting | 严格离线部署时在交付副本的 Alloy run 参数中加入该标志 |
+| 环节 | offline=true 的行为 |
+| --- | --- |
+| check-images / up | 一次检查全部所需镜像，汇总缺失、架构错误和检查故障；up 在创建容器/网络前完成检查 |
+| build | 直接拒绝，包括缓存已有源码的情况；不会执行 apt/pip 或下载源码 |
+| up 缺少 toolbox/AISBench/公共镜像 | 列出缺失项和使用组件，不自动构建或拉取 |
+| run/create | 全部带 --pull=never，防止预检查后镜像被删除而意外补拉 |
+| 顺序用例 / SLO 搜索 | 继承 offline，提前检查 AISBench/toolbox；探测和客户端均禁拉取 |
+| tokenizer / 数据 | 显式设置 HF_HUB_OFFLINE、TRANSFORMERS_OFFLINE、HF_DATASETS_OFFLINE、HF_HUB_DISABLE_TELEMETRY 为 1 |
+| Loki | common 配置持续禁用 analytics.reporting_enabled |
+| Grafana | 渲染时合并 offline.ini，关闭统计、主程序/插件更新、预安装、在线插件管理、签名公钥下载、新闻源和反馈链接 |
+| Alloy | 正式启动参数自动追加 --disable-reporting |
 
-Grafana 在 `configs/common/grafana/grafana.ini` 的交付副本中追加（如已存在同名 section，合并字段）：
+配置采用 JSON 布尔值 `true`，不要写成字符串 `"true"`。选择 offline 不影响生产固定 linux/amd64，也不改变厂商指标选择。simulation 不需要真实 DCGM/HCU 镜像；external 的逐节点 Exporter 由节点部署方负责准备。
 
-```ini
-[analytics]
-reporting_enabled = false
-check_for_updates = false
-check_for_plugin_updates = false
+缺失清单示例：
 
-[plugins]
-preinstall_disabled = true
+```text
+ERROR: Local image preflight failed; no new containers or network created.
+Missing images (2):
+  - llm-benchmark-aisbench:e330dc1-amd64 [aisbench]
+  - grafana/grafana:12.0.2 [grafana]
+Import matching images into the configured runtime/namespace and retry.
 ```
 
-本工程现有面板使用内置面板与 Prometheus/Loki 数据源，不要求额外下载插件。后续增加第三方插件时，应预下载兼容版本并随镜像/卷交付。已核对固定 Grafana 12.0.2 镜像含上述设置，Alloy 1.8.3 的 `run --help` 含 `--disable-reporting`；Alloy 的该标志需要加到 `scripts/benchmark_stack.py` 中 Alloy 服务的 command 参数列表，当前不是一个可直接填写到 stack JSON 的字段。[Grafana 配置说明](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)。
+补齐并导入清单中的镜像后，重新运行 check-images 和 up 即可。只启动观测链路时可为两条命令加 `--no-benchmark`，此时不要求 AISBench 镜像；后续压测仍必须准备它。检查失败可能留下生成配置目录，但不会产生运行 state.json 或本次容器/网络，不需要 down。
 
-这些调整应在交付版本制作前完成并记录差异，然后重新生成配置/重启对应组件。关闭上述已知行为不等于证明所有组件绝无外联尝试，严格隔离验收仍应在目标网络策略下运行并检查日志/出站记录。
+[Grafana 离线覆盖配置](../configs/common/grafana/offline.ini)基于固定 12.0.2 镜像。`check_for_plugin_updates=false` 同时关闭动态 Angular 检测规则更新；`public_key_retrieval_disabled=true` 使用内置公钥，**不关闭插件签名校验**。当前面板使用内置组件，不要求额外插件。更换组件版本或添加插件时需重新核对其离线兼容性。[Grafana 配置说明](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/)、[固定版本 Angular 更新条件](https://github.com/grafana/grafana/blob/v12.0.2/pkg/services/pluginsintegration/angulardetectorsprovider/dynamic.go)、[Alloy run 参数](https://grafana.com/docs/alloy/latest/reference/cli/run/)。
+
+这些策略自动作用于新生成的配置，不需要手改启动脚本。已有栈请使用旧配置 down 后修改 offline 并重新 up；不要直接编辑生成目录。顺序用例/SLO 搜索必须使用与启动时一致的配置。
+
+**离线模式不是全局防火墙。** 它禁止本工程管理的构建/拉取，关闭固定组件的已知自动外联；生产容器仍需访问内网服务，故不强制使用 internal 网络。新增远程数据源、第三方插件、外部认证或自行调用 docker pull 不受该设置统一拦截。严格无公网验收仍需现场网络策略与出站审计；不能用 --network none 切断必要服务通信。
 
 ## 6. containerd / 高版本 Kubernetes 的额外准备
 
@@ -246,7 +251,7 @@ Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/devi
 - Python 3.11/Linux x86 兼容的全部 wheel/sdist 及构建依赖；特别包含 CPU Torch 下载源对应的包，不能拿 macOS/arm64 wheel 替代。
 - pip/构建工具、缓存或内网索引，以及能够完全离线解析这些依赖的构建配置。
 
-**当前 Dockerfile 直接执行 apt-get 和 pip 联网安装，启动器还使用公网源码 URL；仅提供 source.tar.gz 不足以离线重建。** 需要改用内网 apt/PyPI/镜像仓库，或重写为本地包源，并在隔离环境重新验证。除非确实需要离线开发，优先交付已验证的完整 amd64 镜像，可显著减少现场准备项。
+**offline=true 时本工程 build 命令始终拒绝执行。现有 Dockerfile 直接执行 apt-get 和 pip 联网安装，在线构建流程还使用公网源码 URL；仅提供 source.tar.gz 不足以离线重建。** 需要改用内网 apt/PyPI/镜像仓库，或重写为本地包源，并在隔离环境重新验证。除非确实需要离线开发，优先交付已验证的完整 amd64 镜像，可显著减少现场准备项。
 
 ## 8. 最小验收清单
 

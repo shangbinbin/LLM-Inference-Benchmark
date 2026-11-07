@@ -1,5 +1,7 @@
 # 基于 SLO 自动搜索最大并发
 
+离线运行时，在启动栈的 JSON 中设置 `"offline": true`，后续使用同一配置。客户端和就绪探测自动禁止拉取，缺少 AISBench/toolbox 会在发压前列出清单；完整准备步骤见 [离线部署手册](offline-deployment.md)。
+
 `scripts/slo_search.py` 在每轮 AISBench 完成后读取真实报告，检查 SLO，自动选择下一档并发。它复用已启动的观测栈与同一个被测服务，支持搜索范围、重复次数、轮数/时间预算和单次压测超时。AISBench 仍是唯一发压客户端；搜索控制由本工程实现，不是上游 AISBench 新增的 CLI 参数。
 
 ## 快速开始：Mac 实测流程

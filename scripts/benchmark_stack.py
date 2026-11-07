@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Config-driven OCI container lifecycle; Docker now, nerdctl adapter for containerd."""
 import argparse
+import configparser
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -28,10 +29,58 @@ def command(args, capture=False, check=True):
                           stderr=subprocess.PIPE if capture else None)
 
 
+def runtime_command(cfg, args):
+    """Apply the same pull policy to lifecycle, suite and search containers."""
+    args = list(args)
+    if cfg.get('offline', False):
+        if args[0] in ('build', 'pull') or args[:2] in (['image', 'build'], ['image', 'pull']):
+            raise ValueError('Offline mode forbids image builds and pulls; import prepared images first')
+        if args[0] in ('run', 'create'):
+            args.insert(1, '--pull=never')
+    return cfg['runtime'] + args
+
+
+def aisbench_environment(cfg):
+    if not cfg.get('offline', False):
+        return []
+    return [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
+                           'HF_HUB_DISABLE_TELEMETRY') for arg in ('-e', key + '=1')]
+
+
+def check_local_images(cfg, images, call):
+    """Inspect all selected images without registry access; aggregate every problem."""
+    missing, mismatched, errors = [], [], []
+    for image, roles in images.items():
+        result = call('image', 'inspect', image, capture=True, check=False)
+        label = image + ' [' + ', '.join(roles) + ']'
+        if result.returncode:
+            detail = (result.stderr or result.stdout or '').strip()
+            if 'no such' in detail.lower() or 'not found' in detail.lower():
+                missing.append(label)
+            else:
+                errors.append(label + ': ' + detail)
+            continue
+        info = json.loads(result.stdout)[0]
+        actual = info.get('Os', '') + '/' + info.get('Architecture', '')
+        if actual != cfg['platform']:
+            mismatched.append(label + ': ' + actual + ' (expected ' + cfg['platform'] + ')')
+    sections = []
+    for title, entries in [('Missing images', missing), ('Image architecture mismatch', mismatched),
+                           ('Image inspection errors', errors)]:
+        if entries:
+            sections.append(f'{title} ({len(entries)}):\n' + '\n'.join('  - ' + s for s in entries))
+    if sections:
+        raise ValueError('Local image preflight failed; no new containers or network created.\n' +
+                         '\n'.join(sections) + '\nImport matching images into the configured runtime/namespace and retry.')
+    print(f'Local image preflight passed: {len(images)} images ({cfg["platform"]})', flush=True)
+
+
 def load_config(path):
     cfg = json.loads(path.read_text())
     if cfg.get('schema_version') != 1:
         raise ValueError('schema_version must be 1')
+    if type(cfg.get('offline', False)) is not bool:
+        raise ValueError('offline must be a JSON boolean (true/false)')
     if not re.fullmatch('[a-z][a-z0-9-]{0,39}', cfg['project']):
         raise ValueError('project must be a short lowercase container name')
     for key in ('root', 'logs', 'tokenizer'):
@@ -230,6 +279,13 @@ def prepare(cfg):
     with (run_dir/'loki/loki.yaml').open('a') as f:
         f.write('\ningester:\n  wal:\n    dir: /var/lib/loki/wal\ncompactor:\n  working_directory: /var/lib/loki/compactor\n')
     (run_dir/'aisbench.py').write_text(ais_config(cfg))
+    if cfg.get('offline', False):
+        ini = configparser.ConfigParser(interpolation=None)
+        for source in (run_dir/'grafana/grafana.ini', ROOT/'configs/common/grafana/offline.ini'):
+            with source.open() as stream:
+                ini.read_file(stream)
+        with (run_dir/'grafana/grafana.ini').open('w') as stream:
+            ini.write(stream)
     write_json(run_dir/'manifest.json', {'vendor': vendor, 'config_hash': config_hash, 'simulation': cfg.get('simulation', False), 'stack': cfg})
     return run_dir, vendor
 
@@ -243,7 +299,7 @@ class Stack:
         self.uid = f'{os.getuid()}:{os.getgid()}'
 
     def call(self, *args, **kwargs):
-        return command(self.runtime + list(args), **kwargs)
+        return command(runtime_command(self.cfg, args), **kwargs)
 
     def inspect(self, name):
         result = self.call('inspect', name, capture=True, check=False)
@@ -252,6 +308,8 @@ class Stack:
         return json.loads(result.stdout)[0]
 
     def build_one(self, name):
+        if self.cfg.get('offline', False):
+            raise ValueError('Offline mode forbids image builds and source downloads; import prepared images first')
         if name == 'aisbench':
             context = self.root / 'build' / 'aisbench'
             context.mkdir(parents=True, exist_ok=True)
@@ -278,6 +336,14 @@ class Stack:
     def build(self):
         for name in ('toolbox', 'aisbench'):
             self.build_one(name)
+
+    def preflight_images(self, run_benchmark=True):
+        images = {}
+        for spec in self.specs():
+            images.setdefault(spec['image'], []).append(spec['name'])
+        if run_benchmark:
+            images.setdefault(self.cfg['images']['aisbench'], []).append('aisbench')
+        check_local_images(self.cfg, images, self.call)
 
     def specs(self):
         images = self.cfg['images']; config = self.directory; data = self.root/'data'
@@ -321,7 +387,8 @@ class Stack:
         specs.append({'name':'logrotate','image':images['toolbox'],'args':log_mount+mount(config/'logrotate/inference.conf','/config/inference.conf',True)+mount(data/'logrotate','/state'),
                       'command':['rotate','--interval','60'],'ready':None})
         specs.append(service('alloy', ['--user','0:0']+mount(self.cfg['storage']['logs'],'/logs',True)+mount(config/'alloy/config.alloy','/etc/alloy/config.alloy',True)+mount(data/'alloy','/var/lib/alloy'),
-                             ['run','--server.http.listen-addr=0.0.0.0:12345','--storage.path=/var/lib/alloy','/etc/alloy/config.alloy'], ('http://alloy:12345/-/ready','')))
+                             ['run']+(['--disable-reporting'] if self.cfg.get('offline', False) else [])+
+                             ['--server.http.listen-addr=0.0.0.0:12345','--storage.path=/var/lib/alloy','/etc/alloy/config.alloy'], ('http://alloy:12345/-/ready','')))
         specs.append(service('prometheus',user+mount(config/'prometheus','/etc/prometheus',True)+mount(data/'prometheus','/prometheus'),
                              ['--config.file=/etc/prometheus/prometheus.yml','--storage.tsdb.path=/prometheus','--storage.tsdb.retention.time='+self.cfg.get('metrics_retention','7d')],('http://prometheus:9090/-/ready','')))
         specs.append(service('grafana',user+mount(config/'grafana/grafana.ini','/etc/grafana/grafana.ini',True)+mount(config/'grafana/provisioning','/etc/grafana/provisioning',True)+mount(config/'grafana/dashboards','/etc/grafana/dashboards',True)+mount(data/'grafana','/var/lib/grafana'),
@@ -341,9 +408,12 @@ class Stack:
         if self.statefile.exists():
             raise ValueError('Stack state exists; use status/down before starting a new run')
         self.call('info',capture=True)
-        for name in (('toolbox', 'aisbench') if run_benchmark else ('toolbox',)):
-            if self.call('image', 'inspect', self.cfg['images'][name], capture=True, check=False).returncode:
-                self.build_one(name)
+        if self.cfg.get('offline', False):
+            self.preflight_images(run_benchmark)
+        else:
+            for name in (('toolbox', 'aisbench') if run_benchmark else ('toolbox',)):
+                if self.call('image', 'inspect', self.cfg['images'][name], capture=True, check=False).returncode:
+                    self.build_one(name)
         if not self.cfg.get('simulation') and self.cfg['gpu']['deployment']=='local' and platform.system()!='Linux':
             raise ValueError('Real local GPU exporters require Linux; use simulation on macOS')
         for name in (('toolbox', 'aisbench') if run_benchmark else ('toolbox',)):
@@ -401,7 +471,7 @@ class Stack:
         previous_runs = set(results.iterdir())
         if self.inspect(name):
             raise ValueError('Previous AISBench container exists; use down before a new one-click run')
-        args=['create','--platform',self.cfg['platform'],'--name',name,'--label',f'{LABEL}={self.project}','--network',self.network,
+        args=['create',*aisbench_environment(self.cfg),'--platform',self.cfg['platform'],'--name',name,'--label',f'{LABEL}={self.project}','--network',self.network,
               '--mount',f'type=bind,src={self.directory}/aisbench.py,dst=/config/aisbench.py,readonly',
               '--mount',f'type=bind,src={self.root}/data/results,dst=/results']
         if self.cfg['storage'].get('tokenizer'):
@@ -456,7 +526,7 @@ class Stack:
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action',choices=['plan','build','up','status','down'])
+    p.add_argument('action',choices=['plan','check-images','build','up','status','down'])
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--no-benchmark',action='store_true',help='start observability only')
     args=p.parse_args()
@@ -473,6 +543,9 @@ def main():
         if args.action=='plan':
             print(json.dumps({'gpu_vendor':vendor,'simulation':cfg.get('simulation',False),'config_dir':str(directory),'services':stack.specs(),'final_client':'AISBench'},ensure_ascii=False,indent=2))
         elif args.action=='build':stack.build()
+        elif args.action=='check-images':
+            stack.call('info',capture=True)
+            stack.preflight_images(not args.no_benchmark)
         elif args.action=='up':stack.up(not args.no_benchmark)
         elif args.action=='down':stack.down()
         else:

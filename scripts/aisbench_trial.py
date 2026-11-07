@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 import time
 
-from benchmark_stack import LABEL, ais_config, load_config, write_json
+from benchmark_stack import (LABEL, ais_config, load_config, write_json,
+                             runtime_command, aisbench_environment, check_local_images)
 
 
 def utc_now():
@@ -33,7 +34,7 @@ class TrialSession:
         remaining = self.deadline - time.monotonic()
         if not cleanup and remaining <= 0:
             raise TimeoutError('search_deadline')
-        return subprocess.run(self.cfg['runtime'] + list(args), text=True,
+        return subprocess.run(runtime_command(self.cfg, args), text=True,
                               timeout=timeout if cleanup else min(timeout, remaining), **kwargs)
 
     def inspect(self, name, cleanup=False):
@@ -50,11 +51,19 @@ class TrialSession:
             json.dump({'pid': os.getpid(), 'kind': 'slo-search', 'run_dir': str(self.run_dir)}, f)
         self.locked = True
         try:
-            for key in ('aisbench', 'toolbox'):
-                result = self.call('image', 'inspect', self.cfg['images'][key], capture_output=True, check=True)
-                image = json.loads(result.stdout)[0]
-                if image['Os'] + '/' + image['Architecture'] != self.cfg['platform']:
-                    raise ValueError('Image architecture mismatch: ' + self.cfg['images'][key])
+            if self.cfg.get('offline', False):
+                required = {}
+                for key in ('aisbench', 'toolbox'):
+                    required.setdefault(self.cfg['images'][key], []).append(key)
+                def inspect_image(*args, capture=False, **kwargs):
+                    return self.call(*args, capture_output=capture, **kwargs)
+                check_local_images(self.cfg, required, inspect_image)
+            else:
+                for key in ('aisbench', 'toolbox'):
+                    result = self.call('image', 'inspect', self.cfg['images'][key], capture_output=True, check=True)
+                    image = json.loads(result.stdout)[0]
+                    if image['Os'] + '/' + image['Architecture'] != self.cfg['platform']:
+                        raise ValueError('Image architecture mismatch: ' + self.cfg['images'][key])
             if self.inspect(self.client) or self.inspect(self.probe_name):
                 raise ValueError('Search client already exists; inspect it before retrying')
         except BaseException:
@@ -119,7 +128,7 @@ class TrialSession:
         attempted = False
         try:
             attempted = True
-            self.call('create', '--platform', cfg['platform'], '--name', self.client,
+            self.call('create', *aisbench_environment(cfg), '--platform', cfg['platform'], '--name', self.client,
                       '--label', LABEL + '=' + cfg['project'], '--label', LABEL + '.trial=' + token,
                       '--network', self.state['network'],
                       '--mount', f'type=bind,src={folder}/aisbench.py,dst=/config/aisbench.py,readonly',

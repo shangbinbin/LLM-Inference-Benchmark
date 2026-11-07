@@ -1,5 +1,7 @@
 # Mac 离线模拟验证（2026-11-07）
 
+本文记录提交 57fde2f 时、正式离线模式接入前的行为。当前启动器已支持 offline=true，验证脚本也已升级；请以 [正式离线模式验收](mac-offline-mode-2026-11-07.md) 为准。下文保留原始测试结论供对照。
+
 已在 Apple Silicon Mac、Docker Desktop（Engine 29.6.2）完成五项验证：三个缺镜像失败路径，以及 NVIDIA/海光两种指标配置下的完整模拟链路。两次实际 AISBench 各完成 8 个正式请求，失败数均为 0。生产配置仍为 linux/amd64，本次使用 linux/arm64 镜像与模拟推理服务。
 
 ## 验证方法与边界

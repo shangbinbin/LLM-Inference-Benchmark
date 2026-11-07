@@ -9,7 +9,8 @@ import re
 import subprocess
 import time
 
-from benchmark_stack import load_config, ais_config, Stack, LABEL, write_json
+from benchmark_stack import (load_config, ais_config, Stack, LABEL, write_json,
+                             runtime_command, aisbench_environment, check_local_images)
 
 
 def main():
@@ -61,7 +62,13 @@ def main():
     with lock.open('x') as handle:
         handle.write(str(run))
     try:
-        stack.check_image(cfg['images']['aisbench'])
+        if cfg.get('offline', False):
+            required = {}
+            for key in ('aisbench', 'toolbox'):
+                required.setdefault(cfg['images'][key], []).append(key)
+            check_local_images(cfg, required, stack.call)
+        else:
+            stack.check_image(cfg['images']['aisbench'])
         for index, (name, case_cfg, folder) in enumerate(prepared):
             if index:
                 time.sleep(cooldown)
@@ -74,7 +81,7 @@ def main():
                     raise RuntimeError('Required owned container is unavailable: '+container)
             stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
             b = case_cfg['benchmark']
-            cmd = cfg['runtime'] + ['run','--rm','--platform',cfg['platform'],
+            cmd = ['run',*aisbench_environment(cfg),'--rm','--platform',cfg['platform'],
                   '--name',cfg['project']+'-suite-client','--label',LABEL+'='+cfg['project'],
                   '--network',state['network'],
                   '--mount',f'type=bind,src={folder}/aisbench.py,dst=/config/aisbench.py,readonly',
@@ -87,7 +94,7 @@ def main():
             entry = {'case':name,'started_at':datetime.now(timezone.utc).isoformat(),'benchmark':b}
             print('START '+name, flush=True)
             with (folder/'client.log').open('w') as log:
-                result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT)
+                result = subprocess.run(runtime_command(cfg, cmd), stdout=log, stderr=subprocess.STDOUT)
             reports = list((folder/'results').glob('*/performances/*/synthetic.json'))
             data = [json.loads(p.read_text()) for p in reports]
             passed = result.returncode==0 and bool(data) and all(
