@@ -1,4 +1,7 @@
 import csv
+import copy
+import sqlite3
+import struct
 import json
 from pathlib import Path
 import subprocess
@@ -117,6 +120,8 @@ class ReportTests(unittest.TestCase):
                        'Failed Requests': {'total': 0}, 'Max Concurrency': {'total': 2},
                        'Output Token Throughput': {'total': '100 token/s'}}
         self.csv = 'Performance Parameters,Stage,P99,Min,Max,N\nTTFT,total,200 ms,0 ms,200 ms,12\nTPOT,total,10 ms,0 ms,10 ms,12\nOutputTokens,total,16,16,16,12\n'
+        self.details = [{'id': i, 'success': True, 'time_points': [float(i // 2), i // 2 + 0.5]}
+                        for i in range(12)]
         self.benchmark = {'request_count': 12, 'output_length': 16}
         self.policy = {'min_requests': 12, 'statistic': 'P99', 'thresholds_ms': {'TTFT': 200, 'TPOT': 50}}
 
@@ -126,6 +131,8 @@ class ReportTests(unittest.TestCase):
     def check(self):
         (self.folder / 'synthetic.json').write_text(json.dumps(self.common))
         (self.folder / 'synthetic.csv').write_text(self.csv)
+        (self.folder / 'synthetic_details.jsonl').write_text(
+            ''.join(json.dumps(item) + '\n' for item in self.details))
         return evaluate(self.results, self.benchmark, 2, self.policy)
 
     def test_exact_threshold_passes_and_violations_are_named(self):
@@ -151,6 +158,168 @@ class ReportTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.check()
             self.common[key] = saved
+
+    def test_configured_concurrency_cannot_prove_observed_concurrency(self):
+        # The summary still advertises batch_size=2, but requests ran serially.
+        self.details = [{'id': i, 'success': True, 'time_points': [i, i + 1]}
+                        for i in range(12)]
+        with self.assertRaisesRegex(ValueError, 'Measured peak concurrency 1.*requested 2'):
+            self.check()
+
+    def test_concurrency_evidence_is_recorded_and_input_order_does_not_matter(self):
+        self.details.reverse()
+        result = self.check()
+        self.assertEqual(result['configured_concurrency'], 2)
+        self.assertEqual(result['measured_peak_concurrency'], 2)
+        self.assertTrue(result['concurrency_evidence'].endswith('synthetic_details.jsonl'))
+
+    def test_staggered_requests_are_measured_by_overlap(self):
+        self.details = [{'id': i, 'success': True, 'time_points': [i, i + 1.5]}
+                        for i in range(12)]
+        self.assertEqual(self.check()['measured_peak_concurrency'], 2)
+
+    def test_shared_endpoint_is_not_an_overlap(self):
+        self.details = [{'id': i, 'success': True, 'time_points': [i, i + 1]}
+                        for i in range(12)]
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_over_target_measurement_is_invalid(self):
+        for item in self.details:
+            item['time_points'] = [0, 1]
+        with self.assertRaisesRegex(ValueError, 'Measured peak concurrency 12.*requested 2'):
+            self.check()
+
+    def test_bad_request_evidence_is_invalid(self):
+        original = copy.deepcopy(self.details)
+        cases = [original[:-1], original + [original[0]],
+                 [dict(item, id=0) for item in original]]
+        for values in ([0], [1, 1], [2, 1], [0, 2, 1], [0, float('nan')],
+                       [0, float('inf')], [-1, 1], [False, 1], ['0', 1], None):
+            altered = copy.deepcopy(original)
+            altered[0]['time_points'] = values
+            cases.append(altered)
+        for changes in ({'success': False}, {'id': True}, {'id': None}, {'id': -1}):
+            altered = copy.deepcopy(original)
+            altered[0].update(changes)
+            cases.append(altered)
+        for details in cases:
+            with self.subTest(details=details), self.assertRaises(ValueError):
+                self.details = details
+                self.check()
+
+    def test_missing_and_malformed_details_fail_closed(self):
+        self.check()
+        path = self.folder / 'synthetic_details.jsonl'
+        for text in ('{broken json', '[]', '\n'):
+            path.write_text(text)
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                evaluate(self.results, self.benchmark, 2, self.policy)
+        path.unlink()
+        with self.assertRaises(ValueError):
+            evaluate(self.results, self.benchmark, 2, self.policy)
+
+    @staticmethod
+    def npy_blob(points, descr='<f8'):
+        # Format emitted by np.save(..., allow_pickle=False), without NumPy on the host.
+        header = repr({'descr': descr, 'fortran_order': False, 'shape': (len(points),)})
+        header += ' ' * (-(10 + len(header) + 1) % 64) + '\n'
+        return (b'\x93NUMPY\x01\x00' + struct.pack('<H', len(header)) + header.encode('ascii')
+                + struct.pack(descr[0] + 'd' * len(points), *points))
+
+    def write_db_details(self, descr='<f8'):
+        db_dir = self.folder / 'db_data'
+        db_dir.mkdir(exist_ok=True)
+        db = db_dir / 'timings.db'
+        with sqlite3.connect(db) as connection:
+            connection.execute('CREATE TABLE numpy_store (id INTEGER PRIMARY KEY, arr_blob BLOB NOT NULL)')
+            for i, item in enumerate(self.details, 1):
+                connection.execute('INSERT INTO numpy_store VALUES (?, ?)',
+                                   (i, self.npy_blob(item['time_points'], descr)))
+                item.update(time_points={'__db_ref__': i}, db_name=db.name)
+        return db
+
+    def test_pinned_aisbench_sqlite_numpy_timestamps(self):
+        db = self.write_db_details()
+        before = db.read_bytes()
+        result = self.check()
+        self.assertEqual(result['measured_peak_concurrency'], 2)
+        self.assertEqual(db.read_bytes(), before)
+
+    def test_big_endian_timestamp_arrays(self):
+        self.write_db_details('>f8')
+        self.assertEqual(self.check()['measured_peak_concurrency'], 2)
+
+    def test_database_symlink_cannot_escape_report(self):
+        db = self.write_db_details()
+        outside = self.results / 'outside.db'
+        db.rename(outside)
+        db.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'inside the report'):
+            self.check()
+
+    def test_database_directory_symlink_cannot_escape_report(self):
+        db = self.write_db_details()
+        outside = self.results / 'outside'
+        db.parent.rename(outside)
+        db.parent.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'inside the report'):
+            self.check()
+
+    def test_corrupt_or_missing_database_schema_is_invalid(self):
+        db = self.write_db_details()
+        with sqlite3.connect(db) as connection:
+            connection.execute('DROP TABLE numpy_store')
+        with self.assertRaisesRegex(ValueError, 'Cannot read request timing evidence'):
+            self.check()
+        db.write_bytes(b'not-a-sqlite-database')
+        with self.assertRaisesRegex(ValueError, 'Cannot read request timing evidence'):
+            self.check()
+
+    def test_missing_db_is_not_created(self):
+        self.details[0].update(time_points={'__db_ref__': 1}, db_name='missing.db')
+        with self.assertRaises(ValueError):
+            self.check()
+        self.assertFalse((self.folder / 'db_data/missing.db').exists())
+
+    def test_bad_database_references_are_invalid(self):
+        db = self.write_db_details()
+        original = copy.deepcopy(self.details)
+        for changes in ({'db_name': '../timings.db'}, {'db_name': str(db.resolve())},
+                        {'db_name': None}, {'time_points': {'__db_ref__': 999}},
+                        {'time_points': {'__db_ref__': True}},
+                        {'time_points': {'__db_ref__': 2}}):
+            self.details = copy.deepcopy(original)
+            self.details[0].update(changes)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.check()
+
+    def test_corrupt_or_unsupported_numpy_blobs_fail_closed(self):
+        db = self.write_db_details()
+        valid = self.npy_blob([0, 1])
+        bad_blobs = [b'not-npy', valid[:-1], valid + b'X',
+                     valid.replace(b'<f8', b'|O8'), valid.replace(b'(2,)', b'(3,)'),
+                     valid.replace(b'(2,)', b'(1,2)'), valid.replace(b'False', b'True '),
+                     valid[:6] + b'\x02\x00' + valid[8:],
+                     valid[:8] + b'\xff\xff' + valid[10:],
+                     valid.replace(b'\'descr\'', b'\'broken'),
+                     valid[:10] + b'\xff' + valid[11:]]
+        for blob in bad_blobs:
+            with sqlite3.connect(db) as connection:
+                connection.execute('UPDATE numpy_store SET arr_blob=? WHERE id=1', (blob,))
+            with self.subTest(blob=blob), self.assertRaises(ValueError):
+                self.check()
+
+    def test_invalid_concurrency_stops_search_without_recommendation(self):
+        self.details = [{'id': i, 'success': True, 'time_points': [i, i + 1]}
+                        for i in range(12)]
+        policy = dict(DEFAULTS, min_concurrency=2, max_concurrency=2, repeats=1,
+                      min_requests=12, thresholds_ms={'TTFT': 200})
+        result = search(policy, lambda *_: self.check())
+        self.assertEqual(result['stop_reason'], 'invalid_trial')
+        self.assertEqual(result['rounds'][0]['status'], 'INVALID')
+        self.assertIsNone(result['recommended_concurrency'])
+        self.assertFalse(result['maximum_verified'])
 
 
 class LifecycleTests(unittest.TestCase):

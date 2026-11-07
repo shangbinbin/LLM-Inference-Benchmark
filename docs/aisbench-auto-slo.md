@@ -110,12 +110,14 @@ llm-bench bench slo --config /absolute/path/site.json --policy /absolute/path/se
 每个 trial 使用独立目录和 AISBench 容器，仅读取本次结果。检查：
 
 1. 所需观测容器仍运行且属于本项目，Prometheus targets 全部 UP。
-2. AISBench 退出成功，存在唯一 synthetic.json 及对应 CSV。
+2. AISBench 退出成功，存在唯一 synthetic.json、对应 CSV、synthetic_details.jsonl 及其引用的 db_data 时间戳数据库。
 3. 正式请求总数与固定 workload 相符，达到 min_requests，零失败，成功数等于总数。
-4. 实测 Max Concurrency 达到本轮目标；客户端未施加目标负载时不会推荐该档。
+4. 汇总 Max Concurrency 只校验配置是否匹配（它来自 batch_size，不是实测值）。逐条读取 details 的 time_points，以首末时间戳构成左闭右开区间，计算客户端实测峰值重叠数，必须等于本轮目标；同一时刻结束和开始的请求不算重叠。请求明细数必须完整且成功、ID 唯一，时间戳必须有限、非负、有序且区间非零；缺失、损坏或重复引用的数据判为 INVALID，不退回使用配置值。
 5. OutputTokens 的 Min/Max 等于固定输出目标，防止提前 EOS/stop 造成虚假的低时延。
 6. 所选指标 Stage=total、样本 N 完整，单位为 ms，值有限且非负；按 statistic 读取，不用平均值替代 P99。
 7. 任一时延超过阈值为 SLO_FAIL，等于阈值算通过。数据/请求失败为 INVALID，立即停止，不能把它当作有效的 SLO 失败边界。
+
+并发校验衡量的是 AISBench 客户端从发起请求到最后一个已记录响应时间点的峰值重叠，不是服务端执行并发，也不保证持续保持目标负载。不能用平均 Concurrency 必须等于目标来替代，因为升压、收尾阶段会降低平均值。当前固定 AISBench 版本的 SQLite 时间戳以 NPY v1 一维 float64 存储；搜索器只读解析该格式，无需在宿主机安装 NumPy，遇到不支持的格式会停止。保留原始 details 与 db_data 才能复核测量。
 
 当前实现严格要求零请求失败、固定输出长度、单一 workload、perf 模式和 request_rate=0。QPS 搜索、容忍失败预算、压力模式、自定义分布的变长输出和服务参数寻优不在该入口中。实际输入 token 数仍须按模型 tokenizer 核对。
 
@@ -157,6 +159,6 @@ storage.root/data/results/slo-search/<UTC时间戳>/
     └── results/<AISBench时间戳>/performances/aisbench-target/...
 ```
 
-search-results.json 记录 rounds[].phase（下界、上界、二分、高档验证）、并发、各次重复的状态/阈值违例/实测时延、起止时间、全局输出吞吐、报告相对路径及停止原因。报告路径相对于该 trial 的目录。用这些起止时间与 Grafana/Loki 对齐分析。
+search-results.json 记录 rounds[].phase（下界、上界、二分、高档验证）、并发、各次重复的状态/阈值违例/实测时延、起止时间、全局输出吞吐、配置并发 configured_concurrency、实测峰值 measured_peak_concurrency、明细证据相对路径 concurrency_evidence、报告相对路径及停止原因。报告路径相对于该 trial 的目录。用这些起止时间与 Grafana/Loki 对齐分析。
 
 `maximum_verified=true` 表示**配置网格内、更高候选已被本次测量排除**；不会把 Mac 结果解释为显卡性能，也不会把该值直接等同于生产限流配置。选定档位后应做长期压力、邻近档位和真实业务分布复测。

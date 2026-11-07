@@ -12,6 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
+from aisbench_timing import measured_peak_concurrency
 from aisbench_trial import TrialSession, utc_now
 from benchmark_stack import load_config, write_json
 
@@ -78,8 +79,14 @@ def evaluate(results, benchmark, concurrency, policy):
         raise ValueError('Incomplete or insufficient request count')
     if numeric(common['Failed Requests']['total']) != 0 or numeric(common['Success Requests']['total']) != total:
         raise ValueError('Failed requests: invalid measurement, not a latency boundary')
-    if numeric(common['Max Concurrency']['total']) != concurrency:
-        raise ValueError('Requested concurrency was not reached')
+    # AISBench reports configured batch_size here, not the observed peak.
+    configured_concurrency = numeric(common['Max Concurrency']['total'])
+    if configured_concurrency != concurrency:
+        raise ValueError('Configured concurrency differs from the requested concurrency')
+    details = report.with_name(report.stem + '_details.jsonl')
+    peak = measured_peak_concurrency(details, int(total))
+    if peak != concurrency:
+        raise ValueError(f'Measured peak concurrency {peak} differs from requested {concurrency}')
     with report.with_suffix('.csv').open(newline='') as f:
         rows = [r for r in csv.DictReader(f) if r['Stage'] == 'total']
     def row(metric):
@@ -94,6 +101,8 @@ def evaluate(results, benchmark, concurrency, policy):
     violations = [m for m, limit in policy['thresholds_ms'].items() if values[m] > limit]
     return {'status': 'SLO_FAIL' if violations else 'PASS', 'latencies_ms': values,
             'violations': violations, 'success_requests': int(total),
+            'configured_concurrency': int(configured_concurrency), 'measured_peak_concurrency': peak,
+            'concurrency_evidence': str(details.relative_to(results.parent)),
             'output_tokens_per_second': numeric(common['Output Token Throughput']['total'], 'token/s'),
             'report': str(report.relative_to(results.parent))}
 
