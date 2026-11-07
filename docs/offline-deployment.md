@@ -134,7 +134,7 @@ docker run --rm --platform linux/amd64 --network none \
 
 镜像已经设置 HF_HUB_OFFLINE=1。自定义 tokenizer 若依赖额外包或自定义 Python 代码，应在联网构建阶段解决并重新封装/验证镜像；当前配置不自动开启 trust_remote_code。仅有词表但运行时还需下载 tokenizer 代码或依赖，不能认为已经准备完整。[Transformers 离线说明](https://huggingface.co/docs/transformers/installation)。
 
-当前固定长度合成数据由 AISBench 在本地生成，不需要另下载公开数据集。未来使用真实语料/其他数据集时，还要准备数据文件、索引、处理脚本及依赖，并验证所选数据集加载器不会再尝试远程下载；现有 stack JSON 的简化入口仅支持 string/tokenid 合成数据。
+固定长度合成数据由 AISBench 在本地生成。混合 suite 另需交付 `cases.json`、它引用的业务 JSONL 和 ShareGPT 文件，并保留工程内的 `containers/aisbench/llm_bench_jsonl.py`。两个文件加载器均从本地只读挂载读取，已有固定版本 AISBench 镜像即可运行。拷贝后通过 `llm-bench plan --config site.json --cases cases.json` 校验路径和数据格式。[完整混合用例](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
 
 ### 3.5 系统、驱动与完整性校验
 

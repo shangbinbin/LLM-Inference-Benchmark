@@ -72,13 +72,15 @@ llm-bench up --config site.json --cases cases.json
 
 所有用例在启动栈前完成配置校验。每例独立继承栈的 benchmark 默认值，再应用本例覆盖值。相邻用例之间默认冷却 5 秒，可设为 0。默认遇到失败用例就停止，设置 `stop_on_failure: false` 后，已完成但未通过报告检查的用例会被记录，调度器继续下一例，整套运行最终仍返回失败。每个 name 须唯一，使用小写字母、数字和短横线，最长 40 字符，以字母或数字开头。
 
-可覆盖 dataset_type、input_length、output_length、request_count、concurrency、request_rate、warmups、mode、generation_kwargs、retry、prefix_length、pressure_seconds。generation_kwargs 整体替换。用例的推理服务、设备、挂载和离线模式来自同一栈。原生 concurrency_levels 扫描可通过不带 --cases 的 up 执行。两种输入生成方式的计数口径和实际输出长度解读见 [AISBench 使用指南](aisbench.md)。
+可覆盖 dataset_type、input_length、output_length、request_count、concurrency、request_rate、warmups、mode、generation_kwargs、retry、prefix_length、pressure_seconds。generation_kwargs 整体替换。用例共用站点的推理服务、设备、tokenizer 和离线设置。原生 concurrency_levels 扫描可通过不带 --cases 的 up 执行。两种输入生成方式的计数口径和实际输出长度解读见 [AISBench 使用指南](aisbench.md)。
+
+文件型用例在与 `benchmark` 同级的 `dataset` 中写 `type` 与 `path`。路径相对清单所在目录解析。可直接运行 `llm-bench up --profile mac-offline --cases configs/suites/mixed-datasets.json`，依次发送业务 JSONL、ShareGPT 和合成请求。[三种格式、挂载规则与完整配置](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
 
 ## 命令与选项
 
 | 命令 | 行为 |
 | --- | --- |
-| `plan` | 校验、渲染并显示生效配置、选中厂商、组件顺序和将运行的用例名。可带 --cases 或 --no-benchmark。 |
+| `plan` | 校验、渲染并显示生效配置、选中厂商和组件顺序。带 --cases 时，cases 列出各例的数据来源及生效参数，workloads 列出执行顺序。可带 --cases 或 --no-benchmark。 |
 | `images check` | 按选中厂商、拓扑和平台检查本地镜像，汇总缺失项及架构错误。--no-benchmark 省略 AISBench。 |
 | `images build` | 在线构建 toolbox 和 AISBench。offline 配置会拒绝构建。 |
 | `up` | 启动新的观测栈并跑默认压测。--cases 指定清单，--no-benchmark 仅启动观测，两者互斥。 |

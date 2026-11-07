@@ -2,7 +2,7 @@
 """Run heterogeneous AISBench cases strictly in JSON order on an existing stack."""
 import argparse
 import copy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import math
 from datetime import datetime, timezone
 import json
@@ -10,9 +10,26 @@ from pathlib import Path
 import re
 import subprocess
 import time
+from typing import Optional
 
-from benchmark_stack import (load_config, ais_config, Stack, LABEL, write_json,
+from suite_datasets import LocalDataset, resolve_dataset
+from benchmark_stack import (load_config, ais_config, Stack, LABEL, ROOT, write_json,
                              runtime_command, aisbench_environment, check_local_images, validate_config)
+
+
+@dataclass
+class Case:
+    name: str
+    cfg: dict
+    dataset: Optional[LocalDataset]
+
+    def dataset_info(self):
+        if self.dataset is None:
+            return {'type': 'synthetic'}
+        info = asdict(self.dataset)
+        if self.dataset.type != 'jsonl':
+            info.pop('prompt_field')
+        return info
 
 
 @dataclass
@@ -22,7 +39,8 @@ class Suite:
     stop_on_failure: bool
 
 
-def prepare_suite(cfg, suite):
+def prepare_suite(cfg, suite, directory=None):
+    directory = Path.cwd() if directory is None else directory
     cases = suite['cases']
     if not isinstance(cases, list) or not cases:
         raise ValueError('cases must be a nonempty array')
@@ -52,8 +70,17 @@ def prepare_suite(cfg, suite):
         case_cfg['benchmark'].pop('requests_per_level', None)
         case_cfg['benchmark'].update(overrides)
         try:
-            prepared.append((name, validate_config(case_cfg)))
-        except (ValueError, TypeError) as exc:
+            dataset = resolve_dataset(case.get('dataset', {'type': 'synthetic'}), directory, overrides)
+            if dataset:
+                case_cfg['benchmark']['request_count'] = dataset.requests
+            validate_config(case_cfg)
+            if dataset:
+                for key in ('dataset_type', 'input_length', 'prefix_length'):
+                    case_cfg['benchmark'].pop(key, None)
+                if dataset.type == 'sharegpt':
+                    case_cfg['inference']['api'] = 'chat'
+            prepared.append(Case(name, case_cfg, dataset))
+        except (ValueError, TypeError, OSError) as exc:
             raise ValueError(f'{name}: {exc}') from exc
     return Suite(prepared, cooldown, stop)
 
@@ -71,13 +98,15 @@ def run_suite(cfg, suite):
     run = root/'data/results/suites'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     run.mkdir(parents=True)
     prepared = []
-    for name, case_cfg in suite.cases:
-        folder = run/name
+    for case in suite.cases:
+        folder = run/case.name
         folder.mkdir()
-        write_json(folder/'stack.json', case_cfg)
-        (folder/'aisbench.py').write_text(ais_config(case_cfg))
+        snapshot = dict(case.cfg)
+        snapshot['dataset'] = case.dataset_info()
+        write_json(folder/'stack.json', snapshot)
+        (folder/'aisbench.py').write_text(ais_config(case.cfg, case.dataset))
         (folder/'results').mkdir()
-        prepared.append((name, case_cfg, folder))
+        prepared.append((case, folder))
     lock = root/'suite.lock'
     summary = []
     with lock.open('x') as handle:
@@ -90,7 +119,8 @@ def run_suite(cfg, suite):
             check_local_images(cfg, required, stack.call)
         else:
             stack.check_image(cfg['images']['aisbench'])
-        for index, (name, case_cfg, folder) in enumerate(prepared):
+        for index, (case, folder) in enumerate(prepared):
+            name = case.name
             if index:
                 time.sleep(suite.cooldown)
             for container in state['containers']:
@@ -101,22 +131,32 @@ def run_suite(cfg, suite):
                 elif not info or not info['State']['Running'] or info['Config']['Labels'].get(LABEL) != cfg['project']:
                     raise RuntimeError('Required owned container is unavailable: '+container)
             stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
-            b = case_cfg['benchmark']
+            b = case.cfg['benchmark']
+            inputs = []
+            if case.dataset:
+                inputs = ['--mount', case.dataset.mount()]
+                if case.dataset.type == 'jsonl':
+                    extension = ROOT / 'containers/aisbench/llm_bench_jsonl.py'
+                    inputs += ['-e', 'PYTHONPATH=/config', '--mount',
+                               f'type=bind,src={extension},dst=/config/llm_bench_jsonl.py,readonly']
             cmd = ['run',*aisbench_environment(cfg),'--rm','--platform',cfg['platform'],
                   '--name',cfg['project']+'-suite-client','--label',LABEL+'='+cfg['project'],
                   '--network',state['network'],
                   '--mount',f'type=bind,src={folder}/aisbench.py,dst=/config/aisbench.py,readonly',
                   '--mount',f'type=bind,src={folder}/results,dst=/results',
                   '--mount',f'type=bind,src={cfg["storage"]["tokenizer"]},dst=/tokenizer,readonly',
+                  *inputs,
                   cfg['images']['aisbench'],'/config/aisbench.py','--mode','perf','--debug',
                   '--max-num-workers','1','--num-warmups',str(b.get('warmups',1))]
             if b['mode']=='pressure':
                 cmd += ['--pressure','--pressure-time',str(b['pressure_seconds'])]
             entry = {'case':name,'started_at':datetime.now(timezone.utc).isoformat(),'benchmark':b}
+            entry['dataset'] = case.dataset_info()
             print('START '+name, flush=True)
             with (folder/'client.log').open('w') as log:
                 result = subprocess.run(runtime_command(cfg, cmd), stdout=log, stderr=subprocess.STDOUT)
-            reports = list((folder/'results').glob('*/performances/*/synthetic.json'))
+            abbr = case.dataset.type if case.dataset else 'synthetic'
+            reports = list((folder/'results').glob(f'*/performances/*/{abbr}.json'))
             data = [json.loads(p.read_text()) for p in reports]
             passed = result.returncode==0 and bool(data) and all(
                 float(r['Failed Requests']['total'])==0 and float(r['Success Requests']['total'])>0 for r in data)
@@ -142,7 +182,7 @@ def main():
     args = parser.parse_args()
     try:
         cfg = load_config(args.config)
-        code = run_suite(cfg, prepare_suite(cfg, json.loads(args.suite.read_text())))
+        code = run_suite(cfg, prepare_suite(cfg, json.loads(args.suite.read_text()), args.suite.resolve().parent))
     except (OSError, KeyError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         parser.exit(1, f'ERROR: {exc}\n')
     if code:

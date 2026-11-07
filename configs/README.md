@@ -7,6 +7,7 @@ configs/
 ├── stacks/                        # Mac 模拟 / NVIDIA 单机完整运行配置
 ├── suites/                        # 按顺序执行的 AISBench 测试例清单
 ├── search/                        # 自适应 SLO 搜索范围、阈值及预算
+├── fixtures/datasets/              # 混合 suite 使用的业务 JSONL 与 ShareGPT 示例
 ├── fixtures/mock-tokenizer/        # 仅模拟使用的小型 tokenizer
 ├── common/
 │   ├── prometheus/base.json         # 全局采集周期

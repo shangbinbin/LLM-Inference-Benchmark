@@ -83,6 +83,86 @@ llm-bench bench suite --cases configs/suites/mac-smoke.json
 
 示例依次运行 string 32/16、tokenid 64/8、3 秒持续压力三个用例。所有客户端和观测组件为实际容器，仅推理响应/GPU 指标由 fixture 提供。
 
+### 在同一份 cases.json 混用三种数据集
+
+下面的命令从仓库根目录启动观测栈，再依次运行业务 JSONL、ShareGPT 多轮对话和固定长度合成数据。仓库自带完整清单和小样本，首次演练可以直接使用。生产环境把 profile 换成填好的 x86 环境配置。
+
+```bash
+# Mac，已备齐离线镜像
+llm-bench up --profile mac-offline --cases configs/suites/mixed-datasets.json
+
+# Linux x86，使用已有推理服务
+llm-bench up --config /srv/bench/site.json --cases /srv/bench/cases.json
+
+# 观测栈已经启动时，单独执行另一份清单
+llm-bench bench suite --data-dir /srv/llm-benchmark --cases /srv/bench/cases.json
+```
+
+每例的 `dataset` 与 `benchmark` 同级。前者选数据来源，后者设置请求量、并发和输出长度等负载参数。以下是仓库中可执行的完整配置。[示例清单](../configs/suites/mixed-datasets.json)
+
+```json
+{
+  "cooldown_seconds": 1,
+  "stop_on_failure": true,
+  "cases": [
+    {
+      "name": "support-tickets",
+      "dataset": {"type": "jsonl", "path": "../fixtures/datasets/support.jsonl", "prompt_field": "ticket"},
+      "benchmark": {"output_length": 12, "concurrency": 1, "warmups": 0}
+    },
+    {
+      "name": "support-dialogues",
+      "dataset": {"type": "sharegpt", "path": "../fixtures/datasets/support-chat.json"},
+      "benchmark": {"output_length": 8, "concurrency": 1, "warmups": 0}
+    },
+    {
+      "name": "fixed-64-in-16-out",
+      "dataset": {"type": "synthetic"},
+      "benchmark": {"dataset_type": "tokenid", "input_length": 64, "output_length": 16, "request_count": 4, "concurrency": 2, "warmups": 0}
+    }
+  ]
+}
+```
+
+**业务 JSONL** 使用 UTF-8 编码，每行一个 JSON 对象。默认读取顶层字符串字段 `prompt`。例如下列文件每行发送一次单轮请求。若字段名是 `ticket`，就在 `dataset` 中写 `"prompt_field": "ticket"`。选中的文本原样进入 AISBench，保留标点、换行和花括号。其余字段可存放业务元数据，不参与构造请求。网关接口由站点的 `inference.api` 选择。[业务数据示例](../configs/fixtures/datasets/support.jsonl)
+
+```jsonl
+{"prompt":"为订单 {order_id} 写一条催单消息。","order_id":"demo-123"}
+{"prompt":"概括以下反馈。\n配送及时，包装需要改进。"}
+```
+
+**ShareGPT** 使用 UTF-8 JSON 数组。每条记录包含字符串 `id` 和 `conversations` 数组。消息按 `human`、`gpt` 交替排列，每条 `value` 都要有文本。每对消息发一次请求。AISBench 采用原生 `every` 模式，先发送第一轮问题，再把模型实际回复和下一轮问题作为历史继续发送。该例会使用同一服务的 `/v1/chat/completions`，因此被测服务需要开放流式 chat 接口。[含一轮及两轮会话的示例](../configs/fixtures/datasets/support-chat.json)
+
+```json
+[{"id":"invoice","conversations":[
+  {"from":"human","value":"发票在哪里？"},
+  {"from":"gpt","value":"请进入订单详情。"},
+  {"from":"human","value":"可以下载吗？"},
+  {"from":"gpt","value":"可以下载 PDF。"}
+]}]
+```
+
+**合成数据** 由当前用例的 AISBench 容器现场生成。示例以服务的本地 tokenizer 采样 64 个 token ID，以 16 个输出 token 为目标，共发 4 次。将 `dataset_type` 改为 `string` 可生成重复文本。服务端重新分词、聊天模板和提前 EOS 都可能改变实测长度，请用逐请求明细中的 `input_tokens`、`output_tokens` 核对。原有仅含 `benchmark` 的合成用例可以直接复用。[合成数据参数详解](aisbench.md)
+
+#### 文件路径与容器挂载
+
+- `dataset.path` 可以是本地绝对路径，也可以相对 **cases.json 所在目录**。复制清单到新目录后，可以连同语料保留相对布局，或将两个 path 换成现场绝对路径。
+- 每个客户端只读挂载本例的语料。JSONL 的容器路径为 `/datasets/input.jsonl`，ShareGPT 为 `/datasets/input.json`。JSONL 客户端还会只读挂载仓库内的读取模块 `containers/aisbench/llm_bench_jsonl.py`。合成用例只需已有的 tokenizer。使用 Docker Desktop 时，语料所在目录应允许文件共享。使用远程 Docker 或 nerdctl 时，解析后的源路径须在运行时主机上可读。
+- CLI 在启动第一例前读取并校验整份清单及文件格式。运行期间请保持语料内容稳定。离线交付时带上本地语料、完整工程、模型 tokenizer 和对应平台镜像。业务原文及模型回复会进入 AISBench 的逐请求明细，归档结果时按语料的访问权限处理。
+
+#### 请求数与报告
+
+| 参数 | JSONL | ShareGPT | 合成数据 |
+| --- | --- | --- | --- |
+| 用例省略 `request_count` | 使用所有行 | 使用所有对话的所有轮 | 继承站点设置 |
+| 用例显式 `request_count=N` | 从第一行取 N 条 | 从第一个对话起取足 N 轮，必须落在完整对话的末尾 | 生成 N 条样本 |
+| `input_length` / `prefix_length` | 输入由原文决定 | 输入由当前轮和历史决定 | 由当前用例设置 |
+| `output_length` | 每次请求的输出上限 | 每一轮请求的输出上限 | 目标输出长度 |
+
+文件样本不足或 `request_count` 截断对话时，命令会提示具体用例并退出。示例 ShareGPT 文件先有一个两轮对话，再有一个单轮对话，所以可选 2 或 3 个请求。预热按样本执行，一个多轮会话可能产生多个预热请求。预热不计入正式报告。`perf` 核对成功请求数与目标一致，`pressure` 按时长从选定的样本池发压。
+
+终端应依次打印三个 `PASS`。在打印的 `suite-results.json` 中，`reports` 指向各用例的 `jsonl.json`、`sharegpt.json`、`synthetic.json`。文件型用例另外记录解析后的绝对路径、选中的记录数 `records` 和对应的请求数 `requests`。在 `*_details.jsonl` 中可查看每个请求的输入和输出，多轮会话可通过 `uuid` 和 `turn_id` 关联。
+
 ### Linux x86 生产用例
 
 先准备完整 site.json（platform 为 linux/amd64、镜像标签为 amd64），再创建 suite.json：

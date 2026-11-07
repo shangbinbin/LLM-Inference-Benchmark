@@ -1,0 +1,18 @@
+[
+  {
+    "id": "demo-invoice",
+    "conversations": [
+      {"from": "human", "value": "Where can I find my invoice?"},
+      {"from": "gpt", "value": "Open your order and select Invoice."},
+      {"from": "human", "value": "Can I download a copy?"},
+      {"from": "gpt", "value": "Yes, select Download PDF."}
+    ]
+  },
+  {
+    "id": "demo-shipping",
+    "conversations": [
+      {"from": "human", "value": "How do I track a shipment?"},
+      {"from": "gpt", "value": "Use the tracking link in your order."}
+    ]
+  }
+]

@@ -204,13 +204,17 @@ def operation(root):
 def execute(args):
     if args.command in ('up', 'plan', 'images'):
         cfg = configured_stack(args)
-        suite = prepare_suite(cfg, read_object(args.cases)) if getattr(args, 'cases', None) else None
+        suite = None
+        if getattr(args, 'cases', None):
+            suite = prepare_suite(cfg, read_object(args.cases), args.cases.resolve().parent)
         directory, vendor = prepare(cfg)
         stack = Stack(cfg, directory, vendor)
         if args.command == 'plan':
             print(json.dumps({'config': cfg, 'gpu_vendor': vendor, 'config_dir': str(directory),
                               'services': [s['name'] for s in stack.specs()],
-                              'workloads': [name for name, _ in suite.cases] if suite else
+                              'cases': [{'name': case.name, 'dataset': case.dataset_info(),
+                                         'benchmark': case.cfg['benchmark']} for case in suite.cases] if suite else [],
+                              'workloads': [case.name for case in suite.cases] if suite else
                               ([] if args.no_benchmark else ['default'])}, indent=2, ensure_ascii=False))
         elif args.command == 'images':
             if args.action == 'check':
@@ -252,7 +256,8 @@ def execute(args):
         else:
             raw = read_object(args.cases) if args.action == 'suite' else {
                 'cases': [{'name': 'single', 'benchmark': workload(args)}]}
-            return run_suite(stack.cfg, prepare_suite(stack.cfg, raw))
+            directory = args.cases.resolve().parent if args.action == 'suite' else Path.cwd()
+            return run_suite(stack.cfg, prepare_suite(stack.cfg, raw, directory))
     return 0
 
 

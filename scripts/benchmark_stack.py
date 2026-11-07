@@ -16,7 +16,7 @@ import sys
 import time
 import urllib.request
 
-from render_observability import render, write_json, ROOT
+from render_observability import config_dir, render, write_json, ROOT
 
 LABEL = 'io.llm-benchmark.project'
 ADAPTERS = {'nvidia': 'gpu/nvidia/model-agnostic', 'hygon': 'gpu/hygon/model-agnostic-hcu-v3'}
@@ -187,8 +187,7 @@ def detect_vendor(cfg):
     return vendor
 
 
-def ais_config(cfg):
-    b = cfg['benchmark']; endpoint = cfg['inference']
+def synthetic_config(b):
     ds_type = b['dataset_type']
     synthetic = {'Type': ds_type, 'RequestCount': b['request_count'], 'TrustRemoteCode': False}
     if ds_type == 'string':
@@ -196,7 +195,29 @@ def ais_config(cfg):
                                      for key, value in [('Input', 'input_length'), ('Output', 'output_length')]}
     else:
         synthetic['TokenIdConfig'] = {'RequestSize': b['input_length'], 'PrefixLen': b.get('prefix_length', 0)}
+    return (f'synthetic.synthetic_gen_{ds_type} import synthetic_datasets',
+            f'datasets[0]["config"] = {synthetic!r}')
+
+
+def ais_config(cfg, dataset=None):
+    b = cfg['benchmark']
+    endpoint = cfg['inference']
     model_file = 'vllm_api_stream_chat' if endpoint.get('api', 'completions') == 'chat' else 'vllm_api_general_stream'
+    extension = ''
+    if dataset is None:
+        dataset_import, settings = synthetic_config(b)
+    elif dataset.type == 'sharegpt':
+        dataset_import = 'sharegpt.sharegpt_gen import sharegpt_datasets'
+        model_file = 'vllm_api_stream_chat_multiturn'
+        settings = (f'datasets[0]["path"] = {dataset.container_path!r}\n'
+                    f'datasets[0]["reader_cfg"]["test_range"] = "[:{dataset.records}]"')
+    else:
+        dataset_import = 'custom.custom_qa_gen import custom_datasets'
+        extension = 'from llm_bench_jsonl import BusinessJsonlDataset, LiteralPrompt\n'
+        settings = f'''datasets[0].update(type=BusinessJsonlDataset, abbr="jsonl", path={dataset.container_path!r},
+                   prompt_field={dataset.prompt_field!r}, records={dataset.records})
+datasets[0]["reader_cfg"] = dict(input_columns=["question"], output_column=None)
+datasets[0]["infer_cfg"]["prompt_template"] = dict(type=LiteralPrompt, template="{{question}}")'''
     model = {'abbr': 'aisbench-target', 'model': endpoint['model'], 'url': endpoint['base_url'],
              'path': '/tokenizer', 'stream': True,
              'batch_size': b['concurrency'], 'request_rate': b.get('request_rate', 0),
@@ -206,10 +227,10 @@ def ais_config(cfg):
 from mmengine.config import read_base
 with read_base():
     from ais_bench.benchmark.configs.summarizers.perf.default_perf import summarizer
-    from ais_bench.benchmark.configs.datasets.synthetic.synthetic_gen_{ds_type} import synthetic_datasets as datasets
+    from ais_bench.benchmark.configs.datasets.{dataset_import} as datasets
     from ais_bench.benchmark.configs.models.vllm_api.{model_file} import models
-models[0].update({model!r})
-datasets[0]["config"] = {synthetic!r}
+{extension}models[0].update({model!r})
+{settings}
 work_dir = "/results"
 '''
 
@@ -218,9 +239,14 @@ def prepare(cfg):
     vendor = detect_vendor(cfg)
     root = Path(cfg['storage']['root'])
     source_hash = hashlib.sha256(Path(__file__).read_bytes() + (ROOT/'scripts/render_observability.py').read_bytes())
-    for asset in sorted((ROOT/'configs').rglob('*')):
-        if asset.is_file() and 'stacks' not in asset.parts:
-            source_hash.update(asset.read_bytes())
+    # Suite files and local corpora do not affect the rendered monitoring stack.
+    asset_dirs = [ROOT/'configs/common', ROOT/'configs/gpu']
+    if cfg.get('network'):
+        asset_dirs.append(config_dir(cfg['network']['adapter']))
+    for directory in asset_dirs:
+        for asset in sorted(directory.rglob('*')):
+            if asset.is_file():
+                source_hash.update(asset.read_bytes())
     config_hash = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode() + source_hash.digest()).hexdigest()
     run_dir = root / 'config' / config_hash[:12]
     if (run_dir / 'manifest.json').exists():

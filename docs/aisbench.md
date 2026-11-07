@@ -1,5 +1,8 @@
 # AISBench 合成数据与推理服务压测
 
+同一份清单可逐例选择业务 JSONL、ShareGPT 多轮对话或本文的合成数据。[完整配置与挂载方法](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
+
+
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
 
 客户端使用 [AISBench/benchmark](https://github.com/AISBench/benchmark)，本项目固定源码提交 [`e330dc134c33f47671926144d9c143b554bc71cc`](https://github.com/AISBench/benchmark/tree/e330dc134c33f47671926144d9c143b554bc71cc)（2026-11-05）。容器内为 Python 3.11 和 CPU PyTorch，不占用被测 GPU。容器记录完整依赖清单 `/opt/aisbench/dependencies.txt`；主机只需 Python 标准库和容器运行时。

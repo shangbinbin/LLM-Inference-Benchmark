@@ -45,6 +45,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(cfg['benchmark']['input_length'], 48)
             self.assertEqual(cfg['benchmark']['concurrency'], 4)
             self.assertEqual(cfg['topology']['metrics_endpoints'][0]['target'], 'metrics:9000')
+            self.assertEqual(plan['cases'][0]['dataset'], {'type': 'synthetic'})
             self.assertEqual(plan['workloads'], ['short-string', 'random-tokenid', 'sustained-pressure'])
 
     def test_ambiguous_working_directory_requires_explicit_selection(self):

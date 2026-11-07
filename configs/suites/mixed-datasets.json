@@ -1,0 +1,21 @@
+{
+  "cooldown_seconds": 1,
+  "stop_on_failure": true,
+  "cases": [
+    {
+      "name": "support-tickets",
+      "dataset": {"type": "jsonl", "path": "../fixtures/datasets/support.jsonl", "prompt_field": "ticket"},
+      "benchmark": {"output_length": 12, "concurrency": 1, "warmups": 0}
+    },
+    {
+      "name": "support-dialogues",
+      "dataset": {"type": "sharegpt", "path": "../fixtures/datasets/support-chat.json"},
+      "benchmark": {"output_length": 8, "concurrency": 1, "warmups": 0}
+    },
+    {
+      "name": "fixed-64-in-16-out",
+      "dataset": {"type": "synthetic"},
+      "benchmark": {"dataset_type": "tokenid", "input_length": 64, "output_length": 16, "request_count": 4, "concurrency": 2, "warmups": 0}
+    }
+  ]
+}

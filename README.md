@@ -22,7 +22,7 @@ llm-bench down
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |
-| [批量顺序执行](docs/aisbench-sequential.md) | 原生并发档扫描、任意用例清单、冷却和失败处理 |
+| [批量顺序执行](docs/aisbench-sequential.md) | 混用业务 JSONL、ShareGPT 与合成数据的完整示例、并发档扫描和失败处理 |
 | [SLO 容量搜索](docs/aisbench-slo-capacity.md) | 业务阈值、候选负载扫描、自动筛选、边界细化与复测 |
 | [SLO 自适应搜索](docs/aisbench-auto-slo.md) | 根据每轮结果自动调整并发、重复验证、范围与停止条件 |
 | [Mac 验证记录](docs/reports/mac-container-smoke-2026-11-07.md) | 实际容器、请求、指标、日志及重启验证 |
