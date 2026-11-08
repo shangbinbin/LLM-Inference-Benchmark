@@ -91,6 +91,7 @@ def parser_for_cli():
     suite.add_argument('--cases', type=Path, required=True)
     slo = bench.add_parser('slo', help='search concurrency under latency limits')
     select_stack(slo)
+    slo.add_argument('--cases', type=Path, help='search each case in the ordered AISBench suite')
     slo.add_argument('--policy', type=Path, required=True)
     return parser
 
@@ -252,7 +253,8 @@ def execute(args):
             stack.down()
             reference(stack.root).unlink(missing_ok=True)
         elif args.action == 'slo':
-            return run_search(stack.cfg, read_object(args.policy))
+            suite = prepare_suite(stack.cfg, read_object(args.cases), args.cases.resolve().parent) if args.cases else None
+            return run_search(stack.cfg, read_object(args.policy), suite)
         else:
             raw = read_object(args.cases) if args.action == 'suite' else {
                 'cases': [{'name': 'single', 'benchmark': workload(args)}]}

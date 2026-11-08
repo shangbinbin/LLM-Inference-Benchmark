@@ -30,7 +30,7 @@ def _timestamp_array(blob):
     return [value[0] for value in struct.iter_unpack(header['descr'][0] + 'd', blob[data_offset:])]
 
 
-def measured_peak_concurrency(details_path, expected_count):
+def measured_peak_concurrency(details_path, expected_count, *, conversations=None):
     """Peak client-observed overlap of [first timestamp, last timestamp) intervals.
 
     AISBench's summary Max Concurrency is the configured batch_size, not evidence.
@@ -38,6 +38,7 @@ def measured_peak_concurrency(details_path, expected_count):
     evidence is an invalid trial. Inline lists are accepted for exported reports.
     """
     events, request_ids, references = [], set(), set()
+    turn_counts = {}
     databases = {}
     db_dir = details_path.parent.resolve() / 'db_data'
     try:
@@ -48,9 +49,16 @@ def measured_peak_concurrency(details_path, expected_count):
                 if not isinstance(item, dict):
                     raise ValueError(f'Invalid request detail at line {line_number}')
                 request_id = item.get('id')
-                if (type(request_id) is not int or request_id < 0 or request_id in request_ids
-                        or item.get('success') is not True):
-                    raise ValueError(f'Failed, duplicate or invalid request detail at line {line_number}')
+                if type(request_id) is not int or request_id < 0 or item.get('success') is not True:
+                    raise ValueError(f'Failed or invalid request detail at line {line_number}')
+                if conversations is not None:
+                    turn = item.get('turn_id')
+                    if type(turn) is not int or turn < 0:
+                        raise ValueError(f'Invalid ShareGPT turn at line {line_number}')
+                    turn_counts[request_id] = turn_counts.get(request_id, 0) + 1
+                    request_id = (request_id, turn)
+                if request_id in request_ids:
+                    raise ValueError(f'Duplicate request detail at line {line_number}')
                 request_ids.add(request_id)
                 if len(request_ids) > expected_count:
                     raise ValueError('Request detail count does not match the report')
@@ -85,6 +93,9 @@ def measured_peak_concurrency(details_path, expected_count):
         raise ValueError(f'Cannot read request timing evidence: {exc}') from exc
     if len(request_ids) != expected_count or not events:
         raise ValueError('Request detail count does not match the report')
+    if conversations is not None and (len(turn_counts) != conversations or any(
+            turn >= turn_counts[conversation] for conversation, turn in request_ids)):
+        raise ValueError('ShareGPT conversation count or turn sequence differs from the workload')
     active = peak = 0
     # End (-1) precedes start (+1) at a shared timestamp: touching is not overlap.
     for _, change in sorted(events):

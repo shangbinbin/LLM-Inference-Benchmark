@@ -53,6 +53,73 @@ llm-bench bench slo --config /absolute/path/site.json --policy /absolute/path/se
 
 如果栈已以相同配置启动且为 ready/complete，直接执行搜索即可。不要并行运行其他客户端；搜索与本工程 suite 共用 `storage.root/suite.lock`，down 在锁存在时会拒绝清理组件。直接从外部启动的压测客户端无法由此锁隔离，需要实验环境保证独占测试窗口。
 
+## 用同一份 cases.json 逐数据集搜索
+
+`up --cases`、`bench suite --cases` 和 `bench slo --cases` 读取同一种用例格式。SLO 搜索按数组顺序为每个用例重新建立并发网格。业务 JSONL、ShareGPT 多轮对话、固定长度合成数据可共用一份清单。[完整 cases.json](../configs/suites/mixed-datasets.json) · [语料格式与只读挂载](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
+
+**Mac 快速验证**。从仓库根目录执行。已有 `mac-slo-search` 栈可直接执行第二条命令。示例策略用很小的样本池验证功能，生产测试请按业务样本量设置 `min_requests` 和重复次数。[Mac 混合搜索策略](../configs/search/mac-mixed-datasets.json)
+
+```bash
+llm-bench up --config configs/stacks/mac-slo-search.json --no-benchmark
+llm-bench bench slo --config configs/stacks/mac-slo-search.json \
+  --cases configs/suites/mixed-datasets.json --policy configs/search/mac-mixed-datasets.json
+llm-bench down --config configs/stacks/mac-slo-search.json
+```
+
+**Linux x86**。先按上一节准备并启动站点，然后对已有栈运行：
+
+```bash
+llm-bench bench slo --config /srv/bench/site.json \
+  --cases /srv/bench/cases.json --policy /srv/bench/slo-policy.json
+```
+
+### 负载、阈值和预算
+
+- **清单决定负载**。每轮使用同一用例的语料、样本范围、输出上限、预热和生成参数。相对语料路径以清单所在目录为基准。搜索器逐轮设置 `concurrency`，因此清单中普通 suite 使用的并发值可以保留。
+- **策略决定判定口径**。各组使用同一份 `--policy` 中的阈值、统计口径、范围、步长和重复次数。生产用 `verified_max` 时，只有网格中所有更高候选都被排除，才会报告已验证的最大并发。`max_rounds` 和 `max_duration_seconds` 对每组单独计数。策略的冷却在 trial 之间生效，清单的 `cooldown_seconds` 在两组搜索之间生效。
+- **每组的样本必须足够**。JSONL 每行计一次请求，ShareGPT 每轮计一次请求，合成数据按 `request_count` 生成。每组的正式请求数均须覆盖 `min_requests` 和并发上限。ShareGPT 同一对话的轮次串行，所选的独立对话数也须达到并发上限。例如 2 段对话共 3 轮可搜索并发 1–2。CLI 在第一轮前检查全部用例，指出不合规的用例名。
+- **输出长度口径**。合成用例严格核对固定输出长度。本地文件用例允许提前 EOS，输出须落在 1 至 `output_length` 之间。策略包含 TPOT 或 ITL 时，每个正式响应至少需要 2 个输出 token。各指标在 AISBench 报告的样本数必须完整，实测峰值并发必须达到候选值。未满足这些条件的轮次记为 `INVALID`。
+- **继续或停止**。测完网格仍无可行点时，该组记录 `no_feasible_concurrency`，继续搜索下一组。无效 trial、超时或预算耗尽会停止该组；默认 `stop_on_failure: true` 同时停止后续用例，设为 `false` 可继续下一组。中断总是停止整批。整批使用同一把运行锁。
+
+### 阅读汇总
+
+启动时终端打印 `SLO suite report` 的绝对路径。目录结构如下。
+
+```text
+storage.root/data/results/slo-search/<UTC时间戳>/
+├── suite-results.json
+├── stack.json
+└── cases/<用例名>/
+    ├── policy.json
+    ├── stack.json
+    ├── search-results.json
+    └── round-001-c1-r1/
+        ├── trial.json
+        └── results/
+```
+
+`suite-results.json` 按输入顺序列出每组的数据来源、`recommended_concurrency`、`maximum_verified`、停止原因和独立报告路径。推荐值所在档位的多次测量中，每项指标最差的统计值记录在 `worst_recommended_latencies_ms`。例如策略选 P99 时，它记录各次 P99 的最大值。未完成的组保留已观察结果，推荐值为 `null`；未启动的组标为 `skipped`。每个 trial 的 `trial.json` 还记录选中指标的毫秒值、实测峰值并发、输出 token 范围和明细证据路径。
+
+汇总的 `status: complete` 表示所有组均完成搜索，可能包含没有可行点的组。退出码 0 表示每组均有推荐值；存在无可行点、无效测量或预算停止时返回非零。多组搜索被 Ctrl-C 或 SIGTERM 中断时返回 130。
+
+### Mac 模拟验收结果（2026-11-08）
+
+本次用 Apple Silicon Mac、离线 arm64 镜像和仓库的混合用例实跑。为复现清晰的边界，模拟服务设置 `simulation_latency.capacity=1`、`overload_delay_seconds=0.4`。搜索范围为 1–2，每档重复 2 次，按 P99 TTFT ≤ 200 ms 且 P99 TPOT ≤ 50 ms 判定。下表时延均取该档两次 P99 中的较大值。
+
+| 用例 | 正式请求总数 | 并发 1 TTFT / TPOT | 并发 2 TTFT / TPOT | 已验证最大并发 |
+| --- | ---: | ---: | ---: | ---: |
+| 业务 JSONL | 8 | 8.9 / 6.1 ms | 407.9 / 6.4 ms | 1 |
+| ShareGPT | 12 | 11.0 / 6.2 ms | 413.3 / 6.3 ms | 1 |
+| 64 入 / 16 出合成数据 | 16 | 11.5 / 6.5 ms | 414.5 / 6.4 ms | 1 |
+
+12 次 trial 的逐请求时间戳都达到了目标峰值。模拟服务的过载延迟使三组都在并发 2 超过 TTFT 阈值，生产 GPU 的结论需要使用现场服务及业务语料重新测量。
+
+## AISBench 上游能力核查（2026-11-08）
+
+GitHub 最新正式 Release 为 **v3.1-20261013-master**（10 月 16 日发布）。在该版本的 CLI 与公开文档中未找到根据每轮 TTFT/TPOT 自动选择下一档并发的入口。`ais_bench --search` 用于查找模型、数据集等任务配置的路径。[官方 Release](https://github.com/AISBench/benchmark/releases/tag/v3.1-20261013-master) · [该版本命令行实现](https://github.com/AISBench/benchmark/blob/5a63d936e40dd04addfcffb2401f84cd0e53bb46/ais_bench/benchmark/cli/argument_parser.py)
+
+当日默认分支 `master` 的 HEAD 是 **e330dc1**（11 月 5 日），与本工程镜像固定提交一致。它支持将预先列出的多档并发和请求数配对展开，执行后汇总 CSV/HTML。在该提交的 CLI、调度代码与性能指南中也未找到按 SLO 反馈搜索最大并发的原生入口。本工程由 `llm-bench bench slo` 选择下一档并核验结果，AISBench 负责每个候选的发压和测量。[官方多档并发指南](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/docs/source_zh_cn/advanced_tutorials/multi-concurrency_performance.md) · [档位展开实现](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/ais_bench/benchmark/cli/sweep.py)
+
 ## 搜索策略文件
 
 ```json
@@ -110,16 +177,16 @@ llm-bench bench slo --config /absolute/path/site.json --policy /absolute/path/se
 每个 trial 使用独立目录和 AISBench 容器，仅读取本次结果。检查：
 
 1. 所需观测容器仍运行且属于本项目，Prometheus targets 全部 UP。
-2. AISBench 退出成功，存在唯一 synthetic.json、对应 CSV、synthetic_details.jsonl 及其引用的 db_data 时间戳数据库。
+2. AISBench 退出成功，存在本例唯一的 synthetic.json、jsonl.json 或 sharegpt.json，以及对应 CSV、逐请求 details JSONL 和时间戳数据库。
 3. 正式请求总数与固定 workload 相符，达到 min_requests，零失败，成功数等于总数。
-4. 汇总 Max Concurrency 只校验配置是否匹配（它来自 batch_size，不是实测值）。逐条读取 details 的 time_points，以首末时间戳构成左闭右开区间，计算客户端实测峰值重叠数，必须等于本轮目标；同一时刻结束和开始的请求不算重叠。请求明细数必须完整且成功、ID 唯一，时间戳必须有限、非负、有序且区间非零；缺失、损坏或重复引用的数据判为 INVALID，不退回使用配置值。
-5. OutputTokens 的 Min/Max 等于固定输出目标，防止提前 EOS/stop 造成虚假的低时延。
+4. 汇总 Max Concurrency 只校验配置是否匹配（它来自 batch_size，不是实测值）。逐条读取 details 的 time_points，以首末时间戳构成左闭右开区间，计算客户端实测峰值重叠数，必须等于本轮目标；同一时刻结束和开始的请求不算重叠。请求明细必须完整、成功且唯一（ShareGPT 使用对话 ID 与从 0 开始的轮次组成键），时间戳必须有限、非负、有序且区间非零；缺失、损坏或重复引用的数据判为 INVALID，不退回使用配置值。
+5. OutputTokens 的 Min/Max 须符合该数据类型的输出长度口径。
 6. 所选指标 Stage=total、样本 N 完整，单位为 ms，值有限且非负；按 statistic 读取，不用平均值替代 P99。
 7. 任一时延超过阈值为 SLO_FAIL，等于阈值算通过。数据/请求失败为 INVALID，立即停止，不能把它当作有效的 SLO 失败边界。
 
 并发校验衡量的是 AISBench 客户端从发起请求到最后一个已记录响应时间点的峰值重叠，不是服务端执行并发，也不保证持续保持目标负载。不能用平均 Concurrency 必须等于目标来替代，因为升压、收尾阶段会降低平均值。当前固定 AISBench 版本的 SQLite 时间戳以 NPY v1 一维 float64 存储；搜索器只读解析该格式，无需在宿主机安装 NumPy，遇到不支持的格式会停止。保留原始 details 与 db_data 才能复核测量。
 
-当前实现严格要求零请求失败、固定输出长度、单一 workload、perf 模式和 request_rate=0。QPS 搜索、容忍失败预算、压力模式、自定义分布的变长输出和服务参数寻优不在该入口中。实际输入 token 数仍须按模型 tokenizer 核对。
+每组搜索要求零请求失败、perf 模式和 request_rate=0。QPS 搜索、容忍失败预算、压力模式、自定义合成长度分布和服务参数寻优不在该入口中。实际输入 token 数仍须按模型 tokenizer 核对。
 
 ## 停止、退出码与清理
 

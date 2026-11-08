@@ -31,6 +31,16 @@ class Case:
             info.pop('prompt_field')
         return info
 
+    def client_inputs(self):
+        if self.dataset is None:
+            return []
+        inputs = ['--mount', self.dataset.mount()]
+        if self.dataset.type == 'jsonl':
+            extension = ROOT / 'containers/aisbench/llm_bench_jsonl.py'
+            inputs += ['-e', 'PYTHONPATH=/config', '--mount',
+                       f'type=bind,src={extension},dst=/config/llm_bench_jsonl.py,readonly']
+        return inputs
+
 
 @dataclass
 class Suite:
@@ -132,20 +142,13 @@ def run_suite(cfg, suite):
                     raise RuntimeError('Required owned container is unavailable: '+container)
             stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
             b = case.cfg['benchmark']
-            inputs = []
-            if case.dataset:
-                inputs = ['--mount', case.dataset.mount()]
-                if case.dataset.type == 'jsonl':
-                    extension = ROOT / 'containers/aisbench/llm_bench_jsonl.py'
-                    inputs += ['-e', 'PYTHONPATH=/config', '--mount',
-                               f'type=bind,src={extension},dst=/config/llm_bench_jsonl.py,readonly']
             cmd = ['run',*aisbench_environment(cfg),'--rm','--platform',cfg['platform'],
                   '--name',cfg['project']+'-suite-client','--label',LABEL+'='+cfg['project'],
                   '--network',state['network'],
                   '--mount',f'type=bind,src={folder}/aisbench.py,dst=/config/aisbench.py,readonly',
                   '--mount',f'type=bind,src={folder}/results,dst=/results',
                   '--mount',f'type=bind,src={cfg["storage"]["tokenizer"]},dst=/tokenizer,readonly',
-                  *inputs,
+                  *case.client_inputs(),
                   cfg['images']['aisbench'],'/config/aisbench.py','--mode','perf','--debug',
                   '--max-num-workers','1','--num-warmups',str(b.get('warmups',1))]
             if b['mode']=='pressure':

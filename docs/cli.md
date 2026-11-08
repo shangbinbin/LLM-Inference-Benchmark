@@ -87,7 +87,7 @@ llm-bench up --config site.json --cases cases.json
 | `status` | 输出状态快照及各容器实际状态。 |
 | `bench run` | 在现有栈执行一条用例，接受 --input-len、--output-len、--requests、--concurrency。 |
 | `bench suite --cases FILE` | 在现有栈运行另一份清单。 |
-| `bench slo --policy FILE` | 按策略重复实测，搜索满足 TTFT、TPOT 等约束的最大并发。 |
+| `bench slo --policy FILE [--cases FILE]` | 按策略实测最大并发。可传入普通 suite 的用例清单，依次为每个数据集搜索并汇总。 |
 | `down` | 清理选中栈。正在执行的压测持有锁时会提示稍后重试。 |
 
 `up`、`plan` 和 `images` 的配置来源如下：
@@ -132,13 +132,20 @@ llm-bench bench slo --policy configs/search/mac-slo.json
 llm-bench down
 ```
 
-策略中的 min_requests 和最大并发均不能超过栈的 request_count。压测模式、时延单位、停止条件及结果解释见 [SLO 搜索手册](aisbench-auto-slo.md)。
+多数据集搜索可直接复用顺序压测的清单：
+
+```bash
+llm-bench bench slo --config configs/stacks/mac-slo-search.json \
+  --policy configs/search/mac-mixed-datasets.json --cases configs/suites/mixed-datasets.json
+```
+
+每组正式请求数均须覆盖策略中的 min_requests 和最大并发，ShareGPT 的独立对话数还须覆盖最大并发。压测模式、时延单位、停止条件及结果解释见 [SLO 搜索手册](aisbench-auto-slo.md)。
 
 | 任务 | 在 data-dir 下查看 |
 | --- | --- |
 | 默认 up | data/results/ 下的 AISBench 时间目录和 performances 报告 |
 | up --cases、bench suite、bench run | data/results/suites/ 下每次运行的 suite-results.json。各用例目录中有 stack.json、client.log、results/。 |
-| bench slo | data/results/slo-search/ 下的 search-results.json 及逐轮记录 |
+| bench slo | data/results/slo-search/ 下的 search-results.json 及逐轮记录；使用 --cases 时查看 suite-results.json 和 cases/ 下的逐例报告 |
 
 命令成功返回 0。自动化程序应检查退出码，并读取相应报告。清单未全部通过、SLO 未得到推荐并发或执行出错时返回非零。用例的 PASS 表示运行与报告检查通过，业务时延是否达标由 SLO 策略判定。
 

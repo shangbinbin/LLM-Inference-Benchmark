@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import time
 
-from benchmark_stack import (LABEL, ais_config, load_config, write_json,
+from benchmark_stack import (LABEL, ais_config, write_json,
                              runtime_command, aisbench_environment, check_local_images)
 
 
@@ -109,16 +109,17 @@ class TrialSession:
                 raise RuntimeError('Refuse to remove a container with different trial ownership')
             self.call('rm', '-f', name, cleanup=True, capture_output=True, check=True)
 
-    def run_trial(self, concurrency, folder, timeout):
+    def run_trial(self, case, concurrency, folder, timeout):
         self.ready()
-        cfg = copy.deepcopy(self.cfg)
+        cfg = copy.deepcopy(case.cfg)
         cfg['benchmark']['concurrency'] = concurrency
         cfg['benchmark'].pop('concurrency_levels', None)
         cfg['benchmark'].pop('requests_per_level', None)
         folder.mkdir()
+        if case.dataset:
+            cfg['dataset'] = case.dataset_info()
         write_json(folder / 'stack.json', cfg)
-        cfg = load_config(folder / 'stack.json')
-        (folder / 'aisbench.py').write_text(ais_config(cfg))
+        (folder / 'aisbench.py').write_text(ais_config(cfg, case.dataset))
         (folder / 'results').mkdir()
         write_json(folder / 'trial.json', {'status': 'running', 'concurrency': concurrency, 'started_at': utc_now()})
         if self.inspect(self.client):
@@ -134,7 +135,7 @@ class TrialSession:
                       '--mount', f'type=bind,src={folder}/aisbench.py,dst=/config/aisbench.py,readonly',
                       '--mount', f'type=bind,src={folder}/results,dst=/results',
                       '--mount', f'type=bind,src={cfg["storage"]["tokenizer"]},dst=/tokenizer,readonly',
-                      cfg['images']['aisbench'], '/config/aisbench.py', '--mode', 'perf', '--debug',
+                      *case.client_inputs(), cfg['images']['aisbench'], '/config/aisbench.py', '--mode', 'perf', '--debug',
                       '--max-num-workers', '1', '--num-warmups', str(cfg['benchmark'].get('warmups', 1)),
                       capture_output=True, check=True)
             with (folder / 'client.log').open('w') as log:

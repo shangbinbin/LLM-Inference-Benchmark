@@ -207,6 +207,8 @@ llm-bench down --config /absolute/path/site.json
 
 输出位于 `storage.root/data/results/suites/<UTC时间戳>/<name>/`，包含 `stack.json`、`aisbench.py`、`client.log`、`results/`。根目录 `suite-results.json` 记录实际参数、顺序、起止时间、退出码、passed 和报告路径。这里的 passed 仅表示功能/请求完整性，尚未增加业务 TTFT/吞吐 SLO 门槛。
 
+同一份清单可以直接传给 `llm-bench bench slo --cases cases.json --policy slo.json`，逐例根据 TTFT、TPOT 自动调整并发。[多数据集 SLO 操作手册](aisbench-auto-slo.md#用同一份-casesjson-逐数据集搜索)
+
 需要按时延 SLO 自动筛选达标档位时，使用 [SLO 容量搜索手册](aisbench-slo-capacity.md)的策略与报告筛选示例；它不会改变本入口 passed 的含义。
 
 ## 原生自定义模型/数据集组合

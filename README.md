@@ -24,7 +24,7 @@ llm-bench down
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |
 | [批量顺序执行](docs/aisbench-sequential.md) | 混用业务 JSONL、ShareGPT 与合成数据的完整示例、并发档扫描和失败处理 |
 | [SLO 容量搜索](docs/aisbench-slo-capacity.md) | 业务阈值、候选负载扫描、自动筛选、边界细化与复测 |
-| [SLO 自适应搜索](docs/aisbench-auto-slo.md) | 根据每轮结果自动调整并发、重复验证、范围与停止条件 |
+| [SLO 自适应搜索](docs/aisbench-auto-slo.md) | 按测试例搜索 TTFT、TPOT 达标的最大并发，汇总不同数据集的结果 |
 | [Mac 验证记录](docs/reports/mac-container-smoke-2026-11-07.md) | 实际容器、请求、指标、日志及重启验证 |
 | [配置分层](configs/README.md) | 通用组件、GPU 适配、网络适配、环境实例 |
 | [官方监控资料与下载](docs/hygon-official-monitoring.md) | 最新官方文档、配置原件、镜像入口和版本差异 |

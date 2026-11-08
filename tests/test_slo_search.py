@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from benchmark_stack import load_config
 from aisbench_trial import TrialSession
+from suite_datasets import LocalDataset
 from slo_search import DEFAULTS, evaluate, search, validate_policy
 
 
@@ -128,12 +129,13 @@ class ReportTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def check(self):
-        (self.folder / 'synthetic.json').write_text(json.dumps(self.common))
-        (self.folder / 'synthetic.csv').write_text(self.csv)
-        (self.folder / 'synthetic_details.jsonl').write_text(
+    def check(self, dataset=None):
+        abbr = dataset.type if dataset else 'synthetic'
+        (self.folder / (abbr + '.json')).write_text(json.dumps(self.common))
+        (self.folder / (abbr + '.csv')).write_text(self.csv)
+        (self.folder / (abbr + '_details.jsonl')).write_text(
             ''.join(json.dumps(item) + '\n' for item in self.details))
-        return evaluate(self.results, self.benchmark, 2, self.policy)
+        return evaluate(self.results, self.benchmark, 2, self.policy, dataset)
 
     def test_exact_threshold_passes_and_violations_are_named(self):
         self.assertEqual(self.check()['status'], 'PASS')
@@ -141,6 +143,21 @@ class ReportTests(unittest.TestCase):
         result = self.check()
         self.assertEqual(result['status'], 'SLO_FAIL')
         self.assertEqual(result['violations'], ['TTFT'])
+
+    def test_file_outputs_may_end_early_with_valid_tpot(self):
+        dataset = LocalDataset('jsonl', 'unused', 12, 12, 'prompt')
+        self.csv = self.csv.replace('16,16,16,12', '10,2,16,12')
+        self.assertEqual(self.check(dataset)['output_tokens_min'], 2)
+        with self.assertRaisesRegex(ValueError, 'synthetic report'):
+            evaluate(self.results, self.benchmark, 2, self.policy)
+        self.csv = self.csv.replace('10,2,16,12', '10,1,16,12')
+        with self.assertRaisesRegex(ValueError, 'too short'):
+            self.check(dataset)
+        del self.policy['thresholds_ms']['TPOT']
+        self.assertEqual(self.check(dataset)['status'], 'PASS')
+        self.csv = self.csv.replace('10,1,16,12', '10,1,17,12')
+        with self.assertRaisesRegex(ValueError, 'token cap'):
+            self.check(dataset)
 
     def test_bad_report_never_becomes_a_latency_failure(self):
         original = self.csv

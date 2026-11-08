@@ -1,0 +1,14 @@
+{
+  "min_concurrency": 1,
+  "max_concurrency": 2,
+  "step": 1,
+  "repeats": 1,
+  "strategy": "verified_max",
+  "statistic": "P99",
+  "thresholds_ms": {"TTFT": 200, "TPOT": 50},
+  "min_requests": 2,
+  "max_rounds": 2,
+  "max_duration_seconds": 180,
+  "trial_timeout_seconds": 90,
+  "cooldown_seconds": 0
+}
