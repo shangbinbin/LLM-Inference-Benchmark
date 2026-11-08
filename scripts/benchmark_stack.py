@@ -16,6 +16,7 @@ import sys
 import time
 import urllib.request
 
+from diagnostics import record_event
 from render_observability import config_dir, render, write_json, ROOT
 
 LABEL = 'io.llm-benchmark.project'
@@ -328,7 +329,20 @@ class Stack:
         self.uid = f'{os.getuid()}:{os.getgid()}'
 
     def call(self, *args, **kwargs):
-        return command(runtime_command(self.cfg, args), **kwargs)
+        argv = runtime_command(self.cfg, args)
+        if args[0] in ('run', 'create', 'network') and not kwargs.get('capture'):
+            result = command(argv, capture=True, check=False)
+            if result.stdout:
+                print(result.stdout, end='', flush=True)
+            if result.stderr:
+                print(result.stderr, end='', file=sys.stderr, flush=True)
+            if args[0] == 'run' and '--rm' in args:
+                record_event(self.root, 'readiness', exit_code=result.returncode,
+                             output=(result.stdout + result.stderr)[-8192:])
+            if kwargs.get('check', True):
+                result.check_returncode()
+            return result
+        return command(argv, **kwargs)
 
     def inspect(self, name):
         result = self.call('inspect', name, capture=True, check=False)
@@ -492,6 +506,7 @@ class Stack:
             raise
 
     def save(self, status):
+        record_event(self.root, 'stack', status=status, component=self.created[-1] if self.created else None)
         write_json(self.statefile,{'project':self.project,'network':self.network,'containers':self.created,
                                  'config_dir':str(self.directory),'status':status,'updated_at':datetime.now(timezone.utc).isoformat()})
 

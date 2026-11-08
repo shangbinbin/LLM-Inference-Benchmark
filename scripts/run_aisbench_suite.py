@@ -12,6 +12,7 @@ import subprocess
 import time
 from typing import Optional
 
+from diagnostics import failure_detail
 from suite_datasets import LocalDataset, resolve_dataset
 from benchmark_stack import (load_config, ais_config, Stack, LABEL, ROOT, write_json,
                              runtime_command, aisbench_environment, check_local_images, validate_config)
@@ -133,6 +134,11 @@ def run_suite(cfg, suite):
             name = case.name
             if index:
                 time.sleep(suite.cooldown)
+            b = case.cfg['benchmark']
+            entry = {'case': name, 'started_at': datetime.now(timezone.utc).isoformat(),
+                     'benchmark': b, 'dataset': case.dataset_info(), 'status': 'running'}
+            summary.append(entry)
+            write_json(run/'suite-results.json', summary)
             for container in state['containers']:
                 info = stack.inspect(container)
                 if container.endswith('-aisbench'):
@@ -141,7 +147,6 @@ def run_suite(cfg, suite):
                 elif not info or not info['State']['Running'] or info['Config']['Labels'].get(LABEL) != cfg['project']:
                     raise RuntimeError('Required owned container is unavailable: '+container)
             stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
-            b = case.cfg['benchmark']
             cmd = ['run',*aisbench_environment(cfg),'--rm','--platform',cfg['platform'],
                   '--name',cfg['project']+'-suite-client','--label',LABEL+'='+cfg['project'],
                   '--network',state['network'],
@@ -153,8 +158,6 @@ def run_suite(cfg, suite):
                   '--max-num-workers','1','--num-warmups',str(b.get('warmups',1))]
             if b['mode']=='pressure':
                 cmd += ['--pressure','--pressure-time',str(b['pressure_seconds'])]
-            entry = {'case':name,'started_at':datetime.now(timezone.utc).isoformat(),'benchmark':b}
-            entry['dataset'] = case.dataset_info()
             print('START '+name, flush=True)
             with (folder/'client.log').open('w') as log:
                 result = subprocess.run(runtime_command(cfg, cmd), stdout=log, stderr=subprocess.STDOUT)
@@ -167,11 +170,17 @@ def run_suite(cfg, suite):
                 passed = sum(float(r['Success Requests']['total']) for r in data)==b['request_count']
             entry.update({'finished_at':datetime.now(timezone.utc).isoformat(),'exit_code':result.returncode,
                           'passed':passed,'reports':[str(p.relative_to(run)) for p in reports]})
-            summary.append(entry)
+            entry['status'] = 'complete' if passed else 'failed'
             write_json(run/'suite-results.json',summary)
             print(('PASS ' if passed else 'FAIL ')+name, flush=True)
             if not passed and suite.stop_on_failure:
                 break
+    except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        if summary and summary[-1]['status'] == 'running':
+            summary[-1].update(status='failed', passed=False, error=failure_detail(exc),
+                               finished_at=datetime.now(timezone.utc).isoformat())
+            write_json(run/'suite-results.json', summary)
+        raise
     finally:
         lock.unlink()
     print('Suite report: '+str(run/'suite-results.json'))

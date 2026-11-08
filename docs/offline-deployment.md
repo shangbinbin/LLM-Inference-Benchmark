@@ -265,3 +265,5 @@ Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/devi
 - 记录目标 OS/内核、驱动、运行时、镜像、服务与 tokenizer 版本，以及离线网络验证结果。
 
 排障优先区分：缺镜像、错误架构、缺 tokenizer/依赖、内网地址不可达、驱动/设备权限、挂载权限以及后台外联告警。不要把“无公网”误诊为所有服务端口都应禁止。
+
+现场异常时可执行 `llm-bench logs collect --config site.json`，打包组件日志、失败用例和运行环境，再离线回传。[诊断包操作手册](offline-diagnostics.md)

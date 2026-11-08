@@ -21,6 +21,7 @@ llm-bench down
 | [CLI 使用手册](docs/cli.md) | 快速上手、参数优先级、顺序用例、复用观测栈、结果及排障 |
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
+| [离线日志与故障回传](docs/offline-diagnostics.md) | 一键打包全链路组件日志、AISBench/SLO 结果和异常信息 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |
 | [批量顺序执行](docs/aisbench-sequential.md) | 混用业务 JSONL、ShareGPT 与合成数据的完整示例、并发档扫描和失败处理 |
 | [SLO 容量搜索](docs/aisbench-slo-capacity.md) | 业务阈值、候选负载扫描、自动筛选、边界细化与复测 |

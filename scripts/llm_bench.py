@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -11,6 +12,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
+from diagnostics import collect, run_diagnosed
 from benchmark_stack import ROOT, Stack, prepare, validate_config
 from run_aisbench_suite import prepare_suite, run_suite
 from slo_search import run_search
@@ -82,6 +84,14 @@ def parser_for_cli():
     configure(images.add_parser('build', help='build toolbox and AISBench images'))
     for name, desc in [('status', 'Inspect running stack'), ('down', 'Remove owned containers and network')]:
         select_stack(commands.add_parser(name, help=desc))
+    logs = commands.add_parser('logs', help='Collect offline diagnostics').add_subparsers(dest='action', required=True)
+    bundle = logs.add_parser('collect', help='Write a local diagnostic tar.gz')
+    select_stack(bundle)
+    bundle.add_argument('--output', type=Path, help='new tar.gz file (default: storage.root/diagnostics/)')
+    bundle.add_argument('--run', type=Path, help='collect only this run relative to data/results')
+    bundle.add_argument('--extra-log', type=Path, action='append', default=[],
+                        help='also include this local external component log (repeatable)')
+    bundle.add_argument('--tail', type=int, default=500, help='recent lines per log (1..10000)')
     bench = commands.add_parser('bench', help='Run workloads on an existing stack').add_subparsers(dest='action', required=True)
     single = bench.add_parser('run', help='run one AISBench case')
     select_stack(single)
@@ -150,12 +160,19 @@ def reference(root):
     return Path.cwd() / '.llm-bench' / (digest + '.json')
 
 
+def save_reference(path, value):
+    path.parent.mkdir(exist_ok=True)
+    with NamedTemporaryFile(dir=path.parent, mode='w', delete=False) as tmp:
+        json.dump(value, tmp)
+    Path(tmp.name).replace(path)
+
+
 def remember(stack):
-    marker = reference(stack.root)
-    marker.parent.mkdir(exist_ok=True)
-    with NamedTemporaryFile(dir=marker.parent, mode='w', delete=False) as tmp:
-        json.dump({'root': str(stack.root), 'project': stack.project}, tmp)
-    Path(tmp.name).replace(marker)
+    save_reference(reference(stack.root), {'root': str(stack.root), 'project': stack.project})
+    try:
+        save_reference(stack.root/'diagnostics/last-stack.json', {'config_hash': stack.directory.name})
+    except OSError as exc:
+        print(f'Could not save diagnostic context: {exc}', file=sys.stderr)
 
 
 def running_stack(args):
@@ -190,6 +207,43 @@ def running_stack(args):
     return Stack(cfg, directory, manifest['vendor']), state
 
 
+def diagnostic_context(args):
+    if not (args.data_dir or args.config):
+        stack, _ = running_stack(args)
+        return stack.cfg, stack.vendor
+
+    site = read_object(args.config) if args.config else None
+    root = ((ROOT / Path(site['storage']['root']).expanduser()).resolve() if site
+            else args.data_dir.expanduser().resolve())
+    if (root/'state.json').exists():
+        if site:
+            try:
+                active = read_object(root/'state.json')
+            except (ValueError, OSError):
+                active = {}
+            if active.get('project', site['project']) != site['project']:
+                raise ValueError('Selected data directory belongs to another project')
+        try:
+            stack, _ = running_stack(args)
+        except (ValueError, KeyError, OSError) as exc:
+            print(f'Could not read active stack: {exc}', file=sys.stderr)
+        else:
+            return stack.cfg, stack.vendor
+    context = root/'diagnostics/last-stack.json'
+    if context.exists():
+        key = read_object(context)['config_hash']
+        if not isinstance(key, str) or not re.fullmatch(r'[a-f0-9]{12}', key):
+            raise ValueError('Invalid saved diagnostic configuration ID')
+        manifest = read_object(root/'config'/key/'manifest.json')
+        cfg = manifest['stack']
+        if Path(cfg['storage']['root']).resolve() != root or (site and site['project'] != cfg['project']):
+            raise ValueError('Diagnostic context does not match the requested stack')
+        return cfg, manifest['vendor']
+    if site:
+        return site, None
+    raise ValueError('No saved diagnostic context; use --config with the original site JSON')
+
+
 @contextmanager
 def operation(root):
     # Kernel releases this advisory lock even if a CLI process exits unexpectedly.
@@ -219,8 +273,10 @@ def execute(args):
                               ([] if args.no_benchmark else ['default'])}, indent=2, ensure_ascii=False))
         elif args.command == 'images':
             if args.action == 'check':
-                stack.call('info', capture=True)
-                stack.preflight_images(not args.no_benchmark)
+                def check_images():
+                    stack.call('info', capture=True)
+                    stack.preflight_images(not args.no_benchmark)
+                run_diagnosed(stack, 'images check', check_images)
             else:
                 stack.build()
         else:
@@ -229,12 +285,19 @@ def execute(args):
                     raise ValueError(f'Stack state exists in {stack.root}. Use bench, status or down')
                 remember(stack)
                 try:
-                    stack.up(run_benchmark=not args.no_benchmark and suite is None, needs_client=suite is not None)
+                    run_diagnosed(stack, 'up', stack.up, run_benchmark=not args.no_benchmark and suite is None,
+                                  needs_client=suite is not None)
                 finally:
                     if not stack.statefile.exists():
                         reference(stack.root).unlink(missing_ok=True)
                 if suite:
-                    return run_suite(cfg, suite)
+                    return run_diagnosed(stack, 'up --cases', run_suite, cfg, suite)
+        return 0
+
+    if args.command == 'logs':
+        cfg, vendor = diagnostic_context(args)
+        path = collect(cfg, vendor, output=args.output, lines=args.tail, extra_logs=args.extra_log, selected=args.run)
+        print('Diagnostic bundle: ' + str(path))
         return 0
 
     stack, state = running_stack(args)
@@ -252,15 +315,19 @@ def execute(args):
         if args.command == 'down':
             stack.down()
             reference(stack.root).unlink(missing_ok=True)
-        elif args.action == 'slo':
-            suite = prepare_suite(stack.cfg, read_object(args.cases), args.cases.resolve().parent) if args.cases else None
-            return run_search(stack.cfg, read_object(args.policy), suite)
         else:
-            raw = read_object(args.cases) if args.action == 'suite' else {
-                'cases': [{'name': 'single', 'benchmark': workload(args)}]}
-            directory = args.cases.resolve().parent if args.action == 'suite' else Path.cwd()
-            return run_suite(stack.cfg, prepare_suite(stack.cfg, raw, directory))
+            return run_diagnosed(stack, 'bench ' + args.action, execute_benchmark, stack, args)
     return 0
+
+
+def execute_benchmark(stack, args):
+    if args.action == 'slo':
+        suite = prepare_suite(stack.cfg, read_object(args.cases), args.cases.resolve().parent) if args.cases else None
+        return run_search(stack.cfg, read_object(args.policy), suite)
+    raw = read_object(args.cases) if args.action == 'suite' else {
+        'cases': [{'name': 'single', 'benchmark': workload(args)}]}
+    directory = args.cases.resolve().parent if args.action == 'suite' else Path.cwd()
+    return run_suite(stack.cfg, prepare_suite(stack.cfg, raw, directory))
 
 
 def main():

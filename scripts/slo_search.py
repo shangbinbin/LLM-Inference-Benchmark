@@ -12,6 +12,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 
+from diagnostics import failure_detail
 from aisbench_timing import measured_peak_concurrency
 from aisbench_trial import TrialSession, utc_now
 from benchmark_stack import load_config, validate_config, write_json
@@ -252,7 +253,7 @@ def search_case(session, case, policy, run, started):
         except BaseException as exc:
             folder.mkdir(exist_ok=True)
             write_json(folder / 'trial.json', {'status': 'INTERRUPTED' if isinstance(exc, KeyboardInterrupt) else 'INVALID',
-                       'reason': str(exc), 'started_at': began, 'finished_at': utc_now(),
+                       'reason': failure_detail(exc), 'started_at': began, 'finished_at': utc_now(),
                        'concurrency': concurrency, 'repeat': repeat})
             raise
         trial.update(directory=folder.name, started_at=began, finished_at=utc_now(), concurrency=concurrency)

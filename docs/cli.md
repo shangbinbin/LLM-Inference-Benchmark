@@ -85,6 +85,7 @@ llm-bench up --config site.json --cases cases.json
 | `images build` | 在线构建 toolbox 和 AISBench。offline 配置会拒绝构建。 |
 | `up` | 启动新的观测栈并跑默认压测。--cases 指定清单，--no-benchmark 仅启动观测，两者互斥。 |
 | `status` | 输出状态快照及各容器实际状态。 |
+| `logs collect` | 导出离线故障包。支持选择运行、日志行数、外部日志及输出路径。[采集与回传](offline-diagnostics.md) |
 | `bench run` | 在现有栈执行一条用例，接受 --input-len、--output-len、--requests、--concurrency。 |
 | `bench suite --cases FILE` | 在现有栈运行另一份清单。 |
 | `bench slo --policy FILE [--cases FILE]` | 按策略实测最大并发。可传入普通 suite 的用例清单，依次为每个数据集搜索并汇总。 |
