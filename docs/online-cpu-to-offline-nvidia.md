@@ -1,0 +1,401 @@
+# 无 GPU 在线 Linux 构建，离线 NVIDIA 服务器压测操作手册
+
+适用场景：在线构建机是 **x86_64 Linux，没有 NVIDIA GPU**；离线目标机是 **x86_64 Linux，有 NVIDIA GPU**。在在线机准备完整镜像和物料，在离线机运行 NVIDIA 采集与 AISBench 压测。
+
+构建机不需要 NVIDIA 驱动、CUDA Toolkit 或 NVIDIA Container Toolkit。AISBench 镜像使用 CPU Torch；DCGM Exporter 镜像可以在没有 GPU 的机器上下载、保存，真正启动采集时才需要目标机的 GPU 和驱动。
+
+本手册覆盖单台 NVIDIA 服务器、本机 Exporter、Docker 运行方式。真实推理服务由现场另行部署，本工程不部署模型权重或推理引擎。多机、外部 Exporter、海光、containerd 等场景见[离线部署总说明](offline-deployment.md)与[容器配置手册](docker-stack.md)。
+
+## 1. 开始前确认交付范围
+
+| 物料/检查 | 在线无 GPU 机器 | 离线 NVIDIA 机器 |
+| --- | --- | --- |
+| 仓库源码、AISBench、toolbox | 获取并构建 | 解包、导入 |
+| Prometheus、Grafana、Loki、Alloy、node_exporter、DCGM Exporter | 下载 amd64 镜像并导出 | 导入并启动 |
+| 真实模型 tokenizer | 收集完整文件并验证无网络加载 | 解包并配置路径 |
+| Docker、Python、NVIDIA 驱动、Container Toolkit | 按目标 OS 收集安装包（目标机已有可跳过） | 安装并检查 |
+| 单元测试和无 GPU 模拟 | 可以执行 | 可选 |
+| 真实 GPU 指标、推理吞吐和延迟 | 无法验证 | 必须现场验证 |
+| 被测推理服务、模型权重 | 由服务部署方准备 | 必须提前部署 |
+
+进场前记录：目标机发行版/版本、内核、CPU 架构、GPU 型号/数量、驱动版本、Docker/Container Toolkit 版本、推理 API 和模型名称、指标端口、日志路径。DCGM Exporter 标签需要与现场驱动兼容；本机能成功下载镜像不能证明兼容性。
+
+下文所有 Bash 步骤遇到错误都应先解决再继续。构建/导出需容纳镜像层、缓存、镜像 tar 和最终交付包，磁盘需求会明显高于压缩包大小。
+
+## 2. 在线机：获取工程并建立交付目录
+
+准备 Git、curl、tar、gzip、sha256sum、Python 3.9+、Docker Engine/CLI。安装方式使用该 Linux 发行版支持的渠道。Docker daemon 需已运行，当前账户需有操作权限。
+
+```bash
+set -euo pipefail
+uname -m                  # 本流程预期 x86_64
+python3 --version         # >= 3.9
+docker info
+df -h .
+
+git clone https://github.com/shangbinbin/LLM-Inference-Benchmark.git
+cd LLM-Inference-Benchmark
+git status --short
+git rev-parse HEAD
+python3 -m unittest discover -s tests -v
+
+mkdir -p generated/offline-bundle/{images,metadata,tokenizer,site,runtime,drivers}
+git rev-parse HEAD > generated/offline-bundle/metadata/repository-commit.txt
+git archive --format=tar --prefix=LLM-Inference-Benchmark/ HEAD \
+  | gzip > generated/offline-bundle/repository.tar.gz
+```
+
+后续在线步骤均在这个仓库根目录执行。已有 checkout 可以直接使用；如需指定发布版本，先切换到选定提交再归档和构建。`git archive HEAD` 只包含已提交内容：不要用包含未提交代码改动的工作区构建，却交付另一个版本的源码。运行数据、`.git`、`state.json`、`suite.lock` 不应复制到目标机。
+
+## 3. 在线机：准备 NVIDIA 现场配置模板
+
+配置可以保留现场地址占位符直到离线机填写。明确指定 NVIDIA，避免在无 GPU 构建机上执行自动识别；先设置小规模验收负载，避免首次启动就施加大压力。
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+cfg = json.loads(Path('configs/stacks/nvidia-single.json').read_text())
+cfg.update(project='llm-bench-nvidia', platform='linux/amd64',
+           simulation=False, offline=True, runtime=['docker'])
+cfg['gpu']['vendor'] = 'nvidia'
+cfg['gpu']['deployment'] = 'local'
+cfg['storage'] = {
+    'root': 'generated/nvidia-site',
+    'logs': '/srv/inference-logs',
+    'tokenizer': 'assets/tokenizer',
+}
+cfg['benchmark'].update(input_length=32, output_length=16,
+                        request_count=8, concurrency=2, warmups=1, mode='perf')
+Path('generated/offline-bundle/site/site.json').write_text(
+    json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+PY
+```
+
+模板中的 `offline: true` 用于最终离线运行，不影响下面的直接 `docker build`。不要在此时运行 `benchmark_stack.py build --config ...`：该入口会先检查占位符、本地 tokenizer，并生成现场路径；offline 模式也禁止它构建。下面的直接构建不依赖现场地址、路径或 GPU。
+
+若现场要求不同 DCGM Exporter 版本，在下面拉取前修改 `site/site.json` 的 `images.nvidia_exporter`。若修改两个自建镜像的名称，第 4 步构建标签也必须同步修改。
+
+## 4. 在线机：构建两个项目镜像
+
+以下提交、SHA-256 和镜像标签对应本仓库当前版本。更新仓库后，应与 `scripts/benchmark_stack.py`、`containers/aisbench/Dockerfile` 及 NVIDIA 模板重新核对，不要绕过校验。
+
+```bash
+set -euo pipefail
+docker build --platform linux/amd64 \
+  -t llm-benchmark-toolbox:local-amd64 \
+  -f containers/toolbox/Dockerfile . \
+  2>&1 | tee generated/offline-bundle/metadata/build-toolbox.log
+
+mkdir -p generated/aisbench-offline-build
+curl --fail --location \
+  https://codeload.github.com/AISBench/benchmark/tar.gz/e330dc134c33f47671926144d9c143b554bc71cc \
+  --output generated/aisbench-offline-build/source.tar.gz
+printf '%s  %s\n' \
+  87a5434c8fa8b78aa57b588f00fbfb1861435d602496f6473b4a9dece94647c2 \
+  generated/aisbench-offline-build/source.tar.gz | sha256sum -c -
+cp containers/aisbench/Dockerfile generated/aisbench-offline-build/Dockerfile
+docker build --platform linux/amd64 \
+  -t llm-benchmark-aisbench:e330dc1-amd64 \
+  generated/aisbench-offline-build \
+  2>&1 | tee generated/offline-bundle/metadata/build-aisbench.log
+
+docker run --rm --pull=never --network none --platform linux/amd64 \
+  --entrypoint cat llm-benchmark-aisbench:e330dc1-amd64 \
+  /opt/aisbench/dependencies.txt \
+  > generated/offline-bundle/metadata/aisbench-dependencies.txt
+```
+
+成功标准：两个 build 均以 0 退出，AISBench 构建中的 `pip check` 通过。首次构建会下载基础镜像、Debian 包、PyTorch CPU 和 Python 依赖，耗时取决于网络。
+
+在线网络需能访问 Docker Hub 及其下载域名、`codeload.github.com`、Debian 源、`pypi.org`/`files.pythonhosted.org`、PyTorch CPU 下载站和第 5 步的 `nvcr.io` 及其实际下载域名。企业代理需要同时配置 Docker daemon 拉取和构建步骤的代理/CA 信任；仅宿主机 curl 正常不能证明容器构建正常。遇到证书错误应安装可信 CA，保持 TLS、包签名及源码哈希校验，不使用跳过校验参数。
+
+## 5. 在线机：下载其余六个镜像并导出
+
+此步骤只读取现场 JSON 中的镜像名，不加载现场配置、不检查 GPU、不启动生产容器。按单机 NVIDIA local 模式共导出 8 个镜像。
+
+```bash
+python3 - <<'PY'
+import json
+import subprocess
+from pathlib import Path
+
+bundle = Path('generated/offline-bundle')
+cfg = json.loads((bundle/'site/site.json').read_text())
+keys = ['toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy',
+        'node-exporter', 'nvidia_exporter']
+images = [cfg['images'][key] for key in keys]
+metadata = []
+for key, image in zip(keys, images):
+    if key not in ('toolbox', 'aisbench'):
+        subprocess.run(['docker', 'pull', '--platform', 'linux/amd64', image], check=True)
+    info = json.loads(subprocess.check_output(
+        ['docker', 'image', 'inspect', image], text=True))[0]
+    if (info['Os'], info['Architecture']) != ('linux', 'amd64'):
+        raise RuntimeError('Wrong architecture: ' + image)
+    metadata.append({'image': image, 'id': info['Id'],
+                     'digests': info.get('RepoDigests', []), 'platform': 'linux/amd64'})
+(bundle/'metadata/images.json').write_text(json.dumps(metadata, indent=2) + '\n')
+subprocess.run(['docker', 'image', 'save', '-o',
+                str(bundle/'images/images-linux-amd64.tar'), *images], check=True)
+print('Exported', len(images), 'images')
+PY
+```
+
+如果 NVIDIA 镜像下载失败，先解决仓库授权、网络或标签问题再打包；没有 GPU 不会阻止下载。不要遗漏 DCGM Exporter，也不要用 `docker export` 代替 `docker image save`。离线运行现成镜像不需要再携带 Python 基础镜像或额外安装客户端 pip 包。
+
+## 6. 在线机：准备真实 tokenizer 并验证
+
+取得与被测服务模型版本匹配的完整 tokenizer 目录，不要使用 `configs/fixtures/mock-tokenizer` 进行真实性能测试。可能需要 `tokenizer_config.json`、`tokenizer.json`、词表、merges、special tokens、模型 config 或 chat template 等文件。
+
+下面只需替换源目录。先解引用软链接打包，再从归档解出一份验证，避免 Hugging Face snapshot 指向外部 blobs 的软链接在离线现场失效。
+
+```bash
+TOKENIZER_SOURCE=/absolute/path/to/actual-model-tokenizer  # 修改为实际目录
+test -f "$TOKENIZER_SOURCE/tokenizer_config.json"
+tar -chzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C "$TOKENIZER_SOURCE" .
+
+TOKENIZER_CHECK_DIR=$(mktemp -d "$PWD/generated/tokenizer-check.XXXXXX")
+tar -xzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C "$TOKENIZER_CHECK_DIR"
+docker run --rm --pull=never --platform linux/amd64 --network none \
+  --mount "type=bind,src=$TOKENIZER_CHECK_DIR,dst=/tokenizer,readonly" \
+  --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
+  -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, len(t.encode("offline tokenizer check")))'
+```
+
+成功标准：无网络容器能够加载 tokenizer，并输出类型和编码长度。失败时补齐文件/依赖并重新验证；当前流程不自动启用远程自定义代码。归档应只装 tokenizer 所需物料，不要无意打包整个模型权重目录。当前合成 string/tokenid 数据在本地生成，无需另行下载数据集。
+
+## 7. 可选：在线机执行无 GPU 模拟验收
+
+这一步验证客户端与观测软件链路，可在没有 GPU 的构建机运行。使用独立配置、项目名和数据目录，不覆盖生产 site.json；模拟性能数值不能作为真实 GPU 性能报告。
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+cfg = json.loads(Path('configs/stacks/mac-offline.json').read_text())
+site = json.loads(Path('generated/offline-bundle/site/site.json').read_text())
+cfg.update(project='llm-bench-online-smoke', platform='linux/amd64', offline=True,
+           simulation=True, runtime=['docker'])
+cfg['images'] = site['images']
+cfg['gpu']['vendor'] = 'nvidia'
+cfg['storage'] = {'root': 'generated/online-smoke',
+                  'logs': 'generated/online-smoke-logs',
+                  'tokenizer': 'configs/fixtures/mock-tokenizer'}
+Path('generated/online-smoke.json').write_text(json.dumps(cfg, indent=2) + '\n')
+PY
+python3 scripts/benchmark_stack.py check-images --config generated/online-smoke.json
+python3 scripts/benchmark_stack.py up --config generated/online-smoke.json
+python3 scripts/verify_simulation.py --config generated/online-smoke.json
+cp generated/online-smoke/verification.json \
+  generated/offline-bundle/metadata/online-simulation-verification.json
+python3 scripts/benchmark_stack.py down --config generated/online-smoke.json
+```
+
+此模拟模板的端口 33003、39093、33103 需空闲，与生产模板端口不同。设置了 Docker 代理时，应让容器间的 `fixture`、`node-exporter`、`loki`、`alloy`、`prometheus`、`grafana` 等本地服务名走本地网络；外部下载继续使用所需代理。离线标志不会自动清除 Docker 全局代理设置，也不等于防火墙断网测试。
+
+## 8. 在线机：补齐宿主机安装包、校验并打包
+
+如果离线机已经具备并验证了 Docker、Python、驱动和 Container Toolkit，可记录版本后跳过安装包收集。否则需要按**离线目标系统**准备完整依赖：
+
+- `runtime/`：Docker Engine/CLI、containerd/runc、Python 及依赖安装包和安装说明。
+- `drivers/`：匹配 GPU/目标内核的 NVIDIA 驱动、NVIDIA Container Toolkit 及依赖和安装说明。
+- `site/`：site.json，以及需要的批量用例或 SLO 搜索 JSON。
+- `metadata/`：目标 OS/内核/架构、包版本、兼容性说明和验收记录。
+
+deb/rpm 需要在匹配发行版、版本、架构的环境或离线包源中收集依赖；需要编译内核模块的驱动还需匹配的内核头文件和编译依赖。不存在对所有 Linux 通用的一条离线驱动安装命令。GPU 构建机不是必需条件，但版本匹配和现场设备验证是必需条件。
+
+物料放齐后生成内部清单和外层包校验和：
+
+```bash
+python3 - <<'PY'
+import hashlib
+from pathlib import Path
+bundle = Path('generated/offline-bundle')
+lines = []
+for path in sorted(bundle.rglob('*')):
+    if not path.is_file() or path.name == 'SHA256SUMS':
+        continue
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    lines.append(f'{digest.hexdigest()}  {path.relative_to(bundle).as_posix()}')
+(bundle/'SHA256SUMS').write_text('\n'.join(lines) + '\n')
+PY
+(cd generated/offline-bundle && sha256sum -c SHA256SUMS)
+tar -czf generated/llm-bench-offline-amd64.tar.gz -C generated offline-bundle
+(cd generated && sha256sum llm-bench-offline-amd64.tar.gz \
+  > llm-bench-offline-amd64.tar.gz.sha256)
+```
+
+将 `generated/llm-bench-offline-amd64.tar.gz` 和同名 `.sha256` 文件一起带入离线现场。物料修改后必须重新生成校验和与外层归档。
+
+## 9. 离线机：校验、导入和设备检查
+
+以下命令在离线 NVIDIA 服务器执行。选择空的工作目录，避免覆盖已有安装和 tokenizer；示例使用当前目录下的 `offline-bundle` 和 `work`。
+
+```bash
+set -euo pipefail
+sha256sum -c llm-bench-offline-amd64.tar.gz.sha256
+tar -xzf llm-bench-offline-amd64.tar.gz
+(cd offline-bundle && sha256sum -c SHA256SUMS)
+uname -m
+python3 --version
+docker info
+nvidia-smi
+```
+
+若工具缺失，先按交付包 `runtime/`、`drivers/` 中与现场系统匹配的说明安装。NVIDIA Container Toolkit 安装后，如 Docker 尚未配置 NVIDIA runtime，由现场管理员执行：
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+重启 Docker 可能影响现有推理服务，应安排维护窗口；已正确配置的主机不必重复执行。此步骤适用于 systemd 管理的常规 Docker Engine，rootless Docker 需按对应官方部署方式配置。
+
+然后导入镜像、核对 ID/架构并验证设备注入：
+
+```bash
+docker image load -i offline-bundle/images/images-linux-amd64.tar
+python3 - <<'PY'
+import json
+import subprocess
+from pathlib import Path
+for expected in json.loads(Path('offline-bundle/metadata/images.json').read_text()):
+    info = json.loads(subprocess.check_output(
+        ['docker', 'image', 'inspect', expected['image']], text=True))[0]
+    assert info['Id'] == expected['id'], expected['image']
+    assert (info['Os'], info['Architecture']) == ('linux', 'amd64'), expected['image']
+    print('OK', expected['image'])
+PY
+TOOLBOX_IMAGE=$(python3 -c 'import json; print(json.load(open("offline-bundle/site/site.json"))["images"]["toolbox"])')
+docker run --rm --pull=never --platform linux/amd64 --network none \
+  --gpus all -e NVIDIA_DRIVER_CAPABILITIES=utility \
+  --entrypoint nvidia-smi "$TOOLBOX_IMAGE"
+```
+
+最后一条通过 Toolkit 向现有 toolbox 容器注入宿主机 GPU 工具，不需要额外下载 CUDA 测试镜像。成功标准：宿主机与容器中均能显示 NVIDIA 设备。此检查不替代后续 DCGM Exporter 实际指标验证。
+
+## 10. 离线机：解包源码、tokenizer 并填写现场参数
+
+```bash
+mkdir -p work
+tar -xzf offline-bundle/repository.tar.gz -C work
+mkdir -p work/LLM-Inference-Benchmark/assets/tokenizer
+tar -xzf offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C work/LLM-Inference-Benchmark/assets/tokenizer
+mkdir -p work/LLM-Inference-Benchmark/generated/site
+cp offline-bundle/site/site.json work/LLM-Inference-Benchmark/generated/site/site.json
+cd work/LLM-Inference-Benchmark
+```
+
+此后在解包后的仓库根目录执行。编辑 `generated/site/site.json`，逐项完成下表，不保留任何 `REPLACE_`：
+
+| 字段 | 现场填写方式 |
+| --- | --- |
+| `offline` / `simulation` / `platform` | 保持 `true` / `false` / `linux/amd64` |
+| `gpu.vendor` / `gpu.deployment` | 保持 `nvidia` / `local`；不要用 auto |
+| `gpu.nodes[0].name`、`gpus` | 本机标识、实际 GPU 数量；local 模式只配置一个节点 |
+| `storage.root` | 默认 `generated/nvidia-site`；足够容量、当前用户可写的独立目录 |
+| `storage.logs` | 推理服务实际持续写入的日志目录，如 `/srv/inference-logs` |
+| `log_files` | 相对日志目录的真实活跃文件，如 `server.log`；不支持通配符 |
+| `storage.tokenizer` | 保持 `assets/tokenizer`，即刚解包的真实 tokenizer |
+| `inference.base_url` | 实际服务根地址，如 `http://10.20.0.10:30000/`，不含 `/v1/completions` |
+| `inference.model` / `api` | `/v1/models` 返回的模型 ID；接口选 `completions` 或 `chat` |
+| `topology.metrics_endpoints[0].target` | 实际提供 `/metrics` 的 `主机:端口`，可与推理 API 不同 |
+| `topology.tp` / `pp` | 与真实部署一致的标签；不会替你启动推理进程 |
+| `node_exporter_target` | 此 NVIDIA 主机可从容器访问的 IP:9100；host 模式不要写容器 localhost |
+| `benchmark` | 先保留 8 请求/并发 2 的小负载；`generation_kwargs` 必须是服务支持的参数 |
+
+相对路径按**仓库根目录**解析，而非 site.json 所在目录。不要只创建空日志文件冒充真实推理日志；Alloy 需要读日志，logrotate 会写入/轮转指定日志，避免与现场已有轮转任务同时管理同一文件。准备好数据目录的写权限、tokenizer 的读权限和容器访问权限。
+
+推理服务需监听容器可达地址。离线仍需要 Docker bridge 到推理服务、Exporter 和内网 DNS 的通信，不要给整个栈设置 `--network none`。本机 host 模式 node_exporter 使用 9100 端口，需避免与已有服务冲突。
+
+本工程当前应用指标面板主要面向 SGLang；其他引擎即使支持 OpenAI API，也需要核对其 `/metrics` 和面板查询，不能仅凭压测成功就认为所有图表适用。
+
+## 11. 离线机：预检查、小规模压测与验收
+
+```bash
+python3 scripts/benchmark_stack.py plan --config generated/site/site.json
+python3 scripts/benchmark_stack.py check-images --config generated/site/site.json
+set -o pipefail
+python3 scripts/benchmark_stack.py up --config generated/site/site.json \
+  2>&1 | tee generated/site/first-up.log
+python3 scripts/benchmark_stack.py status --config generated/site/site.json
+```
+
+预期行为：`check-images` 通过 NVIDIA 单机的 8 个镜像检查；`up` 启动本机 DCGM Exporter、node_exporter、Loki、logrotate、Alloy、Prometheus、Grafana，等待采集目标与推理 API 就绪，再执行 AISBench。真实模式不会启动 mock fixture，也不会部署推理服务。offline 模式缺镜像时直接失败，不自动 build/pull。
+
+按以下顺序验收：
+
+1. `up` 退出码为 0；所有常驻容器运行，AISBench 正常退出。
+2. Prometheus Targets 全部 UP；默认在目标机访问 `http://127.0.0.1:39090/targets`，检查 `nvidia-dcgm-exporter`、主机与推理指标目标。
+3. 查询 `DCGM_FI_DEV_GPU_UTIL` 等真实指标，核对卡数/UUID/标签；空闲 GPU 利用率为 0 不代表采集失败。
+4. Grafana 默认 `http://127.0.0.1:33000`，检查 NVIDIA 与推理面板、Prometheus/Loki 数据源。默认 admin/admin 首次登录后应修改；默认只绑定回环，远程查看使用现场允许的 SSH 隧道等方式。
+5. 在 Grafana Explore 的 Loki 数据源查询 `{deployment="llm-bench-nvidia"}`，确认来自真实服务日志；如果改过 project，同步修改查询标签。
+6. 查本次新增的 `generated/nvidia-site/data/results/<时间戳>/performances/*/synthetic.json`。首次小负载应为正式请求 8、成功 8、失败 0，预热不计入正式请求数；检查当前运行，不能拿旧成功报告作证据。
+
+`verify_simulation.py` **只允许 simulation 栈**，不要用它验收真实 NVIDIA 配置。真实吞吐、TTFT、TPOT 与 SLO 指标解释参见 [AISBench 使用](aisbench.md)。
+
+## 12. 调整负载、再次压测和停机
+
+第一次 8 请求是连通性验收，不足以得出容量结论。待任务结束后，先用原配置停止栈，再修改并发、输入输出长度、请求数和压力模式，然后重新启动：
+
+```bash
+# 在修改配置前执行；确认没有进行中的 benchmark/suite/search。
+python3 scripts/benchmark_stack.py down --config generated/site/site.json
+# 编辑 generated/site/site.json 的 benchmark，再执行：
+python3 scripts/benchmark_stack.py up --config generated/site/site.json
+```
+
+`down` 只移除项目拥有的容器和网络，保留数据/日志/报告，不停止外部推理服务。已有状态时不能重复 `up`；不要删除 state.json 绕过检查，也不要在测试进程运行时改配置。
+
+需要复用观测栈运行多组用例时，从清理后的状态选择以下流程：
+
+```bash
+python3 scripts/benchmark_stack.py up --config generated/site/site.json --no-benchmark
+# 按顺序压测手册准备 generated/site/suite.json 后执行：
+python3 scripts/run_aisbench_suite.py \
+  --config generated/site/site.json --suite generated/site/suite.json
+```
+
+`--no-benchmark` 不会执行单次压测；不能随后再次 up 追加客户端。使用上述 suite 入口，或 down 后执行完整 up。用例格式见[顺序压测](aisbench-sequential.md)，业务容量搜索见[SLO 搜索](aisbench-slo-capacity.md)。
+
+当前版本也提供 `llm-bench` CLI，可以管理上述脚本启动的栈。下列命令在观测栈已启动、没有正在执行的压测时使用；`bench run` 会发起新的请求，其结果保存在数据目录的 `data/results/suites/` 下：
+
+```bash
+export PATH="$PWD/bin:$PATH"
+llm-bench status --config generated/site/site.json
+llm-bench bench run --config generated/site/site.json --concurrency 2 --requests 8
+# 现场出错时，在 down 之前采集诊断包，按输出路径取回：
+llm-bench logs collect --config generated/site/site.json
+```
+
+CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包含现场地址、请求内容和日志，回传前按现场规定检查；采集范围及选项见[离线日志与故障回传](offline-diagnostics.md)。混合数据集用例还需交付 JSONL/ShareGPT 等本地文件并保留 `containers/aisbench/llm_bench_jsonl.py`，完整源码归档已包含该加载器。
+
+验收结束后备份实际使用的 site/suite/search 配置、对应结果目录、版本记录及日志；记录目标 OS、GPU、驱动、推理服务/模型/tokenizer 版本与离线网络条件。
+
+## 13. 常见故障定位
+
+| 现象 | 优先检查/处理 |
+| --- | --- |
+| 在线无 GPU，提示无法识别厂商 | 不运行生产 up；site 显式 nvidia；构建采用第 4 步直接方式 |
+| 在线 build 报占位符/tokenizer 错误 | 误用了现场配置入口；直接构建两个 Dockerfile，不需要现场路径 |
+| 源码 SHA-256 不一致 | 停止构建，核对提交/下载内容；不修改期望哈希以强行通过 |
+| 在线拉取或 pip/apt 失败 | 查看具体失败域名、代理、CA、仓库授权/标签；解决后重跑失败步骤 |
+| 离线 Missing images / Wrong architecture | 按清单补齐 amd64 镜像，在在线侧重新 save；不能把 arm64 改标签冒充 |
+| `could not select device driver` / `nvidia-smi` 失败 | 检查宿主机驱动、Toolkit 配置、Docker runtime；先通过第 9 步设备注入检查 |
+| DCGM Exporter 启动失败 | `docker logs llm-bench-nvidia-gpu-exporter`；核对镜像/驱动兼容性与设备权限 |
+| 采集或 API 就绪超时 | 确认容器内可达 IP、监听地址、端口、防火墙、DNS/代理；主机 curl 成功不代表容器成功 |
+| tokenizer 离线加载失败 | 文件不全、外部软链接、自定义依赖或模型版本错误；回到第 6 步验证实际归档 |
+| 挂载目录 Permission denied | 检查 UID/GID、目录权限、rootless 映射及 SELinux 策略；按服务最小权限处理，不递归放宽整个生产目录 |
+| AISBench 非零退出或报告含失败请求 | `docker logs llm-bench-nvidia-aisbench`；核对模型 ID、API 类型、请求参数、上下文长度、服务错误和负载 |
+| Grafana 有指标但 Loki 无日志 | 检查服务是否实际写文件、路径/文件名、Alloy 读权限及已有轮转机制 |
+| 已有 state / suite.lock | 检查任务状态；完成后用原配置 down，不盲删锁或状态文件 |
+
+可用 `docker logs --tail 200 <容器名>` 查看单组件错误；改过 project 时容器名前缀也相应变化。完整交付要求与离线模式行为见[离线部署总说明](offline-deployment.md)。
