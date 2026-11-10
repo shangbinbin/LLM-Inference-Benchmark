@@ -128,6 +128,8 @@ subprocess.run(['docker', 'image', 'save', '-o', str(bundle / 'images/images-lin
 
 ### 3.4 准备真实 tokenizer 并做无网络加载检查
 
+在线无 GPU 测试可使用 [ModelScope 下载 Qwen3-0.6B tokenizer 的步骤](online-cpu-to-offline-nvidia.md#61-无-gpu-测试从-modelscope-下载-qwen3-06b-tokenizer)，缺少 ModelScope 时通过清华 PyPI 安装；生产仍需匹配真实被测模型。
+
 至少包括 tokenizer_config.json，以及模型所需的 tokenizer.json 或 vocab/merges/SentencePiece 文件。还可能需要 special_tokens_map.json、added_tokens.json、config.json、chat template 文件等；应携带模型发布的完整 tokenizer 目录，而非只挑一个文件。Hugging Face snapshots 常含指向 blobs 的软链接，打包时需解引用或同时携带完整目标内容。
 
 ```bash

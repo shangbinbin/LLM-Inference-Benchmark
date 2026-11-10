@@ -170,9 +170,49 @@ docker run --rm --pull=never --platform linux/amd64 --network none \
 
 成功标准：无网络容器能够加载 tokenizer，并输出类型和编码长度。失败时补齐文件/依赖并重新验证；当前流程不自动启用远程自定义代码。归档应只装 tokenizer 所需物料，不要无意打包整个模型权重目录。当前合成 string/tokenid 数据在本地生成，无需另行下载数据集。
 
+### 6.1 无 GPU 测试：从 ModelScope 下载 Qwen3-0.6B tokenizer
+
+在线 CPU 机器可下载 `Qwen/Qwen3-0.6B` 的真实 tokenizer，用于下一节模拟验收，无需 GPU、模型权重或本机 PyTorch。它只验证客户端和观测链路；生产交付仍须使用与实际被测模型匹配的 tokenizer。以下使用独立虚拟环境，不改变 AISBench 镜像依赖：
+
+```bash
+python3 -m venv generated/modelscope-venv
+MS_PYTHON="$PWD/generated/modelscope-venv/bin/python"
+if ! "$MS_PYTHON" -c 'import modelscope' >/dev/null 2>&1; then
+  "$MS_PYTHON" -m pip install --index-url https://pypi.tuna.tsinghua.edu.cn/simple modelscope
+fi
+"$MS_PYTHON" - <<'PYTHON'
+from pathlib import Path
+from modelscope.hub.snapshot_download import snapshot_download
+
+target = Path('generated/tokenizers/Qwen3-0.6B').resolve()
+snapshot_download(
+    model_id='Qwen/Qwen3-0.6B',
+    revision='master',
+    local_dir=str(target),
+    allow_file_pattern=[
+        'tokenizer*', 'vocab.json', 'merges.txt', 'special_tokens_map.json',
+        'added_tokens.json', 'config.json', 'chat_template*',
+    ],
+)
+for name in ('tokenizer_config.json', 'tokenizer.json'):
+    if not (target / name).is_file():
+        raise RuntimeError('Missing tokenizer file: ' + name)
+print('Tokenizer directory:', target)
+PYTHON
+
+docker run --rm --pull=never --platform linux/amd64 --network none \
+  --mount "type=bind,src=$PWD/generated/tokenizers/Qwen3-0.6B,dst=/tokenizer,readonly" \
+  --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
+  -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, t.encode("Qwen3 tokenizer CPU test"))'
+```
+
+需 Python 3.9+ 且具备 venv；在线机须能访问清华 PyPI、ModelScope 及其实际文件下载域名。只下载允许列表中的 tokenizer/config 文件，不下载 `.safetensors` 等权重。`master` 为可变版本，需要复现时将 revision 改为已记录的 ModelScope 提交或标签并保留下载目录。最后一条命令使用已构建的 AISBench 镜像在无网络条件下验证加载，不会拉取镜像。
+
+若要将该 tokenizer 作为本次交付测试物料，可将上一节的 `TOKENIZER_SOURCE` 设置为 `$PWD/generated/tokenizers/Qwen3-0.6B`，再执行打包和解包验证；不要用它替代其他实际模型的 tokenizer。
+
 ## 7. 可选：在线机执行无 GPU 模拟验收
 
-这一步验证客户端与观测软件链路，可在没有 GPU 的构建机运行。使用独立配置、项目名和数据目录，不覆盖生产 site.json；模拟性能数值不能作为真实 GPU 性能报告。
+先完成第 6.1 节 Qwen3-0.6B tokenizer 下载和本地加载验证。这一步验证客户端与观测软件链路，可在没有 GPU 的构建机运行。使用独立配置、项目名和数据目录，不覆盖生产 site.json；模拟性能数值不能作为真实 GPU 性能报告。
 
 ```bash
 python3 - <<'PY'
@@ -186,7 +226,7 @@ cfg['images'] = site['images']
 cfg['gpu']['vendor'] = 'nvidia'
 cfg['storage'] = {'root': 'generated/online-smoke',
                   'logs': 'generated/online-smoke-logs',
-                  'tokenizer': 'configs/fixtures/mock-tokenizer'}
+                  'tokenizer': 'generated/tokenizers/Qwen3-0.6B'}
 Path('generated/online-smoke.json').write_text(json.dumps(cfg, indent=2) + '\n')
 PY
 python3 scripts/benchmark_stack.py check-images --config generated/online-smoke.json
