@@ -71,10 +71,12 @@ git archive 只包含已提交文件，不包含当前未提交修改、generate
 
 ### 3.2 构建两个项目镜像
 
+所有项目镜像构建命令统一使用 `--network=host`，让 apt/pip 等构建步骤使用构建机网络，避免 Docker bridge 网络不可达造成软件源超时。构建机本身仍须能访问 Debian、Python 包索引等依赖源；此参数不能修复宿主机的软件源访问限制。Linux Docker Engine 支持此模式；Docker Desktop 需支持并启用 host networking，远程 BuildKit 还需允许 `network.host` entitlement。此设置只作用于镜像构建，不改变运行时容器网络或离线禁构建策略。
+
 直接构建可避免联网构建机必须具备真实服务地址、tokenizer 路径和 GPU 自动识别条件：
 
 ```bash
-docker build --platform linux/amd64 -t llm-benchmark-toolbox:local-amd64 \
+docker build --network=host --platform linux/amd64 -t llm-benchmark-toolbox:local-amd64 \
   -f containers/toolbox/Dockerfile .
 
 mkdir -p generated/aisbench-offline-build
@@ -85,7 +87,7 @@ printf '%s  %s\n' \
   87a5434c8fa8b78aa57b588f00fbfb1861435d602496f6473b4a9dece94647c2 \
   generated/aisbench-offline-build/source.tar.gz | sha256sum -c -
 cp containers/aisbench/Dockerfile generated/aisbench-offline-build/Dockerfile
-docker build --platform linux/amd64 -t llm-benchmark-aisbench:e330dc1-amd64 \
+docker build --network=host --platform linux/amd64 -t llm-benchmark-aisbench:e330dc1-amd64 \
   generated/aisbench-offline-build
 ```
 

@@ -73,6 +73,8 @@ Path('generated/offline-bundle/site/site.json').write_text(
 PY
 ```
 
+下面所有 `docker build` 命令均带 `--network=host`，使用 Linux 构建机网络执行 apt/pip；构建机本身须能访问软件源。详见 [构建网络说明](offline-deployment.md#32-构建两个项目镜像)。
+
 模板中的 `offline: true` 用于最终离线运行，不影响下面的直接 `docker build`。不要在此时运行 `benchmark_stack.py build --config ...`：该入口会先检查占位符、本地 tokenizer，并生成现场路径；offline 模式也禁止它构建。下面的直接构建不依赖现场地址、路径或 GPU。
 
 若现场要求不同 DCGM Exporter 版本，在下面拉取前修改 `site/site.json` 的 `images.nvidia_exporter`。若修改两个自建镜像的名称，第 4 步构建标签也必须同步修改。
@@ -83,7 +85,7 @@ PY
 
 ```bash
 set -euo pipefail
-docker build --platform linux/amd64 \
+docker build --network=host --platform linux/amd64 \
   -t llm-benchmark-toolbox:local-amd64 \
   -f containers/toolbox/Dockerfile . \
   2>&1 | tee generated/offline-bundle/metadata/build-toolbox.log
@@ -96,7 +98,7 @@ printf '%s  %s\n' \
   87a5434c8fa8b78aa57b588f00fbfb1861435d602496f6473b4a9dece94647c2 \
   generated/aisbench-offline-build/source.tar.gz | sha256sum -c -
 cp containers/aisbench/Dockerfile generated/aisbench-offline-build/Dockerfile
-docker build --platform linux/amd64 \
+docker build --network=host --platform linux/amd64 \
   -t llm-benchmark-aisbench:e330dc1-amd64 \
   generated/aisbench-offline-build \
   2>&1 | tee generated/offline-bundle/metadata/build-aisbench.log

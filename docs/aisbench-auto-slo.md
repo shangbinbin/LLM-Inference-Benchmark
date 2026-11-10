@@ -12,7 +12,7 @@ Docker Desktop 已运行，在仓库根目录执行：
 
 ```bash
 # 首次或修改模拟端点后重建 toolbox；AISBench 镜像沿用已有版本
-docker build --platform linux/arm64 -t llm-benchmark-toolbox:slo-arm64 \
+docker build --network=host --platform linux/arm64 -t llm-benchmark-toolbox:slo-arm64 \
   -f containers/toolbox/Dockerfile .
 
 # 独立于原 mac-simulation 栈的名称、数据目录与端口
@@ -229,3 +229,5 @@ storage.root/data/results/slo-search/<UTC时间戳>/
 search-results.json 记录 rounds[].phase（下界、上界、二分、高档验证）、并发、各次重复的状态/阈值违例/实测时延、起止时间、全局输出吞吐、配置并发 configured_concurrency、实测峰值 measured_peak_concurrency、明细证据相对路径 concurrency_evidence、报告相对路径及停止原因。报告路径相对于该 trial 的目录。用这些起止时间与 Grafana/Loki 对齐分析。
 
 `maximum_verified=true` 表示**配置网格内、更高候选已被本次测量排除**；不会把 Mac 结果解释为显卡性能，也不会把该值直接等同于生产限流配置。选定档位后应做长期压力、邻近档位和真实业务分布复测。
+
+镜像构建使用 `--network=host`，构建机须能访问软件源；Docker Desktop 需支持并启用 host networking。详见 [构建网络说明](offline-deployment.md#32-构建两个项目镜像)。

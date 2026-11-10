@@ -364,9 +364,9 @@ class Stack:
             if hashlib.sha256(archive.read_bytes()).hexdigest() != '87a5434c8fa8b78aa57b588f00fbfb1861435d602496f6473b4a9dece94647c2':
                 raise ValueError('AISBench source archive checksum mismatch')
             shutil.copyfile(ROOT/'containers/aisbench/Dockerfile', context/'Dockerfile')
-            self.call('build', '--platform', self.cfg['platform'], '-t', self.cfg['images'][name], str(context))
+            self.call('build', '--network=host', '--platform', self.cfg['platform'], '-t', self.cfg['images'][name], str(context))
         else:
-            self.call('build', '--platform', self.cfg['platform'], '-t', self.cfg['images'][name], '-f', str(ROOT/'containers/toolbox/Dockerfile'), str(ROOT))
+            self.call('build', '--network=host', '--platform', self.cfg['platform'], '-t', self.cfg['images'][name], '-f', str(ROOT/'containers/toolbox/Dockerfile'), str(ROOT))
 
     def check_image(self, image):
         result = self.call('image', 'inspect', image, capture=True, check=False)
