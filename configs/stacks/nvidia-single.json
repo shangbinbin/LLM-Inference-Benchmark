@@ -14,11 +14,11 @@
   "images": {
     "toolbox": "llm-benchmark-toolbox:local-amd64",
     "aisbench": "llm-benchmark-aisbench:e330dc1-amd64",
-    "prometheus": "prom/prometheus:v3.5.0",
-    "grafana": "grafana/grafana:12.0.2",
-    "loki": "grafana/loki:3.5.0",
-    "alloy": "grafana/alloy:v1.8.3",
-    "node-exporter": "prom/node-exporter:v1.9.1",
+    "prometheus": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0",
+    "grafana": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2",
+    "loki": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
+    "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
+    "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
     "nvidia_exporter": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
     "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
   },

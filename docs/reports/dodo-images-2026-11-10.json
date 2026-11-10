@@ -1,0 +1,98 @@
+{
+  "date": "2026-11-10",
+  "platform": "linux/amd64",
+  "results": [
+    {
+      "source": "docker.io/library/python:3.11-slim-bookworm",
+      "page": "https://docker.aityp.com/image/docker.io/python:3.11-slim-bookworm",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm",
+      "pull_exit_code": 1,
+      "pull_output": "3.11-slim-bookworm: Pulling from ddn-k8s/docker.io/python\n2cc3ae149d28: Pulling fs layer\n87c0edd565e2: Pulling fs layer\n3df7545512d5: Pulling fs layer\n8f26d42ebf67: Pulling fs layer\n8951c7adce45: Pulling fs layer\n8f26d42ebf67: Waiting\n8951c7adce45: Waiting\n2cc3ae149d28: Retrying in 5 seconds\n87c0edd565e2: Retrying in 5 seconds\n3df7545512d5: Retrying in 5 seconds\n2cc3ae149d28: Retrying in 4 seconds\n87c0edd565e2: Retrying in 4 seconds\n3df7545512d5: Retrying in 4 seconds\n2cc3ae149d28: Retrying in 3 seconds\n87c0edd565e2: Retrying in 3 seconds\n3df7545512d5: Retrying in 3 seconds\n2cc3ae149d28: Retrying in 2 seconds\n87c0edd565e2: Retrying in 2 seconds\n3df7545512d5: Retrying in 2 seconds\n2cc3ae149d28: Retrying in 1 second\n87c0edd565e2: Retrying in 1 second\n3df7545512d5: Retrying in 1 second\nerror pulling image configuration: download failed after attempts=6: Forbidden\n",
+      "status": "pull_failed"
+    },
+    {
+      "source": "docker.io/prom/prometheus:v3.5.0",
+      "page": "https://docker.aityp.com/image/docker.io/prom/prometheus:v3.5.0",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0",
+      "pull_exit_code": 0,
+      "pull_output": "v3.5.0: Pulling from ddn-k8s/docker.io/prom/prometheus\nDigest: sha256:8672a850efe2f9874702406c8318704edb363587f8c2ca88586b4c8fdb5cea24\nStatus: Downloaded newer image for swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0\nswr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0\n",
+      "status": "pulled",
+      "platform": "linux/amd64",
+      "image_id": "sha256:a3bc50fcb50fb1409287c32773d8fe799f6cad5511c4ba3e2e851784e7a05026",
+      "digests": [
+        "prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996",
+        "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus@sha256:8672a850efe2f9874702406c8318704edb363587f8c2ca88586b4c8fdb5cea24"
+      ]
+    },
+    {
+      "source": "docker.io/grafana/grafana:12.0.2",
+      "page": "https://docker.aityp.com/image/docker.io/grafana/grafana:12.0.2",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2",
+      "pull_exit_code": 0,
+      "pull_output": "12.0.2: Pulling from ddn-k8s/docker.io/grafana/grafana\nDigest: sha256:fe89b739a264c78f2111d68221a1d51db67135ec50885dc93b59a981a7a5d4d5\nStatus: Downloaded newer image for swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2\nswr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2\n",
+      "status": "pulled",
+      "platform": "linux/amd64",
+      "image_id": "sha256:4f2ba943b1dee49a450bc9ea4de00ce511ec6cfaf27565dd32b21480317bfd06",
+      "digests": [
+        "grafana/grafana@sha256:b5b59bfc7561634c2d7b136c4543d702ebcc94a3da477f21ff26f89ffd4214fa",
+        "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana@sha256:fe89b739a264c78f2111d68221a1d51db67135ec50885dc93b59a981a7a5d4d5"
+      ]
+    },
+    {
+      "source": "docker.io/grafana/loki:3.5.0",
+      "page": "https://docker.aityp.com/image/docker.io/grafana/loki:3.5.0",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
+      "pull_exit_code": 0,
+      "pull_output": "3.5.0: Pulling from ddn-k8s/docker.io/grafana/loki\nDigest: sha256:2cbddd6e199a2ddeee13573d91f11e54d9c8fa432f44c578d3c55b9a93278c9f\nStatus: Downloaded newer image for swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0\nswr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0\n",
+      "status": "pulled",
+      "platform": "linux/amd64",
+      "image_id": "sha256:cf78ada003f6d1eb4074bf622d804da907e935373f99b8bf54dea2bdab6fa9f9",
+      "digests": [
+        "grafana/loki@sha256:4c431d2e6b9b38718694b31c5d56be7c80dc69c513215fde1aeb5b02cd4e2665",
+        "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki@sha256:2cbddd6e199a2ddeee13573d91f11e54d9c8fa432f44c578d3c55b9a93278c9f"
+      ]
+    },
+    {
+      "source": "docker.io/grafana/alloy:v1.8.3",
+      "page": "https://docker.aityp.com/image/docker.io/grafana/alloy:v1.8.3",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
+      "pull_exit_code": 0,
+      "pull_output": "v1.8.3: Pulling from ddn-k8s/docker.io/grafana/alloy\nDigest: sha256:7cdd1bee443064217a2bdeda46ef4518fc2703ea8ac9f1fef0e2b44e0ead9b2a\nStatus: Downloaded newer image for swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3\nswr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3\n",
+      "status": "pulled",
+      "platform": "linux/amd64",
+      "image_id": "sha256:1ab544e327b803fbc5b0446fe5adcfd0727e48ab414708d9e7d73e507521e2ff",
+      "digests": [
+        "grafana/alloy@sha256:ab04df3936e4d71d31b6f55e0c58a7e749091f59635dd8c2bc731ba1b6c93701",
+        "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy@sha256:7cdd1bee443064217a2bdeda46ef4518fc2703ea8ac9f1fef0e2b44e0ead9b2a"
+      ]
+    },
+    {
+      "source": "docker.io/prom/node-exporter:v1.9.1",
+      "page": "https://docker.aityp.com/image/docker.io/prom/node-exporter:v1.9.1",
+      "mirror": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
+      "pull_exit_code": 0,
+      "pull_output": "v1.9.1: Pulling from ddn-k8s/docker.io/prom/node-exporter\nDigest: sha256:863b62ff9f392b6f472e22b4b670ad1cabb66b3042502ebd4b2cd192733e1bce\nStatus: Downloaded newer image for swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1\nswr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1\n",
+      "status": "pulled",
+      "platform": "linux/amd64",
+      "image_id": "sha256:255ec253085fb105696533b31864a5e3b64f1f1e2147b5ec368100cbf3ec9b80",
+      "digests": [
+        "prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a",
+        "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter@sha256:863b62ff9f392b6f472e22b4b670ad1cabb66b3042502ebd4b2cd192733e1bce"
+      ]
+    },
+    {
+      "source": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
+      "page": "https://docker.aityp.com/image/nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
+      "status": "not_found",
+      "error": "HTTP Error 404: Not Found",
+      "search_result": "Exact version not found via site search either"
+    },
+    {
+      "source": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0",
+      "page": "https://docker.aityp.com/image/harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0",
+      "status": "not_found",
+      "error": "HTTP Error 404: Not Found",
+      "search_result": "Exact version not found via site search either"
+    }
+  ]
+}

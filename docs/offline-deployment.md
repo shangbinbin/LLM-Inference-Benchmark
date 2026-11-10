@@ -30,17 +30,17 @@ Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联
 
 ## 2. 当前版本的镜像清单
 
-以 `configs/stacks/nvidia-single.json` 为准。下面是当前默认值；如果 site.json 修改过标签，以现场配置中的镜像名为准，并保存实际 image ID/digest。
+以 `configs/stacks/nvidia-single.json` 为准。五个公共观测镜像已切换为渡渡鸟提供的华为云地址，仅验证 linux/amd64；Mac 模板保留原地址。完整上游名称、拉取命令与结果见 [镜像拉取验证记录](reports/dodo-images-2026-11-10.md)。下面是当前默认值；如果 site.json 修改过标签，以现场配置中的镜像名为准，并保存实际 image ID/digest。
 
 | 组件 | 镜像 |
 | --- | --- |
 | AISBench | `llm-benchmark-aisbench:e330dc1-amd64`，需本项目构建 |
 | toolbox（探测、logrotate） | `llm-benchmark-toolbox:local-amd64`，需本项目构建 |
-| Prometheus | `prom/prometheus:v3.5.0` |
-| Grafana | `grafana/grafana:12.0.2` |
-| Loki | `grafana/loki:3.5.0` |
-| Alloy | `grafana/alloy:v1.8.3` |
-| node_exporter | `prom/node-exporter:v1.9.1` |
+| Prometheus | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0` |
+| Grafana | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2` |
+| Loki | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0` |
+| Alloy | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3` |
+| node_exporter | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1` |
 | NVIDIA，按需 | `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4` |
 | 海光，按需 | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
 
