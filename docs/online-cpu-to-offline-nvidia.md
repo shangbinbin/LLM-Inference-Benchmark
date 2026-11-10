@@ -111,7 +111,7 @@ docker run --rm --pull=never --network none --platform linux/amd64 \
 
 成功标准：两个 build 均以 0 退出，AISBench 构建中的 `pip check` 通过。首次构建会下载基础镜像、Debian 包、PyTorch CPU 和 Python 依赖，耗时取决于网络。
 
-在线网络需能访问 Docker Hub 及其下载域名、`codeload.github.com`、Debian 源、`pypi.org`/`files.pythonhosted.org`、PyTorch CPU 下载站和第 5 步的 `nvcr.io` 及其实际下载域名。企业代理需要同时配置 Docker daemon 拉取和构建步骤的代理/CA 信任；仅宿主机 curl 正常不能证明容器构建正常。遇到证书错误应安装可信 CA，保持 TLS、包签名及源码哈希校验，不使用跳过校验参数。
+在线网络需能访问 Docker Hub 及其下载域名、`codeload.github.com`、Debian 源、清华 PyPI（`pypi.tuna.tsinghua.edu.cn`）、PyTorch CPU 下载站和第 5 步的 `nvcr.io` 及其实际下载域名。企业代理需要同时配置 Docker daemon 拉取和构建步骤的代理/CA 信任；仅宿主机 curl 正常不能证明容器构建正常。遇到证书错误应安装可信 CA，保持 TLS、包签名及源码哈希校验，不使用跳过校验参数。
 
 ## 5. 在线机：下载其余六个镜像并导出
 
@@ -402,4 +402,4 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 
 可用 `docker logs --tail 200 <容器名>` 查看单组件错误；改过 project 时容器名前缀也相应变化。完整交付要求与离线模式行为见[离线部署总说明](offline-deployment.md)。
 
-两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python/PyTorch 包索引保持原配置。
+两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python 通用依赖统一使用清华 PyPI 索引 `https://pypi.tuna.tsinghua.edu.cn/simple`，包括 pip/setuptools/wheel、AISBench 及其构建依赖。PyTorch 固定 `torch==2.6.0+cpu`，通过 `--find-links https://download.pytorch.org/whl/cpu/torch/` 获取官方 CPU wheel；其余依赖仍由清华 PyPI 解析。构建时需同时允许清华 PyPI 及 PyTorch 官方下载域名。
