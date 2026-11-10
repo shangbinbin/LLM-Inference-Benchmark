@@ -30,3 +30,7 @@ Python 是在线构建两个项目镜像时共用的基础镜像，渡渡鸟页�
 项目镜像 `llm-benchmark-aisbench:e330dc1-amd64`、`llm-benchmark-toolbox:local-amd64` 由本项目构建，不能从公共站点拉取。离线交付需保存它们及所选观测/Exporter 镜像；Python 基础镜像仅在线构建需要，离线只运行成品时不必携带。
 
 未改动 generated/ 已运行配置、Mac 的 arm64 模板及 references/ 历史快照。修改正式模板后，交付包导出脚本会使用同一镜像名，目标机应按这些标签导入。
+
+## 现场镜像配置后续调整
+
+按用户要求，两个正式 Dockerfile 的 Python 基础镜像已改为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm`；所有 stack 模板的 DCGM 镜像已改为 `linseerhub-registry.h3c.com:8099/linseer/dcgm-exporter:4.4.2-4.7.0-distroless`（现场离线已备）。本次只修改配置，没有在线拉取或构建。上文和 JSON 保留此前实测结果，不代表调整后的配置。在线准备脚本跳过 DCGM 拉取。

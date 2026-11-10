@@ -19,7 +19,7 @@
     "loki": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
     "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
     "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
-    "nvidia_exporter": "nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4",
+    "nvidia_exporter": "linseerhub-registry.h3c.com:8099/linseer/dcgm-exporter:4.4.2-4.7.0-distroless",
     "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
   },
   "gpu": {

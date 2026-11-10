@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm
 ARG AISBENCH_COMMIT=e330dc134c33f47671926144d9c143b554bc71cc
 LABEL org.opencontainers.image.source="https://github.com/AISBench/benchmark"
 LABEL org.opencontainers.image.revision=$AISBENCH_COMMIT

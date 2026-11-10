@@ -41,8 +41,12 @@ Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联
 | Loki | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0` |
 | Alloy | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3` |
 | node_exporter | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1` |
-| NVIDIA，按需 | `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.1-4.8.4` |
+| NVIDIA，按需 | `linseerhub-registry.h3c.com:8099/linseer/dcgm-exporter:4.4.2-4.7.0-distroless` |
 | 海光，按需 | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
+
+Python 基础镜像现按现场要求使用 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm`，此前在本在线环境测试返回 Forbidden，本次仅修改名称，不重新拉取或构建。
+
+DCGM 使用现场离线已备镜像 `linseerhub-registry.h3c.com:8099/linseer/dcgm-exporter:4.4.2-4.7.0-distroless`，本次未拉取或验证该镜像。下方在线准备脚本跳过 DCGM 拉取：若联网打包机没有此镜像，应通过已有离线镜像归档导入后再打包，或在离线目标机单独准备，并相应调整打包清单。
 
 NVIDIA 单机链路共需要前七个镜像加 DCGM Exporter。海光替换最后一个设备镜像；同时支持两厂商的交付包可包含二者。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
 
@@ -105,7 +109,7 @@ keys = ['toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy',
 images = [cfg['images'][key] for key in keys]
 metadata = []
 for key, image in zip(keys, images):
-    if key not in ('toolbox', 'aisbench'):
+    if key not in ('toolbox', 'aisbench', 'nvidia_exporter'):
         subprocess.run(['docker', 'pull', '--platform', 'linux/amd64', image], check=True)
     info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
     if (info['Os'], info['Architecture']) != ('linux', 'amd64'):
@@ -250,7 +254,7 @@ Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/devi
 
 这与“离线运行现成镜像”是另一套交付要求，还需准备：
 
-- python:3.11-slim-bookworm 的 amd64 基础镜像、对应 Dockerfile/源码归档及校验值。
+- `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm` 的 amd64 基础镜像、对应 Dockerfile/源码归档及校验值。
 - apt 完整依赖闭包或离线镜像源，包含 build-essential、libgomp1、git、logrotate 等及传递依赖。
 - Python 3.11/Linux x86 兼容的全部 wheel/sdist 及构建依赖；特别包含 CPU Torch 下载源对应的包，不能拿 macOS/arm64 wheel 替代。
 - pip/构建工具、缓存或内网索引，以及能够完全离线解析这些依赖的构建配置。
