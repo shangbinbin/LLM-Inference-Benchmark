@@ -34,3 +34,7 @@ Python 是在线构建两个项目镜像时共用的基础镜像，渡渡鸟页�
 ## 现场镜像配置后续调整
 
 按用户要求，两个正式 Dockerfile 的 Python 基础镜像已改为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm`；所有 stack 模板的 DCGM 镜像已改为 `linseerhub-registry.h3c.com:8099/linseer/dcgm-exporter:4.4.2-4.7.0-distroless`（现场离线已备）。本次只修改配置，没有在线拉取或构建。上文和 JSON 保留此前实测结果，不代表调整后的配置。在线准备脚本跳过 DCGM 拉取。
+
+## 后续配置更新（2026-11-11）
+
+按用户明确要求，当前所有 stack 模板已切换为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`，本次不重新验证拉取。离线准备脚本已恢复将 DCGM 纳入公共镜像拉取流程。上文保留当时的测试和配置历史，当前镜像以 stack 模板和离线部署文档为准。

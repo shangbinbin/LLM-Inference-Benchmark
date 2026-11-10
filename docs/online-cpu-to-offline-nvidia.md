@@ -115,6 +115,8 @@ docker run --rm --pull=never --network none --platform linux/amd64 \
 
 ## 5. 在线机：下载其余六个镜像并导出
 
+DCGM Exporter 使用 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`。若 site.json 是从旧版本模板复制的，请同步更新 `images.nvidia_exporter`；导出清单、离线导入标签和现场配置需一致。本次配置修改未执行镜像拉取验证。
+
 此步骤只读取现场 JSON 中的镜像名，不加载现场配置、不检查 GPU、不启动生产容器。按单机 NVIDIA local 模式共导出 8 个镜像。
 
 ```bash
