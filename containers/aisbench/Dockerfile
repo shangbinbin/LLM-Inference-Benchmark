@@ -3,7 +3,18 @@ ARG AISBENCH_COMMIT=e330dc134c33f47671926144d9c143b554bc71cc
 LABEL org.opencontainers.image.source="https://github.com/AISBench/benchmark"
 LABEL org.opencontainers.image.revision=$AISBENCH_COMMIT
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HUB_OFFLINE=1
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential libgomp1 git && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
+        if [ -f "$source" ]; then \
+            sed -i -E \
+                -e 's|https?://deb.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+                -e 's|https?://security.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+                -e 's|https?://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' \
+                "$source"; \
+        fi; \
+    done; \
+    apt-get update -o APT::Update::Error-Mode=any && \
+    apt-get install -y --no-install-recommends build-essential libgomp1 git && rm -rf /var/lib/apt/lists/*
 COPY source.tar.gz /tmp/aisbench.tar.gz
 RUN mkdir /opt/aisbench && tar -xzf /tmp/aisbench.tar.gz -C /opt/aisbench --strip-components=1 && rm /tmp/aisbench.tar.gz
 WORKDIR /opt/aisbench

@@ -275,3 +275,5 @@ Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/devi
 排障优先区分：缺镜像、错误架构、缺 tokenizer/依赖、内网地址不可达、驱动/设备权限、挂载权限以及后台外联告警。不要把“无公网”误诊为所有服务端口都应禁止。
 
 现场异常时可执行 `llm-bench logs collect --config site.json`，打包组件日志、失败用例和运行环境，再离线回传。[诊断包操作手册](offline-diagnostics.md)
+
+两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python/PyTorch 包索引保持原配置。

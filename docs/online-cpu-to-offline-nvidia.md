@@ -401,3 +401,5 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 | 已有 state / suite.lock | 检查任务状态；完成后用原配置 down，不盲删锁或状态文件 |
 
 可用 `docker logs --tail 200 <容器名>` 查看单组件错误；改过 project 时容器名前缀也相应变化。完整交付要求与离线模式行为见[离线部署总说明](offline-deployment.md)。
+
+两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python/PyTorch 包索引保持原配置。
