@@ -79,7 +79,7 @@ class StackTests(unittest.TestCase):
                 self.assertEqual('HF_HUB_OFFLINE=1' in env, offline)
                 self.assertEqual(cfg['benchmark']['concurrency'], concurrency)
 
-    def test_seccomp_compatibility_is_opt_in_and_scoped_to_python_workloads(self):
+    def test_seccomp_compatibility_is_opt_in_for_all_project_container_launches(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self.config(tmp)
             for offline in (False, True):
@@ -90,17 +90,24 @@ class StackTests(unittest.TestCase):
                     else:
                         cfg['legacy_seccomp_unconfined'] = enabled
                     directory, vendor = stack.prepare(cfg)
-                    specs = stack.Stack(cfg, directory, vendor).specs()
-                    for spec in specs:
-                        self.assertEqual('seccomp=unconfined' in spec['args'],
-                                         bool(enabled and spec['name'] == 'fixture'))
-                    client = stack.runtime_command(cfg, ['create', *stack.aisbench_environment(cfg), 'client-image'])
-                    self.assertEqual('seccomp=unconfined' in client, enabled is True)
-                    self.assertEqual('--pull=never' in client, offline)
-                    cfg['simulation'] = False
-                    production = stack.Stack(cfg, directory, vendor).specs()
-                    self.assertFalse(any('seccomp=unconfined' in spec['args'] for spec in production))
+                    for simulation in (True, False):
+                        cfg['simulation'] = simulation
+                        specs = stack.Stack(cfg, directory, vendor).specs()
+                        for spec in specs:
+                            cmd = stack.runtime_command(cfg, ['run', *spec['args'], spec['image']])
+                            self.assertEqual(cmd.count('seccomp=unconfined'), int(enabled is True))
+                            self.assertEqual('--pull=never' in cmd, offline)
                     cfg['simulation'] = True
+                    # Shared paths cover one-click clients, suite clients, SLO trials and probes.
+                    for launch in (['create', *stack.aisbench_environment(cfg), 'client-image'],
+                                   ['run', *stack.aisbench_environment(cfg), 'client-image'],
+                                   ['run', '--rm', 'toolbox-image', 'probe', 'http://fixture/']):
+                        cmd = stack.runtime_command(cfg, launch)
+                        self.assertEqual(cmd.count('seccomp=unconfined'), int(enabled is True))
+                        self.assertEqual('--pull=never' in cmd, offline)
+                    for action in ('inspect', 'exec', 'start', 'restart', 'rm', 'network'):
+                        cmd = stack.runtime_command(cfg, [action, 'resource'])
+                        self.assertNotIn('--security-opt', cmd)
 
     def test_invalid_seccomp_compatibility_values_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -110,7 +117,7 @@ class StackTests(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'JSON boolean'):
                     stack.validate_config(cfg)
                 with self.assertRaisesRegex(ValueError, 'JSON boolean'):
-                    stack.aisbench_environment(cfg)
+                    stack.runtime_command(cfg, ['run', 'image'])
 
     def test_failed_readiness_never_starts_benchmark(self):
         with tempfile.TemporaryDirectory() as tmp:

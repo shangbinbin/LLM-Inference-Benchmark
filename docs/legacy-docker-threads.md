@@ -1,6 +1,6 @@
 # 旧 Docker 环境的 Python 线程兼容设置
 
-部分旧 Docker/containerd/runc/libseccomp 组合的默认 seccomp 策略与新镜像内的 glibc 不兼容，可能导致普通 Python 线程创建失败。现场 Docker 20.10.7 出现了 `RuntimeError: can't start new thread`，同一镜像的最小线程测试仅在加 `--security-opt seccomp=unconfined` 后通过，说明默认 seccomp 策略参与导致故障。具体是否为 clone3 需系统调用跟踪进一步确认，不能仅凭报错断定。
+部分旧 Docker/containerd/runc/libseccomp 组合的默认 seccomp 策略与新镜像内的 glibc 不兼容，可能导致Python 或 Go/cgo 线程创建失败。现场 Docker 20.10.7 出现了 `RuntimeError: can't start new thread`，同一镜像的最小线程测试仅在加 `--security-opt seccomp=unconfined` 后通过，说明默认 seccomp 策略参与导致故障。具体是否为 clone3 需系统调用跟踪进一步确认，不能仅凭报错断定。
 
 减少 OpenBLAS 线程数可以避免计算库大规模线程初始化，却不能解决 fixture 每次处理请求仍需创建线程的问题。升级到受支持的容器运行时及配套 libseccomp 是长期方案；生产服务器升级应安排维护窗口。
 
@@ -12,14 +12,15 @@
 "legacy_seccomp_unconfined": true
 ```
 
-开启后，取消以下容器的 seccomp 系统调用过滤：
+开启后，统一在本工程启动器发出的所有 `run` / `create` 命令中添加该参数，覆盖：
 
-- simulation 模式的 fixture 模拟推理服务。
-- 所有模式的 AISBench 客户端：单次压测、顺序用例和 SLO 搜索，包括业务 JSONL/ShareGPT 用例。
+- fixture 模拟推理服务和单次、顺序、SLO 搜索的 AISBench 客户端。
+- Alloy、Prometheus、Grafana、Loki、node_exporter、DCGM/HCU Exporter、logrotate 等常驻服务。
+- toolbox 就绪探测和 Prometheus targets 检查等临时容器。
 
-Prometheus、Grafana、Loki、Alloy、node_exporter、DCGM/HCU Exporter、logrotate 和 toolbox 就绪探测不受该开关影响。它不添加 privileged、不改变 Docker daemon 配置、不修改宿主机已有推理服务，也不会自动重试或自动关闭安全策略。offline 模式仍禁止拉取和构建。
+只影响使用当前 stack 配置创建的项目容器，不改变 Docker daemon 配置、宿主机已有推理服务或其他工程的容器；不额外添加 privileged。`exec`、`start`、`restart` 不接受新的安全参数，已有容器须删除后重新创建才生效。offline 模式仍禁止拉取和构建。`plan` 输出中的 `container_security_options` 显示统一追加的参数。
 
-该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任压测工作负载。不应默认应用于所有环境。手工 docker run 不读取 stack JSON，需要单独指定参数。
+该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任项目工作负载（包含监控和临时探测）。不应默认应用于所有环境。手工 docker run 不读取 stack JSON，需要单独指定参数。
 
 ## 离线机现有模拟栈的启用步骤
 
@@ -60,3 +61,9 @@ python3 scripts/verify_simulation.py --config "$CONFIG"
 ## 升级运行时后恢复默认策略
 
 使用当前配置正常 down，把该字段删除或改为 false，再重新 up。先确认不带兼容参数的最小 Python 线程测试可以成功。不要仅使用 docker restart 代替重新创建，restart 会保留原容器的安全选项。
+
+## Alloy 启动崩溃与后续 DNS 错误
+
+若 Alloy 状态是 exited，先看 `docker logs <project>-alloy 2>&1 | sed -n '1,60p'`。Go/cgo 的 pthread_create 权限错误可能使它在初始化阶段退出，随后探测 `http://alloy:12345/-/ready` 报无法解析名称；此时先修复 Alloy 启动，给探测容器关闭 seccomp 不会使已退出的 Alloy 恢复。
+
+当前开关覆盖本工程创建的所有容器，包括 Alloy。已有旧版配置无需换字段，保持 true，更新源码后先 down 再 up，重新创建容器。可用 `docker inspect <project>-alloy --format '{{json .HostConfig.SecurityOpt}}'` 确认含 `seccomp=unconfined`，再检查日志和就绪状态。本次仅改启动器参数，不要求重建 Alloy 或 toolbox 镜像，其他项目和宿主机的安全策略不变。

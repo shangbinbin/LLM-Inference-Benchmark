@@ -39,8 +39,11 @@ def command(args, capture=False, check=True):
 
 
 def runtime_command(cfg, args):
-    """Apply the same pull policy to lifecycle, suite and search containers."""
+    """Apply project-wide container security and pull policies to all launch paths."""
     args = list(args)
+    security = container_security_options(cfg)
+    if args[0] in ('run', 'create'):
+        args[1:1] = security
     if cfg.get('offline', False):
         if args[0] in ('build', 'pull') or args[:2] in (['image', 'build'], ['image', 'pull']):
             raise ValueError('Offline mode forbids image builds and pulls; import prepared images first')
@@ -64,8 +67,8 @@ def inference_environment(cfg):
     return ['-e', name]
 
 
-def python_security_options(cfg):
-    """Opt in per Python workload; never change daemon-wide security policy."""
+def container_security_options(cfg):
+    """Opt in for project containers only; never change daemon-wide policy."""
     enabled = cfg.get('legacy_seccomp_unconfined', False)
     if type(enabled) is not bool:
         raise ValueError('legacy_seccomp_unconfined must be a JSON boolean (true/false)')
@@ -78,7 +81,7 @@ def aisbench_environment(cfg):
         extension = ROOT / 'containers/aisbench/llm_bench_auth.py'
         auth += ['-e', 'PYTHONPATH=/config', '--mount',
                  f'type=bind,src={extension},dst=/config/llm_bench_auth.py,readonly']
-    env = python_security_options(cfg) + auth + [arg for key, value in CLIENT_THREAD_ENV.items() for arg in ('-e', key + '=' + value)]
+    env = auth + [arg for key, value in CLIENT_THREAD_ENV.items() for arg in ('-e', key + '=' + value)]
     if not cfg.get('offline', False):
         return env
     return env + [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
@@ -122,7 +125,7 @@ def validate_config(cfg):
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
         raise ValueError('offline must be a JSON boolean (true/false)')
-    python_security_options(cfg)  # Validate the opt-in even when only rendering a plan.
+    container_security_options(cfg)  # Validate the opt-in even when only rendering a plan.
     if not re.fullmatch('[a-z][a-z0-9-]{0,39}', cfg['project']):
         raise ValueError('project must be a short lowercase container name')
     for key in ('root', 'logs', 'tokenizer'):
@@ -446,7 +449,7 @@ class Stack:
         user = ['--user', self.uid]
         specs = []
         if self.cfg.get('simulation'):
-            specs.append({'name': 'fixture', 'args': log_mount+python_security_options(self.cfg)+['--entrypoint','python','-e','MOCK_GPU_VENDOR='+self.vendor],
+            specs.append({'name': 'fixture', 'args': log_mount+['--entrypoint','python','-e','MOCK_GPU_VENDOR='+self.vendor],
                           'image': images['toolbox'], 'command': ['/opt/benchmark/mock_server.py'],
                           'ready': ('http://fixture:18000/v1/models', 'mock-model')})
             if self.cfg.get('simulation_latency'):
@@ -639,7 +642,7 @@ def main():
             directory,vendor=prepare(cfg)
         stack=Stack(cfg,directory,vendor)
         if args.action=='plan':
-            print(json.dumps({'gpu_vendor':vendor,'simulation':cfg.get('simulation',False),'config_dir':str(directory),'services':stack.specs(),'final_client':'AISBench'},ensure_ascii=False,indent=2))
+            print(json.dumps({'gpu_vendor':vendor,'simulation':cfg.get('simulation',False),'config_dir':str(directory),'container_security_options':container_security_options(cfg),'services':stack.specs(),'final_client':'AISBench'},ensure_ascii=False,indent=2))
         elif args.action=='build':stack.build()
         elif args.action=='check-images':
             stack.call('info',capture=True)
