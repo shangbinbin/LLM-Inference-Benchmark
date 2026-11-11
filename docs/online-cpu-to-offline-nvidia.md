@@ -265,7 +265,20 @@ docker run --rm --pull=never --platform linux/amd64 --network none \
 
 需 Python 3.9+ 且具备 venv；在线机须能访问清华 PyPI、ModelScope 及其实际文件下载域名。只下载允许列表中的 tokenizer/config 文件，不下载 `.safetensors` 等权重。`master` 为可变版本，需要复现时将 revision 改为已记录的 ModelScope 提交或标签并保留下载目录。最后一条命令使用已构建的 AISBench 镜像在无网络条件下验证加载，不会拉取镜像。
 
-若要将该 tokenizer 作为本次交付测试物料，可将上一节的 `TOKENIZER_SOURCE` 设置为 `$PWD/generated/tokenizers/Qwen3-0.6B`，再执行打包和解包验证；不要用它替代其他实际模型的 tokenizer。
+若将该 tokenizer 作为本次交付测试物料，**必须额外生成第 10 节要解包的归档**。仍在在线机源码根目录执行下面命令；只完成 ModelScope 下载不会生成 model-tokenizer.tar.gz：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark  # 使用实际在线源码根目录
+TOKENIZER_SOURCE="$PWD/generated/tokenizers/Qwen3-0.6B"
+test -f "$TOKENIZER_SOURCE/tokenizer_config.json"
+test -f "$TOKENIZER_SOURCE/tokenizer.json"
+mkdir -p generated/offline-bundle/tokenizer
+tar -chzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C "$TOKENIZER_SOURCE" .
+ls -lh generated/offline-bundle/tokenizer/model-tokenizer.tar.gz
+```
+
+然后执行第 6 节解包后的无网络加载检查，以及第 8 节校验和、外层交付包重新制作。把新的完整交付包送到离线机；若单独补传 tokenizer 归档，也应携带其 SHA-256 校验文件并在离线机核对。不要用 Qwen3 tokenizer 替代其他实际模型的 tokenizer。
 
 ## 7. 可选：在线机执行无 GPU 模拟验收
 
@@ -423,9 +436,14 @@ cd /home/llm-bench-delivery
 BENCH_BUNDLE_DIR=/home/llm-bench-delivery/offline-bundle
 BENCH_INSTALL_DIR=/home/llm-bench-runtime  # 必须是尚不存在的新目录
 
-test -f "$BENCH_BUNDLE_DIR/repository.tar.gz"
-test -f "$BENCH_BUNDLE_DIR/tokenizer/model-tokenizer.tar.gz"
-test -f "$BENCH_BUNDLE_DIR/site/site.json"
+# 完整执行本代码块；任一文件缺失就停止，不创建安装目录。
+for artifact in repository.tar.gz tokenizer/model-tokenizer.tar.gz site/site.json; do
+  if [ ! -f "$BENCH_BUNDLE_DIR/$artifact" ]; then
+    printf 'MISSING: %s\n停止解包，请先补齐交付物。\n' "$BENCH_BUNDLE_DIR/$artifact" >&2
+    exit 1
+  fi
+  printf 'OK: %s\n' "$BENCH_BUNDLE_DIR/$artifact"
+done
 # 第 2 节归档使用 --prefix=LLM-Inference-Benchmark/；先确认目录结构。
 tar -tzf "$BENCH_BUNDLE_DIR/repository.tar.gz" | sed -n '1,5p'
 # 输出应以 LLM-Inference-Benchmark/ 开头；若不同，先核对归档制作步骤。
@@ -583,6 +601,7 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 | `could not select device driver` / `nvidia-smi` 失败 | 检查宿主机驱动、Toolkit 配置、Docker runtime；先通过第 9 步设备注入检查 |
 | DCGM Exporter 启动失败 | `docker logs llm-bench-nvidia-gpu-exporter`；核对镜像/驱动兼容性与设备权限 |
 | 采集或 API 就绪超时 | 确认容器内可达 IP、监听地址、端口、防火墙、DNS/代理；主机 curl 成功不代表容器成功 |
+| `model-tokenizer.tar.gz: Cannot open: No such file or directory` | 交付包缺少 tokenizer 归档；第 6.1 节下载目录不等于归档，须完成打包并补传；源码已解包时只补齐 tokenizer，不重复创建安装目录 |
 | tokenizer 离线加载失败 | 文件不全、外部软链接、自定义依赖或模型版本错误；回到第 6 步验证实际归档 |
 | 挂载目录 Permission denied | 检查 UID/GID、目录权限、rootless 映射及 SELinux 策略；按服务最小权限处理，不递归放宽整个生产目录 |
 | AISBench 非零退出或报告含失败请求 | `docker logs llm-bench-nvidia-aisbench`；核对模型 ID、API 类型、请求参数、上下文长度、服务错误和负载 |
