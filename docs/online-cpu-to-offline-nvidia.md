@@ -8,6 +8,22 @@
 
 本手册覆盖单台 NVIDIA 服务器、本机 Exporter、Docker 运行方式。真实推理服务由现场另行部署，本工程不部署模型权重或推理引擎。多机、外部 Exporter、海光、containerd 等场景见[离线部署总说明](offline-deployment.md)与[容器配置手册](docker-stack.md)。
 
+## 执行目录约定（先阅读）
+
+本文使用以下示例绝对路径。在线机与离线机是两台不同服务器；这些目录不共享。可按现场磁盘规划替换，但同一台机器上的前后引用必须同步替换。
+
+| 机器 / 步骤 | 命令执行目录 | 用途 |
+| --- | --- | --- |
+| 在线机，第 2 节 clone 前 | `/home/llm-bench-build` | 放置在线构建用仓库 |
+| 在线机，第 2 节 clone 后至第 8 节 | `/home/llm-bench-build/LLM-Inference-Benchmark` | 仓库根目录；应能看到 scripts/、configs/、containers/ |
+| 离线机，第 9 节 | `/home/llm-bench-delivery` | 放置外层交付压缩包和 .sha256 文件；解包后产生 offline-bundle/ |
+| 离线机，第 10.1 节解包开始时 | `/home/llm-bench-delivery` | 使用绝对路径读取交付物，安装到新的运行目录 |
+| 离线机，第 10.1 节最后 cd 后及第 11、12 节 | `/home/llm-bench-runtime/LLM-Inference-Benchmark` | 解包后的源码根目录；运行启动器、查看结果 |
+
+**不要进入仓库的 generated/ 目录执行本手册命令。** 在线命令中的 `generated/...` 是仓库根目录下的路径；离线配置中的相对存储路径也按源码根目录解析，与终端当前位置、site.json 所在目录不同。
+
+任意时刻不确定位置，先执行 `pwd`。在源码根目录还可以执行 `test -f scripts/benchmark_stack.py` 确认。每个 Bash 代码块应完整执行；其中 Python heredoc（`python3 - <<'PY'` 至末尾独占一行的 `PY`）属于同一条命令，不要把 Python 代码直接输入 Bash。
+
 ## 1. 开始前确认交付范围
 
 | 物料/检查 | 在线无 GPU 机器 | 离线 NVIDIA 机器 |
@@ -35,8 +51,11 @@ python3 --version         # >= 3.9
 docker info
 df -h .
 
+mkdir -p /home/llm-bench-build
+cd /home/llm-bench-build
 git clone https://github.com/shangbinbin/LLM-Inference-Benchmark.git
-cd LLM-Inference-Benchmark
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+pwd  # /home/llm-bench-build/LLM-Inference-Benchmark
 git status --short
 git rev-parse HEAD
 python3 -m unittest discover -s tests -v
@@ -50,6 +69,14 @@ git archive --format=tar --prefix=LLM-Inference-Benchmark/ HEAD \
 后续在线步骤均在这个仓库根目录执行。已有 checkout 可以直接使用；如需指定发布版本，先切换到选定提交再归档和构建。`git archive HEAD` 只包含已提交内容：不要用包含未提交代码改动的工作区构建，却交付另一个版本的源码。运行数据、`.git`、`state.json`、`suite.lock` 不应复制到目标机。
 
 ## 3. 在线机：准备 NVIDIA 现场配置模板
+
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
 
 配置可以保留现场地址占位符直到离线机填写。明确指定 NVIDIA，避免在无 GPU 构建机上执行自动识别；先设置小规模验收负载，避免首次启动就施加大压力。
 
@@ -82,6 +109,14 @@ PY
 若现场要求不同 DCGM Exporter 版本，在下面拉取前修改 `site/site.json` 的 `images.nvidia_exporter`。若修改两个自建镜像的名称，第 4 步构建标签也必须同步修改。
 
 ## 4. 在线机：构建两个项目镜像
+
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
 
 以下提交、SHA-256 和镜像标签对应本仓库当前版本。更新仓库后，应与 `scripts/benchmark_stack.py`、`containers/aisbench/Dockerfile` 及 NVIDIA 模板重新核对，不要绕过校验。
 
@@ -116,6 +151,14 @@ docker run --rm --pull=never --network none --platform linux/amd64 \
 在线网络需能访问 Docker Hub 及其下载域名、`codeload.github.com`、Debian 源、清华 PyPI（`pypi.tuna.tsinghua.edu.cn`）、PyTorch CPU 下载站和第 5 步的 `nvcr.io` 及其实际下载域名。企业代理需要同时配置 Docker daemon 拉取和构建步骤的代理/CA 信任；仅宿主机 curl 正常不能证明容器构建正常。遇到证书错误应安装可信 CA，保持 TLS、包签名及源码哈希校验，不使用跳过校验参数。
 
 ## 5. 在线机：下载其余六个镜像并导出
+
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
 
 DCGM Exporter 使用 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`。若 site.json 是从旧版本模板复制的，请同步更新 `images.nvidia_exporter`；导出清单、离线导入标签和现场配置需一致。本次配置修改未执行镜像拉取验证。
 
@@ -153,6 +196,14 @@ PY
 
 ## 6. 在线机：准备真实 tokenizer 并验证
 
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
+
 取得与被测服务模型版本匹配的完整 tokenizer 目录，不要使用 `configs/fixtures/mock-tokenizer` 进行真实性能测试。可能需要 `tokenizer_config.json`、`tokenizer.json`、词表、merges、special tokens、模型 config 或 chat template 等文件。
 
 下面只需替换源目录。先解引用软链接打包，再从归档解出一份验证，避免 Hugging Face snapshot 指向外部 blobs 的软链接在离线现场失效。
@@ -175,6 +226,8 @@ docker run --rm --pull=never --platform linux/amd64 --network none \
 成功标准：无网络容器能够加载 tokenizer，并输出类型和编码长度。失败时补齐文件/依赖并重新验证；当前流程不自动启用远程自定义代码。归档应只装 tokenizer 所需物料，不要无意打包整个模型权重目录。当前合成 string/tokenid 数据在本地生成，无需另行下载数据集。
 
 ### 6.1 无 GPU 测试：从 ModelScope 下载 Qwen3-0.6B tokenizer
+
+执行位置仍为在线机源码根目录 `/home/llm-bench-build/LLM-Inference-Benchmark`，不是虚拟环境目录，也不是模型下载目录。`MS_PYTHON` 指向虚拟环境解释器，无需 cd 或 source activate。
 
 在线 CPU 机器可下载 `Qwen/Qwen3-0.6B` 的真实 tokenizer，用于下一节模拟验收，无需 GPU、模型权重或本机 PyTorch。它只验证客户端和观测链路；生产交付仍须使用与实际被测模型匹配的 tokenizer。以下使用独立虚拟环境，不改变 AISBench 镜像依赖：
 
@@ -216,6 +269,14 @@ docker run --rm --pull=never --platform linux/amd64 --network none \
 
 ## 7. 可选：在线机执行无 GPU 模拟验收
 
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
+
 先完成第 6.1 节 Qwen3-0.6B tokenizer 下载和本地加载验证。这一步验证客户端与观测软件链路，可在没有 GPU 的构建机运行。使用独立配置、项目名和数据目录，不覆盖生产 site.json；模拟性能数值不能作为真实 GPU 性能报告。
 
 ```bash
@@ -244,6 +305,14 @@ python3 scripts/benchmark_stack.py down --config generated/online-smoke.json
 此模拟模板的端口 33003、39093、33103 需空闲，与生产模板端口不同。设置了 Docker 代理时，应让容器间的 `fixture`、`node-exporter`、`loki`、`alloy`、`prometheus`、`grafana` 等本地服务名走本地网络；外部下载继续使用所需代理。离线标志不会自动清除 Docker 全局代理设置，也不等于防火墙断网测试。
 
 ## 8. 在线机：补齐宿主机安装包、校验并打包
+
+执行位置：**在线机源码根目录** `/home/llm-bench-build/LLM-Inference-Benchmark`。开始本节前执行：
+
+```bash
+cd /home/llm-bench-build/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+```
+
 
 如果离线机已经具备并验证了 Docker、Python、驱动和 Container Toolkit，可记录版本后跳过安装包收集。否则需要按**离线目标系统**准备完整依赖：
 
@@ -282,10 +351,20 @@ tar -czf generated/llm-bench-offline-amd64.tar.gz -C generated offline-bundle
 
 ## 9. 离线机：校验、导入和设备检查
 
-以下命令在离线 NVIDIA 服务器执行。选择空的工作目录，避免覆盖已有安装和 tokenizer；示例使用当前目录下的 `offline-bundle` 和 `work`。
+以下命令在**离线 NVIDIA 服务器**执行。先选择新的交付目录 `/home/llm-bench-delivery`，把第 8 节生成的 `llm-bench-offline-amd64.tar.gz` 与 `llm-bench-offline-amd64.tar.gz.sha256` 复制到该目录，再运行下面命令。此处不是在线机仓库的 generated/，也不是 offline-bundle/ 内部。
+
+```text
+/home/llm-bench-delivery/
+├── llm-bench-offline-amd64.tar.gz
+└── llm-bench-offline-amd64.tar.gz.sha256
+```
+
+本节所有代码块均在 `/home/llm-bench-delivery` 执行。括号内 `(cd offline-bundle && ...)` 只临时切换子进程目录，执行后终端仍留在交付目录。
 
 ```bash
 set -euo pipefail
+cd /home/llm-bench-delivery
+pwd  # /home/llm-bench-delivery
 sha256sum -c llm-bench-offline-amd64.tar.gz.sha256
 tar -xzf llm-bench-offline-amd64.tar.gz
 (cd offline-bundle && sha256sum -c SHA256SUMS)
@@ -330,18 +409,64 @@ docker run --rm --pull=never --platform linux/amd64 --network none \
 
 ## 10. 离线机：解包源码、tokenizer 并填写现场参数
 
+执行位置：开始时仍在 `/home/llm-bench-delivery`。第 10.1 节最后一条 cd 才切换到 `/home/llm-bench-runtime/LLM-Inference-Benchmark`；后续配置编辑和启动均在该源码根目录。
+
+本节选择**解包交付包中的固定版本源码**。它不会把文件解压到你当前已有的源码目录；例如当前在 `/home/LLM-Inference-Benchmark-new/generated`，原命令会在其下再创建 `work/LLM-Inference-Benchmark`。请先明确交付目录和安装目录，不能把这些示例相对路径直接套用到任意工作目录。
+
+### 10.1 使用源码归档部署到新目录
+
+`BENCH_BUNDLE_DIR` 指向第 9 节外层归档解出的 offline-bundle 目录，内部应包含 repository.tar.gz、tokenizer/、site/ 等内容。下面给出与第 9 节一致的绝对路径；如果使用其他目录，请同时修改这两个变量。`BENCH_INSTALL_DIR` 使用一个尚不存在的新目录，防止重复解包混合旧源码或 tokenizer。
+
 ```bash
-mkdir -p work
-tar -xzf offline-bundle/repository.tar.gz -C work
-mkdir -p work/LLM-Inference-Benchmark/assets/tokenizer
-tar -xzf offline-bundle/tokenizer/model-tokenizer.tar.gz \
-  -C work/LLM-Inference-Benchmark/assets/tokenizer
-mkdir -p work/LLM-Inference-Benchmark/generated/site
-cp offline-bundle/site/site.json work/LLM-Inference-Benchmark/generated/site/site.json
-cd work/LLM-Inference-Benchmark
+set -euo pipefail
+cd /home/llm-bench-delivery
+BENCH_BUNDLE_DIR=/home/llm-bench-delivery/offline-bundle
+BENCH_INSTALL_DIR=/home/llm-bench-runtime  # 必须是尚不存在的新目录
+
+test -f "$BENCH_BUNDLE_DIR/repository.tar.gz"
+test -f "$BENCH_BUNDLE_DIR/tokenizer/model-tokenizer.tar.gz"
+test -f "$BENCH_BUNDLE_DIR/site/site.json"
+# 第 2 节归档使用 --prefix=LLM-Inference-Benchmark/；先确认目录结构。
+tar -tzf "$BENCH_BUNDLE_DIR/repository.tar.gz" | sed -n '1,5p'
+# 输出应以 LLM-Inference-Benchmark/ 开头；若不同，先核对归档制作步骤。
+mkdir -p "$(dirname "$BENCH_INSTALL_DIR")"
+mkdir "$BENCH_INSTALL_DIR"
+tar -xzf "$BENCH_BUNDLE_DIR/repository.tar.gz" -C "$BENCH_INSTALL_DIR"
+BENCH_REPO_DIR="$BENCH_INSTALL_DIR/LLM-Inference-Benchmark"
+test -f "$BENCH_REPO_DIR/scripts/benchmark_stack.py"
+mkdir -p "$BENCH_REPO_DIR/assets/tokenizer" "$BENCH_REPO_DIR/generated/site"
+tar -xzf "$BENCH_BUNDLE_DIR/tokenizer/model-tokenizer.tar.gz" \
+  -C "$BENCH_REPO_DIR/assets/tokenizer"
+cp "$BENCH_BUNDLE_DIR/site/site.json" "$BENCH_REPO_DIR/generated/site/site.json"
+cd "$BENCH_REPO_DIR"
+pwd  # /home/llm-bench-runtime/LLM-Inference-Benchmark
+test -f assets/tokenizer/tokenizer_config.json
 ```
 
-此后在解包后的仓库根目录执行。编辑 `generated/site/site.json`，逐项完成下表，不保留任何 `REPLACE_`：
+不要将 `model-tokenizer.tar.gz` 解到源码根目录，也不要再增加一层模型目录。第 6 节以 `tar -C "$TOKENIZER_SOURCE" .` 打包，解包后的文件应直接位于 `assets/tokenizer/`。第 6.1 节 ModelScope 下载得到的是 `generated/tokenizers/Qwen3-0.6B/` 目录，**不会自动生成这个 tokenizer 归档**；若选它作为测试物料，须按第 6 节完成打包后重新生成交付包校验和。
+
+`git archive` 的源码归档不含 .git，解出的仓库不能通过 git pull 更新；若要使用后续提交，请重新制作源码归档和相关镜像，避免用旧交付包覆盖已更新的工程。
+
+解包完成后的布局：
+
+```text
+/home/llm-bench-runtime/LLM-Inference-Benchmark/
+├── scripts/benchmark_stack.py
+├── containers/
+├── configs/
+├── assets/tokenizer/tokenizer_config.json
+└── generated/site/site.json
+```
+
+### 10.2 已有完整源码目录时
+
+若你已在离线机准备了与交付版本匹配的完整源码，可以跳过 repository.tar.gz 解包，直接进入该源码根目录（应能看到 scripts/、configs/、containers/），创建 `generated/site/` 并复制现场配置。将 tokenizer 解到一个新的独立目录，并让配置中的 `storage.tokenizer` 指向实际目录；也可填写已存在的完整 tokenizer 目录的绝对路径。不要在已有目录上重复解包，也不要保留无效的 `assets/tokenizer` 默认值。
+
+例如源码已在 `/home/LLM-Inference-Benchmark-new` 时，先执行 `cd /home/LLM-Inference-Benchmark-new`，确认 `scripts/benchmark_stack.py` 存在，再复制配置和解包 tokenizer；第 11、12 节的 cd 也相应改为此路径。不要使用 `/home/LLM-Inference-Benchmark-new/generated` 作为源码根目录。
+
+### 10.3 填写现场配置
+
+后续第 11、12 节均在选定源码根目录执行。编辑 `generated/site/site.json`，逐项完成下表，不保留任何 `REPLACE_`。不要直接使用原始 `configs/stacks/nvidia-single.json` 替代第 3 节生成的现场模板；原始模板路径与这里的默认部署路径不同。
 
 | 字段 | 现场填写方式 |
 | --- | --- |
@@ -351,8 +476,9 @@ cd work/LLM-Inference-Benchmark
 | `storage.root` | 默认 `generated/nvidia-site`；足够容量、当前用户可写的独立目录 |
 | `storage.logs` | 推理服务实际持续写入的日志目录，如 `/srv/inference-logs` |
 | `log_files` | 相对日志目录的真实活跃文件，如 `server.log`；不支持通配符 |
-| `storage.tokenizer` | 保持 `assets/tokenizer`，即刚解包的真实 tokenizer |
+| `storage.tokenizer` | 使用第 10.1 节布局时填 `assets/tokenizer`；复用已有目录时填写实际路径，不能只创建空目录 |
 | `inference.base_url` | 实际服务根地址，如 `http://10.20.0.10:30000/`，不含 `/v1/completions` |
+| `inference.api_key_env` | 服务需 Bearer Token 时设置变量名（如 `INFERENCE_API_KEY`），执行第 11 节前在同一终端导出纯 Token；详见 [鉴权说明](inference-auth.md) |
 | `inference.model` / `api` | `/v1/models` 返回的模型 ID；接口选 `completions` 或 `chat` |
 | `topology.metrics_endpoints[0].target` | 实际提供 `/metrics` 的 `主机:端口`，可与推理 API 不同 |
 | `topology.tp` / `pp` | 与真实部署一致的标签；不会替你启动推理进程 |
@@ -366,6 +492,15 @@ cd work/LLM-Inference-Benchmark
 本工程当前应用指标面板主要面向 SGLang；其他引擎即使支持 OpenAI API，也需要核对其 `/metrics` 和面板查询，不能仅凭压测成功就认为所有图表适用。
 
 ## 11. 离线机：预检查、小规模压测与验收
+
+执行位置：**离线机运行用源码根目录**。新开终端须先执行下面命令；若按第 10.2 节复用已有源码，cd 到你实际的源码根目录。
+
+```bash
+cd /home/llm-bench-runtime/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+test -f generated/site/site.json
+```
+
 
 ```bash
 python3 scripts/benchmark_stack.py plan --config generated/site/site.json
@@ -390,6 +525,15 @@ python3 scripts/benchmark_stack.py status --config generated/site/site.json
 `verify_simulation.py` **只允许 simulation 栈**，不要用它验收真实 NVIDIA 配置。真实吞吐、TTFT、TPOT 与 SLO 指标解释参见 [AISBench 使用](aisbench.md)。
 
 ## 12. 调整负载、再次压测和停机
+
+执行位置：**离线机运行用源码根目录**。新开终端须先执行下面命令；若按第 10.2 节复用已有源码，cd 到你实际的源码根目录。
+
+```bash
+cd /home/llm-bench-runtime/LLM-Inference-Benchmark
+test -f scripts/benchmark_stack.py
+test -f generated/site/site.json
+```
+
 
 第一次 8 请求是连通性验收，不足以得出容量结论。待任务结束后，先用原配置停止栈，再修改并发、输入输出长度、请求数和压力模式，然后重新启动：
 
