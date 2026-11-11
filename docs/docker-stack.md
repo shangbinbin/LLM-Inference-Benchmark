@@ -145,6 +145,7 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `storage.tokenizer` | 必填本地 tokenizer 目录，两种合成模式的结果汇总都需要；不需要模型权重 |
 | `log_files` | 相对 logs 的活跃文件列表，可含 rank/角色子目录；不允许 glob 或路径越界 |
 | `gpu.vendor` | auto/nvidia/hygon，当前每个观测栈一个厂商 |
+| `gpu.nvidia_metrics_profile` | basic（默认）：只读挂载 8 项基础指标列表，避开 profiling；full：使用镜像默认集合，仅在现场已验证兼容时开启 |
 | `gpu.deployment` | local：启动本机一个 Exporter；external：只采集已部署的逐节点 Exporter |
 | `gpu.nodes` | 节点名、卡数；external 每个节点还需独立 `target: host:port` |
 | `host_metrics` | host：Linux 主机 /proc、/sys、根文件系统只读采集；container：容器/VM 视角（Mac 示例） |

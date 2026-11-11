@@ -30,7 +30,8 @@
         "name": "gpu41",
         "gpus": 1
       }
-    ]
+    ],
+    "nvidia_metrics_profile": "basic"
   },
   "inference": {
     "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",

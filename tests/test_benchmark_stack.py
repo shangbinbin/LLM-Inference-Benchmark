@@ -63,6 +63,40 @@ class StackTests(unittest.TestCase):
                 if spec['name'] != 'gpu-exporter':
                     self.assertNotIn('--runtime=nvidia', spec['args'])
 
+    def test_local_nvidia_uses_basic_collectors_and_full_mode_is_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['simulation'] = False
+            directory, vendor = stack.prepare(cfg)
+            instance = stack.Stack(cfg, directory, vendor)
+            exporter = next(s for s in instance.specs() if s['name'] == 'gpu-exporter')
+            self.assertEqual(exporter['command'], ['--collectors', '/etc/dcgm-exporter/basic.csv'])
+            self.assertIn('src='+str(ROOT/'configs/gpu/nvidia/dcgm/basic.csv')+',dst=/etc/dcgm-exporter/basic.csv,readonly',
+                          repr(exporter['args']))
+            fields = [line.split(',')[0] for line in (ROOT/'configs/gpu/nvidia/dcgm/basic.csv').read_text().splitlines()]
+            self.assertEqual(len(fields), 8)
+            self.assertIn('DCGM_FI_DEV_GPU_UTIL', fields)
+            self.assertFalse(any(field.startswith('DCGM_FI_PROF_') for field in fields))
+            cfg['gpu']['nvidia_metrics_profile'] = 'full'
+            exporter = next(s for s in instance.specs() if s['name'] == 'gpu-exporter')
+            self.assertEqual(exporter['command'], [])
+            self.assertNotIn('basic.csv', repr(exporter['args']))
+            cfg['gpu']['nvidia_metrics_profile'] = 'basic'
+            exporter = next(s for s in stack.Stack(cfg, directory, 'hygon').specs() if s['name'] == 'gpu-exporter')
+            self.assertNotIn('basic.csv', repr(exporter))
+            for simulation, deployment in [(True, 'local'), (False, 'external')]:
+                cfg['simulation'] = simulation
+                cfg['gpu']['deployment'] = deployment
+                self.assertFalse(any(s['name'] == 'gpu-exporter' for s in instance.specs()))
+
+    def test_invalid_nvidia_collector_profile_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['storage']['tokenizer'] = str(ROOT/'configs/fixtures/mock-tokenizer')
+            cfg['gpu']['nvidia_metrics_profile'] = 'unsupported'
+            with self.assertRaisesRegex(ValueError, 'nvidia_metrics_profile'):
+                stack.validate_config(cfg)
+
     def test_client_thread_limits_apply_online_and_offline_without_changing_concurrency(self):
         expected = {'OPENBLAS_NUM_THREADS=1', 'OMP_NUM_THREADS=1', 'MKL_NUM_THREADS=1',
                     'NUMEXPR_NUM_THREADS=1', 'TOKENIZERS_PARALLELISM=false'}

@@ -30,7 +30,8 @@
         "name": "single-node",
         "gpus": 1
       }
-    ]
+    ],
+    "nvidia_metrics_profile": "basic"
   },
   "inference": {
     "base_url": "http://REPLACE_INFERENCE_HOST:30000/",

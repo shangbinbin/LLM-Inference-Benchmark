@@ -786,6 +786,7 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 | 在线拉取或 pip/apt 失败 | 查看具体失败域名、代理、CA、仓库授权/标签；解决后重跑失败步骤 |
 | 离线 Missing images / Wrong architecture | 按清单补齐 amd64 镜像，在在线侧重新 save；不能把 arm64 改标签冒充 |
 | `could not select device driver` / `nvidia-smi` 失败 | 检查宿主机驱动、Toolkit 配置、Docker runtime；先通过第 9 步设备注入检查 |
+| DCGM profiling 模块 watch 指标失败 | 默认 gpu.nvidia_metrics_profile=basic，只读挂载仓库中的 dcgm/basic.csv；同步当前源码及 CSV 后重建项目容器，无需重做镜像；full 模式须先现场验证兼容 |
 | DCGM Exporter 启动失败 | `docker logs llm-bench-nvidia-gpu-exporter`；核对镜像/驱动兼容性与设备权限 |
 | 采集或 API 就绪超时 | 确认容器内可达 IP、监听地址、端口、防火墙、DNS/代理；主机 curl 成功不代表容器成功 |
 | `model-tokenizer.tar.gz: Cannot open: No such file or directory` | 交付包缺少 tokenizer 归档；第 6.1 节下载目录不等于归档，须完成打包并补传；源码已解包时只补齐 tokenizer，不重复创建安装目录 |
@@ -805,3 +806,5 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 网关路径可统一配置 `inference.base_url`（如 `http://host:port/prefix/`），默认自动追加 `v1/chat/completions`、`v1/models` 和 `metrics`，应用指标默认复用推理 Bearer 鉴权；保留显式指标字段时以覆盖值为准。详见 [统一基础 URL](inference-auth.md#统一基础-url自动拼接推理与指标接口)。
 
 需要从其他机器直接访问 Grafana 等服务时，使用运行本栈的节点 IP 加配置端口。所有 HTTP 服务的高位默认端口、port_bind_address、单项禁用及 host node_exporter 的监听规则见 [节点访问与端口配置](docker-stack.md#节点-ip-访问与可配置高位端口)。
+
+本地 NVIDIA Exporter 默认使用基础指标采集模式 `gpu.nvidia_metrics_profile=basic`，避免现场已确认的默认 profiling 采集失败；基础列表随仓库挂载。切换 full 模式及缺失面板的说明见 [NVIDIA 指标配置](../configs/gpu/nvidia/README.md#本地-dcgm-默认使用已验证的基础指标)。

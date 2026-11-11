@@ -230,6 +230,9 @@ def validate_config(cfg):
         raise ValueError('GPU nodes must have unique names')
     if cfg['gpu']['deployment'] not in ('local', 'external'):
         raise ValueError('GPU deployment must be local/external')
+    cfg['gpu'].setdefault('nvidia_metrics_profile', 'basic')
+    if cfg['gpu']['nvidia_metrics_profile'] not in ('basic', 'full'):
+        raise ValueError('gpu.nvidia_metrics_profile must be basic/full')
     if cfg['gpu']['deployment'] == 'local' and len(nodes) != 1:
         raise ValueError('Local exporter manages one host; distributed hosts require external exporters')
     if cfg['gpu']['deployment'] == 'external' and any(not n.get('target') for n in nodes):
@@ -552,17 +555,21 @@ class Stack:
                 specs[-1]['args'] += ['-e', 'MOCK_CAPACITY='+str(latency['capacity']),
                                      '-e', 'MOCK_OVERLOAD_DELAY_SECONDS='+str(latency['overload_delay_seconds'])]
         if self.cfg['gpu']['deployment'] == 'local' and not self.cfg.get('simulation'):
+            exporter_command = []
             if self.vendor == 'nvidia':
                 args = ['--runtime=nvidia', '-e', 'NVIDIA_VISIBLE_DEVICES=all',
                         '-e', 'NVIDIA_DRIVER_CAPABILITIES=compute,utility',
                         '--cap-add', 'SYS_ADMIN', '-e', 'DCGM_EXPORTER_KUBERNETES=false']
                 image = images['nvidia_exporter']; port = 9400; marker = 'DCGM_FI_DEV_GPU_UTIL'
+                if self.cfg['gpu'].get('nvidia_metrics_profile', 'basic') == 'basic':
+                    args += mount(ROOT/'configs/gpu/nvidia/dcgm/basic.csv', '/etc/dcgm-exporter/basic.csv', True)
+                    exporter_command = ['--collectors', '/etc/dcgm-exporter/basic.csv']
             else:
                 args = ['--privileged','-e','CONNECT_K8S=false','-e','METRICS_LEVEL=low']
                 for path in ('/dev','/opt/hyhal','/etc/hostname','/etc/vdev'):
                     args += mount(path,path,path!='/dev')
                 image = images['hygon_exporter']; port=16080; marker='hcu_memorycap_bytes'
-            specs.append({'name':'gpu-exporter','args':args,'image':image,'command':[],
+            specs.append({'name':'gpu-exporter','args':args,'image':image,'command':exporter_command,
                           'ready':(f'http://gpu-exporter:{port}/metrics',marker)})
         host_args, host_cmd = [], []
         if self.cfg.get('host_metrics', 'container') == 'host':
