@@ -54,7 +54,11 @@
   "ports": {
     "grafana": 33000,
     "prometheus": 39090,
-    "loki": 33100
+    "loki": 33100,
+    "alloy": 32345,
+    "node-exporter": 39100,
+    "gpu-exporter": 39400,
+    "fixture": 38080
   },
   "startup_timeout": 120,
   "benchmark": {
@@ -72,5 +76,6 @@
     }
   },
   "platform": "linux/amd64",
-  "node_exporter_target": "REPLACE_HOST_ADDRESS:9100"
+  "node_exporter_target": "REPLACE_HOST_ADDRESS:39100",
+  "port_bind_address": "0.0.0.0"
 }

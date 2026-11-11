@@ -53,7 +53,11 @@
   "ports": {
     "grafana": 33000,
     "prometheus": 39090,
-    "loki": 33100
+    "loki": 33100,
+    "alloy": 32345,
+    "node-exporter": 39100,
+    "gpu-exporter": 39400,
+    "fixture": 38080
   },
   "startup_timeout": 180,
   "benchmark": {
@@ -70,5 +74,6 @@
       "ignore_eos": true
     }
   },
-  "platform": "linux/arm64"
+  "platform": "linux/arm64",
+  "port_bind_address": "0.0.0.0"
 }

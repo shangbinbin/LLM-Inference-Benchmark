@@ -131,6 +131,110 @@ class StackTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'JSON boolean'):
                     stack.runtime_command(cfg, ['run', 'image'])
 
+    def test_gateway_metrics_path_and_bearer_file_are_scoped_to_application(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['topology']['metrics_path'] = '/publishaddress/inference/qwen306b/metrics'
+            cfg['topology']['metrics_api_key_env'] = 'TEST_METRICS_TOKEN'
+            directory, vendor = stack.prepare(cfg)
+            prom = json.loads((directory/'prometheus/prometheus.yml').read_text())
+            application = prom['scrape_configs'][0]
+            self.assertEqual(application['metrics_path'], cfg['topology']['metrics_path'])
+            self.assertEqual(application['authorization'], {'type': 'Bearer', 'credentials_file': '/run/benchmark-metrics.token'})
+            self.assertTrue(all('authorization' not in job for job in prom['scrape_configs'][1:]))
+            instance = stack.Stack(cfg, directory, vendor)
+            with patch.dict(os.environ, TEST_METRICS_TOKEN='dummy-metrics-secret'):
+                instance.write_metrics_token()
+            tokenfile = instance.metrics_token_file()
+            self.assertEqual(tokenfile.read_text(), 'dummy-metrics-secret')
+            self.assertEqual(tokenfile.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(tokenfile.parent.stat().st_mode & 0o777, 0o700)
+            for artifact in directory.rglob('*'):
+                if artifact.is_file():
+                    self.assertNotIn('dummy-metrics-secret', artifact.read_text())
+            for spec in instance.specs():
+                args = repr(spec['args'])
+                self.assertNotIn('dummy-metrics-secret', args)
+                self.assertEqual('/run/benchmark-metrics.token' in args, spec['name'] == 'prometheus')
+            tokenfile.unlink()
+            with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(ValueError, 'unset or empty'):
+                instance.write_metrics_token()
+            self.assertFalse(tokenfile.exists())
+            outside = Path(tmp)/'outside'
+            outside.write_text('untouched')
+            tokenfile.symlink_to(outside)
+            with patch.dict(os.environ, TEST_METRICS_TOKEN='dummy'), self.assertRaises(OSError):
+                instance.write_metrics_token()
+            self.assertEqual(outside.read_text(), 'untouched')
+
+    def test_down_removes_metrics_credential_after_stopping_owned_resources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['topology']['metrics_api_key_env'] = 'TEST_METRICS_TOKEN'
+            directory, vendor = stack.prepare(cfg)
+            instance = stack.Stack(cfg, directory, vendor)
+            with patch.dict(os.environ, TEST_METRICS_TOKEN='test-secret'):
+                instance.write_metrics_token()
+            instance.statefile.write_text(json.dumps({'containers': [], 'network': instance.network}))
+            result = subprocess.CompletedProcess([], 1, '', 'not found')
+            with patch.object(instance, 'call', return_value=result):
+                instance.down()
+            self.assertFalse(instance.metrics_token_file().exists())
+            self.assertFalse(instance.statefile.exists())
+
+    def test_one_base_url_drives_chat_metrics_and_model_readiness_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['storage']['tokenizer'] = str(ROOT / 'configs/fixtures/mock-tokenizer')
+            cfg['topology'].pop('metrics_endpoints')
+            cfg['inference'].update(api='chat', api_key_env='GATEWAY_TOKEN')
+            for base, expected_path in [
+                ('http://gateway:38000/publishaddress/inference/model-a', '/publishaddress/inference/model-a/metrics'),
+                ('https://gateway:443/nested/model-b/', '/nested/model-b/metrics'),
+                ('http://gateway:8000/', '/metrics'),
+            ]:
+                cfg['inference']['base_url'] = base
+                checked = stack.validate_config(cfg)
+                settings = stack.metrics_settings(checked)
+                self.assertEqual(settings['path'], expected_path)
+                self.assertEqual(settings['api_key_env'], 'GATEWAY_TOKEN')
+                self.assertEqual(settings['targets'][0]['target'], base.split('/')[2])
+                directory, vendor = stack.prepare(checked)
+                application = json.loads((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
+                self.assertEqual(application['metrics_path'], expected_path)
+                self.assertEqual(application['scheme'], base.split(':')[0])
+                self.assertEqual(application['static_configs'][0]['targets'], [base.split('/')[2]])
+                self.assertIn('authorization', application)
+                self.assertIn(repr(base.rstrip('/') + '/'), stack.ais_config(checked))
+                instance = stack.Stack(checked, directory, vendor)
+                with patch.object(instance, 'call') as call, patch.dict(os.environ, GATEWAY_TOKEN='dummy'):
+                    instance.probe(checked['inference']['base_url'].rstrip('/')+'/v1/models', 'data', inference=True)
+                self.assertIn(base.rstrip('/')+'/v1/models', call.call_args.args)
+
+    def test_metrics_overrides_and_anonymous_scraping_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg['inference'].update(base_url='https://gateway/prefix/', api_key_env='GATEWAY_TOKEN')
+            cfg['topology'].update(metrics_endpoints=[{'target':'other:9100','role':'worker'}],
+                                   metrics_path='/custom/metrics', metrics_scheme='http', metrics_api_key_env=None)
+            settings = stack.metrics_settings(cfg)
+            self.assertEqual(settings, {'targets':[{'target':'other:9100','role':'worker'}],
+                                        'path':'/custom/metrics','scheme':'http','api_key_env':None})
+            directory, vendor = stack.prepare(cfg)
+            application = json.loads((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
+            self.assertNotIn('authorization', application)
+            self.assertEqual(application['metrics_path'], '/custom/metrics')
+            self.assertEqual(application['scheme'], 'http')
+
+    def test_gateway_metrics_fields_are_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for key, value in [('metrics_path', 'http://host/metrics'), ('metrics_path', '/metrics?token=secret'),
+                               ('metrics_path', '/bad\npath'), ('metrics_api_key_env', 'INVALID=NAME')]:
+                cfg = self.config(tmp)
+                cfg['topology'][key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    stack.validate_config(cfg)
+
     def test_failed_readiness_never_starts_benchmark(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg=self.config(tmp);folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)
@@ -168,7 +272,67 @@ class StackTests(unittest.TestCase):
             self.assertTrue(node['host_network'])
             self.assertIn('--pid',node['args'])
             prom=json.loads((folder/'prometheus/prometheus.yml').read_text())
-            self.assertEqual(prom['scrape_configs'][-1]['static_configs'][0]['targets'],['192.0.2.10:9100'])
+            self.assertEqual(prom['scrape_configs'][-1]['static_configs'][0]['targets'],['192.0.2.10:39100'])
+
+    def test_service_ports_are_published_on_all_interfaces_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            folder, vendor = stack.prepare(cfg)
+            for simulation in (True, False):
+                cfg['simulation'] = simulation
+                specs = stack.Stack(cfg, folder, vendor).specs()
+                internal = {'fixture':18000,'alloy':12345,'node-exporter':9100,'gpu-exporter':9400,
+                            'prometheus':9090,'loki':3100,'grafana':3000}
+                for spec in specs:
+                    if spec['name'] == 'logrotate':
+                        self.assertNotIn('-p', spec['args'])
+                    else:
+                        expected = '0.0.0.0:%s:%s' % (cfg['ports'][spec['name']], internal[spec['name']])
+                        self.assertIn(expected, spec['args'])
+                cfg['port_bind_address'] = '192.0.2.10'
+                cfg['ports']['grafana'] = 45000
+                specs = stack.Stack(cfg, folder, vendor).specs()
+                self.assertIn('192.0.2.10:45000:3000', next(s for s in specs if s['name']=='grafana')['args'])
+                cfg['port_bind_address'] = '0.0.0.0'
+
+    def test_port_disabling_ipv6_and_hygon_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            folder, vendor = stack.prepare(cfg)
+            cfg['ports']['grafana'] = None
+            cfg['port_bind_address'] = '::1'
+            specs = stack.Stack(cfg, folder, vendor).specs()
+            self.assertNotIn('-p', next(s for s in specs if s['name']=='grafana')['args'])
+            self.assertIn('[::1]:%s:12345' % cfg['ports']['alloy'], next(s for s in specs if s['name']=='alloy')['args'])
+            cfg['publish_ports'] = False
+            self.assertTrue(all('-p' not in s['args'] for s in stack.Stack(cfg, folder, vendor).specs()))
+            cfg.update(simulation=False, publish_ports=True)
+            specs = stack.Stack(cfg, folder, 'hygon').specs()
+            self.assertIn('[::1]:%s:16080' % cfg['ports']['gpu-exporter'], next(s for s in specs if s['name']=='gpu-exporter')['args'])
+
+    def test_custom_host_exporter_port_updates_listener_and_scrape_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg.update(simulation=False,host_metrics='host',node_exporter_target='192.0.2.10:9100')
+            cfg['ports']['node-exporter'] = 45010
+            folder, vendor = stack.prepare(cfg)
+            node = next(s for s in stack.Stack(cfg, folder, vendor).specs() if s['name']=='node-exporter')
+            self.assertIn('--web.listen-address=0.0.0.0:45010', node['command'])
+            self.assertNotIn('-p', node['args'])
+            self.assertIn('http://192.0.2.10:45010/metrics', node['ready'])
+            prom=json.loads((folder/'prometheus/prometheus.yml').read_text())
+            self.assertEqual(prom['scrape_configs'][-1]['static_configs'][0]['targets'], ['192.0.2.10:45010'])
+
+    def test_port_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for changes in ({'ports':{'grafana':True}}, {'ports':{'grafana':65536}},
+                            {'ports':{'unknown':40000}}, {'ports':{'grafana':40000,'loki':40000}},
+                            {'port_bind_address':'not-an-ip'}, {'publish_ports':'false'}):
+                cfg=self.config(tmp)
+                cfg['storage']['tokenizer']=str(ROOT/'configs/fixtures/mock-tokenizer')
+                cfg.update(changes)
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    stack.validate_config(cfg)
 
     def test_sweep_validation(self):
         with tempfile.TemporaryDirectory() as tmp:

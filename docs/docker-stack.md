@@ -60,7 +60,49 @@ llm-bench down --config configs/stacks/mac-offline.json
 
 要在独立内部网络中自动验证缺镜像、两种厂商模拟指标、顺序用例及 SLO 搜索，可执行 `python3 docs/examples/verify_offline_mac.py`，见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。
 
-默认本机入口：Grafana `http://localhost:33000`，Prometheus `http://localhost:39090`，Loki `http://localhost:33100`。端口可在配置中修改，默认仅绑定回环地址。Grafana 初始账号遵循镜像默认值 admin/admin，首次登录修改密码；数据目录会持久化此修改。
+默认本机入口：Grafana `http://localhost:33000`，Prometheus `http://localhost:39090`，Loki `http://localhost:33100`。端口可在配置中修改，默认绑定所有网卡，可通过节点 IP 访问。Grafana 初始账号遵循镜像默认值 admin/admin，首次登录修改密码；数据目录会持久化此修改。
+
+## 节点 IP 访问与可配置高位端口
+
+默认 `port_bind_address` 为 `0.0.0.0`，所有具备 HTTP 监听接口的项目常驻容器发布到节点网卡，可通过 `http://运行该栈的节点IP:配置端口` 访问。该节点不一定是推理网关所在节点；容器间采集仍使用隔离网络和内部端口。
+
+| 服务 / ports 中的键 | 默认节点端口 | 容器内部端口 | 常用访问路径 |
+| --- | --- | --- | --- |
+| grafana | 33000 | 3000 | / |
+| prometheus | 39090 | 9090 | /targets |
+| loki | 33100 | 3100 | /ready（查询使用 Loki API） |
+| alloy | 32345 | 12345 | /、/-/ready |
+| node-exporter | 39100 | 9100（host 模式直接监听节点配置端口） | /metrics |
+| gpu-exporter | 39400 | NVIDIA 9400 / 海光 16080 | /metrics |
+| fixture | 38080 | 18000 | /v1/models（仅模拟模式启动） |
+
+AISBench 客户端、logrotate 和临时探测容器没有对外 HTTP 服务，不映射无用途的端口。external 模式的 GPU Exporter 由其他节点部署，不由本栈代理端口。此表是普通模板的默认值；mac-offline 及据其生成的冒烟配置使用 Grafana 33003、Prometheus 39093、Loki 33103、Alloy 32348、node_exporter 39103、GPU Exporter 39403、fixture 38083，减少与生产栈冲突。
+
+可以在 site.json 或 offline-smoke.json 顶层手工配置，省略的 ports 项继承默认值：
+
+```json
+"port_bind_address": "0.0.0.0",
+"publish_ports": true,
+"ports": {
+  "grafana": 43000,
+  "prometheus": 49090,
+  "loki": 43100,
+  "alloy": 42345,
+  "node-exporter": 49100,
+  "gpu-exporter": 49400,
+  "fixture": 48080
+}
+```
+
+port_bind_address 可改为节点的某个 IP（如 10.142.118.41），也支持 IPv6；设为 127.0.0.1 时仅本机访问。端口允许 1..65535，启动器会检查类型及当前实际启动服务之间的配置重复；已经被其他进程占用的端口会在 Docker 创建/启动时报错，应另选端口。
+
+单项设为 0 或 null 可关闭该服务的 Docker 端口映射；`publish_ports=false` 关闭所有 Docker 端口映射，`ports={}` 表示采用默认值，不能用来关闭映射。端口关闭后容器间仍可使用原内部地址通信；完整模拟验收脚本需要 Grafana、Prometheus、Loki 的映射开启。
+
+host_metrics=host 时 node_exporter 使用宿主网络，不添加 Docker -p；其 --web.listen-address 使用 port_bind_address 和 ports.node-exporter，Prometheus 的 node_exporter_target 自动同步使用相同端口。该模式必须配置容器可达的节点主机名/IP；监听地址需为容器可达网卡或 0.0.0.0，不要绑定 127.0.0.1 后仍要求隔离网络的 Prometheus 访问。host 模式监听不受 publish_ports 开关控制，也不能把 node-exporter 端口设为 0/null；如需取消宿主网络监听，使用 container 模式或调整网卡绑定和防火墙。
+
+**所有网卡监听意味着远端可以连接这些服务。** 只在受信任内网放行所需端口；Prometheus、Loki、Exporter 默认没有统一登录鉴权，Grafana 首次使用需修改默认密码。推理服务 Bearer Token 不会给这些新暴露的接口自动加鉴权。
+
+更新源码、修改端口后，先使用原配置正常 down，再用新配置 up；docker restart 不会更新已有映射。无需重建镜像或重启 Docker。可用 `docker ps --format 'table {{.Names}}\t{{.Ports}}'` 查看实际映射；host 模式 node_exporter 直接按配置的监听端口访问。
 
 ## 启动依赖
 
@@ -106,14 +148,16 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `gpu.deployment` | local：启动本机一个 Exporter；external：只采集已部署的逐节点 Exporter |
 | `gpu.nodes` | 节点名、卡数；external 每个节点还需独立 `target: host:port` |
 | `host_metrics` | host：Linux 主机 /proc、/sys、根文件系统只读采集；container：容器/VM 视角（Mac 示例） |
-| `node_exporter_target` | host 模式必填宿主机可达 IP:9100；该 exporter 使用 host 网络/PID，以采集真实主机网络指标，其余组件使用隔离网络 |
+| `node_exporter_target` | host 模式必填宿主机可达 IP；端口由 ports.node-exporter 同步，默认 39100；该 exporter 使用 host 网络/PID，以采集真实主机网络指标，其余组件使用隔离网络 |
 | `inference` | base_url、model、api（completions/chat）；服务由外部管理 |
 | `topology.kind` | single/distributed/pd：场景标识，不自动部署推理拓扑 |
 | `topology.metrics_endpoints` | 每个独立采集入口的 target、role、可选 group |
 | `topology.tp/pp` | 拓扑标签信息，不启动推理进程 |
 | `network` | 可选复用现有 IB 适配；Mac/单机示例不启用 |
 | `images` | 各组件镜像；自建镜像可通过 build 更新，使用固定版本而非 latest |
-| `ports` | Grafana、Prometheus、Loki 宿主机端口 |
+| `ports` | 各 HTTP 服务的节点端口，缺省项使用高位默认值；0/null 关闭单项映射 |
+| `port_bind_address` | 默认 0.0.0.0；可指定节点 IP 或 127.0.0.1 |
+| `publish_ports` | 默认 true；false 关闭 Docker 端口映射（host node_exporter 的直接监听除外） |
 | `startup_timeout` | 每项就绪检查的超时秒数 |
 | `benchmark` | AISBench 合成长度、请求数、并发、速率、预热和压力时长，见 [AISBench 指南](aisbench.md) |
 
@@ -172,3 +216,5 @@ python3 scripts/verify_simulation.py --config configs/stacks/mac-simulation.json
 检查所有采集目标 UP、选中厂商指标存在/另一厂商不存在、Grafana 面板与数据源、Loki 请求日志、最新 AISBench 报告成功计数；可选项还会强制轮转模拟日志并重启采集/存储组件，验证旧数据与新日志。证据写入 `storage.root/verification.json`。若修改过 Grafana 密码，先通过环境变量 `BENCH_GRAFANA_PASSWORD` 传入。此工具拒绝操作生产栈。
 
 旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+
+网关路径可统一配置 `inference.base_url`（如 `http://host:port/prefix/`），默认自动追加 `v1/chat/completions`、`v1/models` 和 `metrics`，应用指标默认复用推理 Bearer 鉴权；保留显式指标字段时以覆盖值为准。详见 [统一基础 URL](inference-auth.md#统一基础-url自动拼接推理与指标接口)。

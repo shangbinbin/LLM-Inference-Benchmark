@@ -13,7 +13,7 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
 from diagnostics import collect, run_diagnosed
-from benchmark_stack import ROOT, Stack, prepare, validate_config
+from benchmark_stack import ROOT, Stack, prepare, validate_config, published_ports
 from run_aisbench_suite import prepare_suite, run_suite
 from slo_search import run_search
 
@@ -133,7 +133,7 @@ def configured_stack(args):
             if entry['target'].startswith('REPLACE_INFERENCE_HOST:'):
                 entry['target'] = url.netloc if url.port else f'{url.netloc}:{443 if url.scheme == "https" else 80}'
     if args.host_address:
-        cfg['node_exporter_target'] = args.host_address + ':9100'
+        cfg['node_exporter_target'] = args.host_address + ':' + str(published_ports(cfg)['node-exporter'])
     if args.model is not None:
         cfg['inference']['model'] = args.model
     for path, field in [(args.tokenizer, 'tokenizer'), (args.data_dir, 'root'), (args.log_dir, 'logs')]:

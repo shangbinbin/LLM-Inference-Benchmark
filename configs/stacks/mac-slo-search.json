@@ -53,7 +53,11 @@
   "ports": {
     "grafana": 33002,
     "prometheus": 39092,
-    "loki": 33102
+    "loki": 33102,
+    "alloy": 32345,
+    "node-exporter": 39100,
+    "gpu-exporter": 39400,
+    "fixture": 38080
   },
   "startup_timeout": 180,
   "benchmark": {
@@ -74,5 +78,6 @@
   "simulation_latency": {
     "capacity": 2,
     "overload_delay_seconds": 0.4
-  }
+  },
+  "port_bind_address": "0.0.0.0"
 }

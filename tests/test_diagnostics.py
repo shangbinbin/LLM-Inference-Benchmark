@@ -109,7 +109,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertNotIn('secret-test-value', failure_detail(err))
         self.assertEqual(json.loads((self.root/'diagnostics/events.jsonl').read_text().splitlines()[-1])['status'], 'failed')
 
-    def test_targets_use_only_published_loopback_binding(self):
+    def test_targets_use_published_binding(self):
         bundle = Mock()
         collect_targets(bundle, {'NetworkSettings': {'Ports': {}}})
         bundle.add.assert_not_called()
@@ -122,3 +122,12 @@ class DiagnosticsTests(unittest.TestCase):
                             {'HostIp': '127.0.0.1', 'HostPort': '39090'}]}}})
             connect.assert_called_once_with('127.0.0.1', 39090, timeout=3)
             self.assertEqual(bundle.add.call_args.args[1][0]['lastError'], 'timeout')
+
+    def test_targets_support_wildcard_ipv6_and_explicit_bind_address(self):
+        for address, host in [('0.0.0.0', '127.0.0.1'), ('::', '::1'), ('192.0.2.10','192.0.2.10')]:
+            with self.subTest(address=address), patch('diagnostics.http.client.HTTPConnection') as connect:
+                response = connect.return_value.getresponse.return_value
+                response.status = 200
+                response.read.return_value = b'{"data":{"activeTargets":[]}}'
+                collect_targets(Mock(), {'NetworkSettings':{'Ports':{'9090/tcp':[{'HostIp':address,'HostPort':'45000'}]}}})
+                connect.assert_called_once_with(host,45000,timeout=3)

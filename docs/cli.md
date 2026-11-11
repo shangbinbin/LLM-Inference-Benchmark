@@ -99,7 +99,7 @@ llm-bench up --config site.json --cases cases.json
 | `--config FILE` | 单独使用时读取完整栈 JSON。与 profile 同用时，以该 profile 为底稿递归覆盖 JSON 对象，数组整体替换。 |
 | `--project NAME` | 独立容器和网络的前缀。并行栈需独立名称、数据目录、日志目录及宿主机端口。 |
 | `--endpoint URL`、`--model ID` | 提供服务根 URL 和对外模型名。linux-single 模板的 metrics 占位地址从 URL 的主机和端口补全；已显式配置的 metrics 端点保留。 |
-| `--host-address HOST` | node_exporter 的可达主机名或地址，使用 9100 端口。其他端口直接配置 node_exporter_target。 |
+| `--host-address HOST` | node_exporter 的可达主机名或地址；host 模式端口由 ports.node-exporter 决定，默认 39100。 |
 | `--gpu-vendor VENDOR`、`--gpus N` | auto、nvidia 或 hygon，以及单节点卡数。模拟环境需显式厂商，内置 Mac profile 已提供。 |
 | `--tokenizer DIR`、`--log-dir DIR`、`--data-dir DIR` | 本地 tokenizer、被测服务日志和栈的持久化目录。 |
 | `--input-len N`、`--output-len N` | 合成输入长度和请求输出上限。 |
@@ -156,3 +156,5 @@ llm-bench bench slo --config configs/stacks/mac-slo-search.json \
 - **用例失败**。先找 suite-results.json 中的 case 和退出码，再查该用例的 client.log、正式请求数和失败请求数。若失败发生在观测组件启动阶段，先用 status 定位组件。
 
 原有 benchmark_stack.py、run_aisbench_suite.py、slo_search.py 仍支持已有自动化。新的日常操作可统一使用 llm-bench。
+
+项目 HTTP 服务默认通过节点 IP 和高位端口访问，支持 ports、port_bind_address 和 publish_ports；详见 [端口配置](docker-stack.md#节点-ip-访问与可配置高位端口)。

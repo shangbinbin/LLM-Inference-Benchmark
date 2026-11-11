@@ -4,6 +4,7 @@ import argparse
 import configparser
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from urllib.parse import urlsplit
 
 from diagnostics import record_event
 from render_observability import config_dir, render, write_json, ROOT
@@ -28,6 +30,29 @@ CLIENT_THREAD_ENV = {
     'NUMEXPR_NUM_THREADS': '1',
     'TOKENIZERS_PARALLELISM': 'false',
 }
+DEFAULT_PORTS = {'grafana': 33000, 'prometheus': 39090, 'loki': 33100,
+                 'alloy': 32345, 'node-exporter': 39100, 'gpu-exporter': 39400, 'fixture': 38080}
+
+
+def published_ports(cfg):
+    return dict(DEFAULT_PORTS, **cfg.get('ports', {}))
+
+
+def bind_address(cfg):
+    address = cfg.get('port_bind_address', '0.0.0.0')
+    ip = ipaddress.ip_address(address)
+    return '[' + str(ip) + ']' if ip.version == 6 else str(ip)
+
+
+def node_metrics_target(cfg):
+    if cfg.get('host_metrics', 'container') != 'host':
+        return cfg.get('node_exporter_target', 'node-exporter:9100')
+    target = urlsplit('//' + cfg['node_exporter_target'])
+    host = target.hostname
+    if not host or target.path or target.username or target.password:
+        raise ValueError('node_exporter_target must be a reachable host or host:port')
+    host = '[' + host + ']' if ':' in host else host
+    return host + ':' + str(published_ports(cfg)['node-exporter'])
 
 
 
@@ -50,6 +75,25 @@ def runtime_command(cfg, args):
         if args[0] in ('run', 'create'):
             args.insert(1, '--pull=never')
     return cfg['runtime'] + args
+
+
+def metrics_settings(cfg):
+    """Derive gateway metrics from the inference root unless explicitly overridden."""
+    topology = cfg['topology']
+    base = urlsplit(cfg['inference']['base_url'])
+    targets = topology.get('metrics_endpoints', [{'target': base.netloc, 'role': 'master'}])
+    if not isinstance(targets, list) or not targets:
+        raise ValueError('topology.metrics_endpoints must be a nonempty array when provided')
+    path = topology.get('metrics_path', base.path.rstrip('/') + '/metrics')
+    if not isinstance(path, str) or not re.fullmatch(r'/[^\s?#]*', path):
+        raise ValueError('topology.metrics_path must be an absolute HTTP path without query or fragment')
+    scheme = topology.get('metrics_scheme', base.scheme)
+    if scheme not in ('http', 'https'):
+        raise ValueError('topology.metrics_scheme must be http/https')
+    key = topology.get('metrics_api_key_env', cfg['inference'].get('api_key_env'))
+    if key is not None and (not isinstance(key, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key)):
+        raise ValueError('topology.metrics_api_key_env must be an environment variable name or null')
+    return {'targets': targets, 'path': path, 'scheme': scheme, 'api_key_env': key}
 
 
 def inference_environment(cfg):
@@ -127,6 +171,26 @@ def validate_config(cfg):
         raise ValueError('offline must be a JSON boolean (true/false)')
     cfg.setdefault('legacy_seccomp_unconfined', cfg.get('offline', False))
     container_security_options(cfg)  # Materialize offline defaults in plans and manifests.
+    if type(cfg.get('publish_ports', True)) is not bool:
+        raise ValueError('publish_ports must be a JSON boolean')
+    if not isinstance(cfg.get('port_bind_address', '0.0.0.0'), str):
+        raise ValueError('port_bind_address must be an IP address')
+    bind_address(cfg)
+    if not isinstance(cfg.get('ports', {}), dict) or set(cfg.get('ports', {})) - set(DEFAULT_PORTS):
+        raise ValueError('ports contains unsupported service names')
+    ports = published_ports(cfg)
+    for name, value in ports.items():
+        if value is not None and (type(value) is not int or not 0 <= value <= 65535):
+            raise ValueError('ports.' + name + ' must be 1..65535, 0 or null to disable')
+    active = ['grafana', 'prometheus', 'loki', 'alloy', 'node-exporter']
+    if cfg.get('simulation'):
+        active.append('fixture')
+    elif cfg['gpu']['deployment'] == 'local':
+        active.append('gpu-exporter')
+    values = [ports[name] for name in active if ports[name]]
+    if cfg.get('publish_ports', True) and len(values) != len(set(values)):
+        raise ValueError('Published service ports must be unique')
+    cfg['ports'] = ports
     if not re.fullmatch('[a-z][a-z0-9-]{0,39}', cfg['project']):
         raise ValueError('project must be a short lowercase container name')
     for key in ('root', 'logs', 'tokenizer'):
@@ -155,9 +219,12 @@ def validate_config(cfg):
     if cfg['topology']['kind'] not in ('single', 'distributed', 'pd'):
         raise ValueError('topology.kind must be single/distributed/pd')
     if cfg.get('host_metrics') == 'host' and not cfg.get('node_exporter_target'):
-        raise ValueError('host_metrics=host requires node_exporter_target=<host-address>:9100')
-    if not cfg['topology']['metrics_endpoints']:
-        raise ValueError('At least one inference metrics endpoint is required')
+        raise ValueError('host_metrics=host requires node_exporter_target=<reachable-host>; port follows ports.node-exporter')
+    if cfg.get('host_metrics') == 'host':
+        if not ports['node-exporter']:
+            raise ValueError('host node-exporter needs a nonzero ports.node-exporter listener')
+        cfg['node_exporter_target'] = node_metrics_target(cfg)
+    metrics = metrics_settings(cfg)
     nodes = cfg['gpu']['nodes']
     if not nodes or len({n['name'] for n in nodes}) != len(nodes):
         raise ValueError('GPU nodes must have unique names')
@@ -179,6 +246,10 @@ def validate_config(cfg):
         raise ValueError('inference.api must be completions/chat')
     if not cfg['inference']['base_url'].startswith(('http://', 'https://')):
         raise ValueError('inference.base_url must be an HTTP(S) service root URL')
+    base = urlsplit(cfg['inference']['base_url'])
+    if not base.hostname or base.username or base.password or base.query or base.fragment:
+        raise ValueError('inference.base_url must not contain credentials, query or fragment')
+    cfg['inference']['base_url'] = cfg['inference']['base_url'].rstrip('/') + '/'
     for key in ('input_length', 'output_length', 'request_count', 'concurrency'):
         if type(bench[key]) is not int or bench[key] < 1:
             raise ValueError(f'benchmark.{key} must be a positive integer')
@@ -210,7 +281,7 @@ def validate_config(cfg):
             raise ValueError('request_count must cover the largest requests_per_level')
     elif 'requests_per_level' in bench:
         raise ValueError('requests_per_level requires concurrency_levels')
-    for item in cfg['topology']['metrics_endpoints']:
+    for item in metrics['targets']:
         if item['role'] not in ('master', 'prefill', 'decode', 'router', 'worker'):
             raise ValueError('Unsupported inference endpoint role')
     return cfg
@@ -266,7 +337,7 @@ def ais_config(cfg, dataset=None):
                    prompt_field={dataset.prompt_field!r}, records={dataset.records})
 datasets[0]["reader_cfg"] = dict(input_columns=["question"], output_column=None)
 datasets[0]["infer_cfg"]["prompt_template"] = dict(type=LiteralPrompt, template="{{question}}")'''
-    model = {'abbr': 'aisbench-target', 'model': endpoint['model'], 'url': endpoint['base_url'],
+    model = {'abbr': 'aisbench-target', 'model': endpoint['model'], 'url': endpoint['base_url'].rstrip('/') + '/',
              'path': '/tokenizer', 'stream': True,
              'batch_size': b['concurrency'], 'request_rate': b.get('request_rate', 0),
              'max_out_len': b['output_length'], 'retry': b.get('retry', 1),
@@ -313,7 +384,8 @@ def prepare(cfg):
     Path(cfg['storage']['logs']).mkdir(parents=True, exist_ok=True)
     for name in ('prometheus', 'loki', 'grafana', 'alloy', 'logrotate', 'results'):
         (root / 'data' / name).mkdir(parents=True, exist_ok=True)
-    targets = cfg['topology']['metrics_endpoints']
+    metrics = metrics_settings(cfg)
+    targets = metrics['targets']
     gpu_nodes = cfg['gpu']['nodes']
     logs = cfg.get('log_files', ['server.log'])
     if any(not re.fullmatch(r'[A-Za-z0-9_./-]+', x) or '..' in Path(x).parts or x.startswith('/') for x in logs):
@@ -335,6 +407,10 @@ def prepare(cfg):
     envfile.unlink()
     prom = json.loads((run_dir / 'prometheus/prometheus.yml').read_text())
     application = prom['scrape_configs'][0]
+    application['metrics_path'] = metrics['path']
+    application['scheme'] = metrics['scheme']
+    if metrics['api_key_env']:
+        application['authorization'] = {'type': 'Bearer', 'credentials_file': '/run/benchmark-metrics.token'}
     application['static_configs'] = []
     for endpoint in targets:
         application['static_configs'].append({'targets': [endpoint['target']], 'labels': {
@@ -344,7 +420,7 @@ def prepare(cfg):
     if cfg.get('simulation'):
         gpu['metrics_path'] = '/gpu-metrics'
         gpu['static_configs'] = [{'targets': ['fixture:18000'], 'labels': {'node': 'simulated', 'simulation': 'true'}}]
-    node_target = cfg.get('node_exporter_target', 'node-exporter:9100')
+    node_target = node_metrics_target(cfg)
     prom['scrape_configs'].append({'job_name': 'node-exporter', 'static_configs': [{'targets': [node_target]} ]})
     write_json(run_dir / 'prometheus/prometheus.yml', prom)
     # Logs are independent of TP/PP and node count: allow per-role/subdirectory paths for future PD deployments.
@@ -379,6 +455,24 @@ class Stack:
         self.network = self.project+'-net'; self.root = Path(cfg['storage']['root'])
         self.statefile = self.root/'state.json'; self.created = []
         self.uid = f'{os.getuid()}:{os.getgid()}'
+
+    def metrics_token_file(self):
+        return self.root / '.credentials' / 'metrics.token'
+
+    def write_metrics_token(self):
+        name = metrics_settings(self.cfg)['api_key_env']
+        if not name:
+            return
+        inference_environment({'inference': {'api_key_env': name}})
+        path = self.metrics_token_file()
+        if path.parent.is_symlink():
+            raise ValueError('Metrics credentials directory must not be a symlink')
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+        path.parent.chmod(0o700)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(os.environ[name])
 
     def call(self, *args, **kwargs):
         argv = runtime_command(self.cfg, args)
@@ -476,7 +570,8 @@ class Stack:
                 raise ValueError('Mac simulation cannot collect macOS host metrics with Linux node_exporter')
             host_args = ['--pid','host']+mount('/proc', '/host/proc', True)+mount('/sys','/host/sys',True)+mount('/','/host/root',True)
             host_cmd = ['--path.procfs=/host/proc','--path.sysfs=/host/sys','--path.rootfs=/host/root']
-        node_target = self.cfg.get('node_exporter_target', 'node-exporter:9100')
+            host_cmd += ['--web.listen-address=' + bind_address(self.cfg) + ':' + str(published_ports(self.cfg)['node-exporter'])]
+        node_target = node_metrics_target(self.cfg)
         specs.append(service('node-exporter', host_args, host_cmd, ('http://'+node_target+'/metrics','node_exporter_build_info')))
         specs[-1]['host_network'] = self.cfg.get('host_metrics') == 'host'
         specs.append(service('loki', user+mount(config/'loki/loki.yaml','/etc/loki/config.yaml',True)+mount(data/'loki','/var/lib/loki'),
@@ -486,15 +581,18 @@ class Stack:
         specs.append(service('alloy', ['--user','0:0']+mount(self.cfg['storage']['logs'],'/logs',True)+mount(config/'alloy/config.alloy','/etc/alloy/config.alloy',True)+mount(data/'alloy','/var/lib/alloy'),
                              ['run']+(['--disable-reporting'] if self.cfg.get('offline', False) else [])+
                              ['--server.http.listen-addr=0.0.0.0:12345','--storage.path=/var/lib/alloy','/etc/alloy/config.alloy'], ('http://alloy:12345/-/ready','')))
-        specs.append(service('prometheus',user+mount(config/'prometheus','/etc/prometheus',True)+mount(data/'prometheus','/prometheus'),
+        credentials = mount(self.metrics_token_file(), '/run/benchmark-metrics.token', True) if metrics_settings(self.cfg)['api_key_env'] else []
+        specs.append(service('prometheus',user+credentials+mount(config/'prometheus','/etc/prometheus',True)+mount(data/'prometheus','/prometheus'),
                              ['--config.file=/etc/prometheus/prometheus.yml','--storage.tsdb.path=/prometheus','--storage.tsdb.retention.time='+self.cfg.get('metrics_retention','7d')],('http://prometheus:9090/-/ready','')))
         specs.append(service('grafana',user+mount(config/'grafana/grafana.ini','/etc/grafana/grafana.ini',True)+mount(config/'grafana/provisioning','/etc/grafana/provisioning',True)+mount(config/'grafana/dashboards','/etc/grafana/dashboards',True)+mount(data/'grafana','/var/lib/grafana'),
                              [],('http://grafana:3000/api/health','ok')))
+        internal_ports = {'grafana':3000, 'prometheus':9090, 'loki':3100, 'alloy':12345,
+                          'node-exporter':9100, 'fixture':18000,
+                          'gpu-exporter':9400 if self.vendor == 'nvidia' else 16080}
         for spec in specs:
-            port = self.cfg.get('ports',{}).get(spec['name'])
-            if port:
-                internal = {'grafana':3000,'prometheus':9090,'loki':3100}[spec['name']]
-                spec['args'] += ['-p', f'127.0.0.1:{port}:{internal}']
+            port = published_ports(self.cfg).get(spec['name'])
+            if self.cfg.get('publish_ports', True) and port and not spec.get('host_network'):
+                spec['args'] += ['-p', f'{bind_address(self.cfg)}:{port}:{internal_ports[spec["name"]]}']
         return specs
 
     def probe(self, url, contains='', *, inference=False):
@@ -525,6 +623,7 @@ class Stack:
         existing = self.call('network','inspect',self.network,capture=True,check=False)
         if existing.returncode == 0:
             raise ValueError('Network already exists; choose another project or clean up the owned stack')
+        self.write_metrics_token()
         self.call('network','create','--label',f'{LABEL}={self.project}',self.network)
         self.save('starting')
         try:
@@ -546,7 +645,7 @@ class Stack:
                     raise ValueError(f'{name} exited during startup')
                 print('READY '+spec['name'],flush=True)
             # Require all exporter series before sending load; never silently fall back to another vendor.
-            expected = len(self.cfg['topology']['metrics_endpoints']) + (1 if self.cfg.get('simulation') else len(self.cfg['gpu']['nodes'])) + 1
+            expected = len(metrics_settings(self.cfg)['targets']) + (1 if self.cfg.get('simulation') else len(self.cfg['gpu']['nodes'])) + 1
             self.call('run', '--rm', '--platform', self.cfg['platform'], '--network', self.network, self.cfg['images']['toolbox'],
                       'targets', 'http://prometheus:9090/api/v1/targets', '--minimum', str(expected),
                       '--timeout', str(self.cfg.get('startup_timeout', 120)))
@@ -623,6 +722,7 @@ class Stack:
                 raise ValueError('Refuse to remove unowned network')
             self.call('network','rm',state['network'])
         self.statefile.unlink()
+        self.metrics_token_file().unlink(missing_ok=True)
         print('Removed owned containers/network; persistent data retained')
 
 

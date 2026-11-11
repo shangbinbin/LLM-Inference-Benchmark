@@ -163,10 +163,12 @@ class Bundle:
 def collect_targets(bundle, obj):
     bindings = (obj.get('NetworkSettings', {}).get('Ports') or {}).get('9090/tcp') or []
     local = next((b for b in bindings if b.get('HostIp') == '127.0.0.1'), None)
+    local = local or next((b for b in bindings if b.get('HostIp')), None)
     if not local:
-        bundle.notes.append('Prometheus loopback port unavailable; see CLI readiness events for earlier targets')
+        bundle.notes.append('Prometheus published port unavailable; see CLI readiness events for earlier targets')
         return
-    client = http.client.HTTPConnection('127.0.0.1', int(local['HostPort']), timeout=3)
+    host = {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(local['HostIp'], local['HostIp'])
+    client = http.client.HTTPConnection(host, int(local['HostPort']), timeout=3)
     try:
         client.request('GET', '/api/v1/targets?state=active')
         response = client.getresponse()

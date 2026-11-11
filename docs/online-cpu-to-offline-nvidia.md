@@ -513,12 +513,12 @@ test -f assets/tokenizer/tokenizer_config.json
 | `inference.model` / `api` | `/v1/models` 返回的模型 ID；接口选 `completions` 或 `chat` |
 | `topology.metrics_endpoints[0].target` | 实际提供 `/metrics` 的 `主机:端口`，可与推理 API 不同 |
 | `topology.tp` / `pp` | 与真实部署一致的标签；不会替你启动推理进程 |
-| `node_exporter_target` | 此 NVIDIA 主机可从容器访问的 IP:9100；host 模式不要写容器 localhost |
+| `node_exporter_target` | 此 NVIDIA 主机可从容器访问的 IP；默认监听端口由 ports.node-exporter 决定，为 39100；host 模式不要写容器 localhost |
 | `benchmark` | 先保留 8 请求/并发 2 的小负载；`generation_kwargs` 必须是服务支持的参数 |
 
 相对路径按**仓库根目录**解析，而非 site.json 所在目录。不要只创建空日志文件冒充真实推理日志；Alloy 需要读日志，logrotate 会写入/轮转指定日志，避免与现场已有轮转任务同时管理同一文件。准备好数据目录的写权限、tokenizer 的读权限和容器访问权限。
 
-推理服务需监听容器可达地址。离线仍需要 Docker bridge 到推理服务、Exporter 和内网 DNS 的通信，不要给整个栈设置 `--network none`。本机 host 模式 node_exporter 使用 9100 端口，需避免与已有服务冲突。
+推理服务需监听容器可达地址。离线仍需要 Docker bridge 到推理服务、Exporter 和内网 DNS 的通信，不要给整个栈设置 `--network none`。本机 host 模式 node_exporter 默认使用 39100 端口（可在 ports.node-exporter 修改），需避免与已有服务冲突。
 
 本工程当前应用指标面板主要面向 SGLang；其他引擎即使支持 OpenAI API，也需要核对其 `/metrics` 和面板查询，不能仅凭压测成功就认为所有图表适用。
 
@@ -660,7 +660,7 @@ python3 scripts/verify_simulation.py \
   --config generated/offline-smoke.json --exercise-restart
 ```
 
-该命令只重启本模拟栈的采集组件，不重启真实推理服务或 Docker daemon。服务器本机访问入口为 Grafana `http://127.0.0.1:33003`、Prometheus `http://127.0.0.1:39093/targets`；默认绑定回环地址。
+该命令只重启本模拟栈的采集组件，不重启真实推理服务或 Docker daemon。服务器本机访问入口为 Grafana `http://127.0.0.1:33003`、Prometheus `http://127.0.0.1:39093/targets`；默认绑定所有网卡，远端可将 127.0.0.1 换为运行本栈的节点 IP。
 
 **第四步：保存诊断并停止冒烟测试**
 
@@ -723,7 +723,7 @@ python3 scripts/benchmark_stack.py status --config generated/site/site.json
 1. `up` 退出码为 0；所有常驻容器运行，AISBench 正常退出。
 2. Prometheus Targets 全部 UP；默认在目标机访问 `http://127.0.0.1:39090/targets`，检查 `nvidia-dcgm-exporter`、主机与推理指标目标。
 3. 查询 `DCGM_FI_DEV_GPU_UTIL` 等真实指标，核对卡数/UUID/标签；空闲 GPU 利用率为 0 不代表采集失败。
-4. Grafana 默认 `http://127.0.0.1:33000`，检查 NVIDIA 与推理面板、Prometheus/Loki 数据源。默认 admin/admin 首次登录后应修改；默认只绑定回环，远程查看使用现场允许的 SSH 隧道等方式。
+4. Grafana 默认 `http://127.0.0.1:33000`，检查 NVIDIA 与推理面板、Prometheus/Loki 数据源。默认 admin/admin 首次登录后应修改；默认绑定所有网卡，可通过节点 IP:33000 访问；按现场防火墙限制可信访问。
 5. 在 Grafana Explore 的 Loki 数据源查询 `{deployment="llm-bench-nvidia"}`，确认来自真实服务日志；如果改过 project，同步修改查询标签。
 6. 查本次新增的 `generated/nvidia-site/data/results/<时间戳>/performances/*/synthetic.json`。首次小负载应为正式请求 8、成功 8、失败 0，预热不计入正式请求数；检查当前运行，不能拿旧成功报告作证据。
 
@@ -801,3 +801,7 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python 通用依赖统一使用清华 PyPI 索引 `https://pypi.tuna.tsinghua.edu.cn/simple`，包括 pip/setuptools/wheel、AISBench 及其构建依赖。PyTorch 固定 `torch==2.6.0+cpu`，通过 `--find-links https://download.pytorch.org/whl/cpu/torch/` 获取官方 CPU wheel；其余依赖仍由清华 PyPI 解析。构建时需同时允许清华 PyPI 及 PyTorch 官方下载域名。
 
 旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+
+网关路径可统一配置 `inference.base_url`（如 `http://host:port/prefix/`），默认自动追加 `v1/chat/completions`、`v1/models` 和 `metrics`，应用指标默认复用推理 Bearer 鉴权；保留显式指标字段时以覆盖值为准。详见 [统一基础 URL](inference-auth.md#统一基础-url自动拼接推理与指标接口)。
+
+需要从其他机器直接访问 Grafana 等服务时，使用运行本栈的节点 IP 加配置端口。所有 HTTP 服务的高位默认端口、port_bind_address、单项禁用及 host node_exporter 的监听规则见 [节点访问与端口配置](docker-stack.md#节点-ip-访问与可配置高位端口)。

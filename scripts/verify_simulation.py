@@ -61,9 +61,14 @@ def main():
         else:
             assert info['State']['Running'], name
     checks['container_states'] = True
-    prom = 'http://127.0.0.1:' + str(cfg['ports']['prometheus'])
-    loki = 'http://127.0.0.1:' + str(cfg['ports']['loki'])
-    grafana = 'http://127.0.0.1:' + str(cfg['ports']['grafana'])
+    if not cfg.get('publish_ports', True) or any(not cfg['ports'][key] for key in ('prometheus', 'loki', 'grafana')):
+        parser.error('Simulation verification needs published Prometheus, Loki and Grafana ports')
+    address = cfg.get('port_bind_address', '0.0.0.0')
+    address = {'0.0.0.0':'127.0.0.1', '::':'::1'}.get(address, address)
+    address = '[' + address + ']' if ':' in address else address
+    prom = 'http://' + address + ':' + str(cfg['ports']['prometheus'])
+    loki = 'http://' + address + ':' + str(cfg['ports']['loki'])
+    grafana = 'http://' + address + ':' + str(cfg['ports']['grafana'])
     def query(expr):
         return get(prom+'/api/v1/query?'+urllib.parse.urlencode({'query': expr}))['data']['result']
     targets = get(prom+'/api/v1/targets')['data']['activeTargets']

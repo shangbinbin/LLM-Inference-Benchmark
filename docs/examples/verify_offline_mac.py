@@ -2,7 +2,7 @@
 """Verify production offline policy on a Mac simulation stack.
 
 No images are pulled/built/deleted, and no Docker Desktop settings are changed.
-Only network isolation is injected by this test; pull policy comes from production code.
+Network isolation and disabled host publishing are injected; pull policy comes from production code.
 """
 import copy
 import json
@@ -71,7 +71,8 @@ def main():
     base = json.loads((ROOT / 'configs/stacks/mac-offline.json').read_text())
     require(base['runtime'] == ['docker'] and base['platform'] == 'linux/arm64',
             'Expected the Docker arm64 simulation template')
-    base['ports'] = {}  # No host ports; all checks run inside the isolated network.
+    base['ports'] = {}
+    base['publish_ports'] = False  # All checks run inside the isolated network.
     original_command = stack_module.command
     original_run = subprocess.run
     evidence = {'platform': 'linux/arm64', 'simulation': True, 'offline': True, 'run_id': tag,

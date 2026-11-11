@@ -200,7 +200,7 @@ tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
 2. site.json 的所有选用镜像标签存在、架构为 linux/amd64，并与 metadata/images.json 的 image ID 对照。导入后如重命名标签，需同步修改 site.json；不要只修改镜像名字而忽略内容。
 3. storage.root、storage.logs、tokenizer 和 log_files 路径真实有效；目标机可创建数据目录，容器 UID/GID 有读写权限。
 4. 被测服务、逐节点 Exporter、host 模式 node_exporter_target 地址在容器内可达；不能把容器 localhost 当成宿主机。NVIDIA 驱动/容器设备注入可用，或海光 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 已准备。
-5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许 Docker bridge 与推理服务/Exporter/日志接收端通信。Grafana/Prometheus/Loki 宿主机映射默认只绑定 127.0.0.1，远程访问另按现场方式接入。
+5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许 Docker bridge 与推理服务/Exporter/日志接收端通信。项目 HTTP 服务默认映射到 0.0.0.0 的高位端口，可通过节点 IP 访问；使用 port_bind_address 指定网卡或仅回环，按现场规则放行可信客户端。
 6. 若要求严格禁止公网请求，按下一节关闭相关功能并由现场网络策略控制出站访问；不要用 `--network none` 启动整栈，因为这会同时切断压测与观测必需通信。
 
 从解包后的仓库根目录执行：

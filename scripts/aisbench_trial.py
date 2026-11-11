@@ -8,7 +8,7 @@ import subprocess
 import time
 
 from benchmark_stack import (LABEL, ais_config, write_json,
-                             runtime_command, aisbench_environment, inference_environment, check_local_images)
+                             runtime_command, aisbench_environment, inference_environment, check_local_images, metrics_settings)
 
 
 def utc_now():
@@ -91,7 +91,7 @@ class TrialSession:
         if self.inspect(self.probe_name):
             raise RuntimeError('Probe name collision')
         token = 'probe-' + str(time.time_ns())
-        expected = len(self.cfg['topology']['metrics_endpoints']) + (
+        expected = len(metrics_settings(self.cfg)['targets']) + (
             1 if self.cfg.get('simulation') else len(self.cfg['gpu']['nodes'])) + 1
         try:
             self.call('run', '--rm', '--name', self.probe_name, '--label', LABEL+'='+self.cfg['project'],

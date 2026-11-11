@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "project": "llm-bench-qwen-real",
+  "simulation": false,
+  "host_metrics": "container",
+  "runtime": [
+    "docker"
+  ],
+  "storage": {
+    "root": "generated/qwen-real",
+    "logs": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279",
+    "tokenizer": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279"
+  },
+  "images": {
+    "toolbox": "llm-benchmark-toolbox:local-amd64",
+    "aisbench": "llm-benchmark-aisbench:e330dc1-amd64",
+    "prometheus": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0",
+    "grafana": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2",
+    "loki": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
+    "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
+    "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
+    "nvidia_exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4",
+    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
+  },
+  "gpu": {
+    "vendor": "nvidia",
+    "deployment": "local",
+    "nodes": [
+      {
+        "name": "gpu41",
+        "gpus": 1
+      }
+    ]
+  },
+  "inference": {
+    "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",
+    "model": "Qwen3-0.6B",
+    "api": "chat",
+    "api_key_env": "INFERENCE_API_KEY"
+  },
+  "topology": {
+    "kind": "single",
+    "tp": 1,
+    "pp": 1
+  },
+  "log_files": [
+    "server_log.log"
+  ],
+  "ports": {
+    "grafana": 33000,
+    "prometheus": 39090,
+    "loki": 33100,
+    "alloy": 32345,
+    "node-exporter": 39100,
+    "gpu-exporter": 39400,
+    "fixture": 38080
+  },
+  "startup_timeout": 180,
+  "benchmark": {
+    "dataset_type": "tokenid",
+    "input_length": 1024,
+    "output_length": 1024,
+    "prefix_length": 0,
+    "request_count": 1000,
+    "concurrency": 16,
+    "request_rate": 0,
+    "warmups": 0,
+    "retry": 1,
+    "mode": "perf",
+    "generation_kwargs": {
+      "temperature": 0,
+      "ignore_eos": true
+    }
+  },
+  "platform": "linux/amd64",
+  "offline": true,
+  "legacy_seccomp_unconfined": true,
+  "port_bind_address": "0.0.0.0"
+}

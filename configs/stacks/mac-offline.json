@@ -53,7 +53,11 @@
   "ports": {
     "grafana": 33003,
     "prometheus": 39093,
-    "loki": 33103
+    "loki": 33103,
+    "alloy": 32348,
+    "node-exporter": 39103,
+    "gpu-exporter": 39403,
+    "fixture": 38083
   },
   "startup_timeout": 180,
   "benchmark": {
@@ -72,5 +76,6 @@
   },
   "platform": "linux/arm64",
   "offline": true,
-  "legacy_seccomp_unconfined": true
+  "legacy_seccomp_unconfined": true,
+  "port_bind_address": "0.0.0.0"
 }

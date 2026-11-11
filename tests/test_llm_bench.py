@@ -27,7 +27,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(cfg['platform'], 'linux/amd64')
             self.assertTrue(cfg['legacy_seccomp_unconfined'])
             self.assertEqual(cfg['topology']['metrics_endpoints'][0]['target'], 'inference.internal:8080')
-            self.assertEqual(cfg['node_exporter_target'], 'host.internal:9100')
+            self.assertEqual(cfg['node_exporter_target'], 'host.internal:39100')
             self.assertEqual(plan['gpu_vendor'], 'hygon')
             self.assertIn('gpu-exporter', plan['services'])
 
