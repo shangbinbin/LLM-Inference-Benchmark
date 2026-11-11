@@ -219,9 +219,16 @@ tar -xzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
   -C "$TOKENIZER_CHECK_DIR"
 docker run --rm --pull=never --platform linux/amd64 --network none \
   --mount "type=bind,src=$TOKENIZER_CHECK_DIR,dst=/tokenizer,readonly" \
+  -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 \
+  -e MKL_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 \
+  -e TOKENIZERS_PARALLELISM=false \
   --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
   -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, len(t.encode("offline tokenizer check")))'
 ```
+
+tokenizer 验证命令显式限制 OpenBLAS、OpenMP、MKL、NumExpr 的计算线程数为 1，并关闭 tokenizer 内部并行。这些参数可用于已导入的旧 AISBench 镜像，无需重新构建；设置仅对当前容器有效。正式启动器已在单次、顺序用例和 SLO 搜索中统一传入同样的环境变量，新构建的 AISBench 镜像也包含这些默认值。
+
+这些设置避免导入 NumPy/Transformers 时按宿主机 CPU 数量创建大量线程，不会把 HTTP 请求并发数改为 1，也不改变远端 GPU 推理的并行设置。若仍报 pthread_create Operation not permitted，需检查容器运行时、安全策略和资源限制；不能据此认定 tokenizer 文件或 NumPy 安装损坏。高并发测试仍应确认压测客户端 CPU 没有成为瓶颈。
 
 成功标准：无网络容器能够加载 tokenizer，并输出类型和编码长度。失败时补齐文件/依赖并重新验证；当前流程不自动启用远程自定义代码。归档应只装 tokenizer 所需物料，不要无意打包整个模型权重目录。当前合成 string/tokenid 数据在本地生成，无需另行下载数据集。
 
@@ -259,6 +266,9 @@ PYTHON
 
 docker run --rm --pull=never --platform linux/amd64 --network none \
   --mount "type=bind,src=$PWD/generated/tokenizers/Qwen3-0.6B,dst=/tokenizer,readonly" \
+  -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 \
+  -e MKL_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 \
+  -e TOKENIZERS_PARALLELISM=false \
   --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
   -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, t.encode("Qwen3 tokenizer CPU test"))'
 ```
@@ -602,6 +612,7 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 | DCGM Exporter 启动失败 | `docker logs llm-bench-nvidia-gpu-exporter`；核对镜像/驱动兼容性与设备权限 |
 | 采集或 API 就绪超时 | 确认容器内可达 IP、监听地址、端口、防火墙、DNS/代理；主机 curl 成功不代表容器成功 |
 | `model-tokenizer.tar.gz: Cannot open: No such file or directory` | 交付包缺少 tokenizer 归档；第 6.1 节下载目录不等于归档，须完成打包并补传；源码已解包时只补齐 tokenizer，不重复创建安装目录 |
+| OpenBLAS `pthread_create failed`，随后 NumPy 导入失败 | 使用第 6 节验证命令中的线程环境变量；实际压测使用当前启动器源码，旧镜像也由启动器传入限制；若仍失败，检查线程创建权限/资源限制 |
 | tokenizer 离线加载失败 | 文件不全、外部软链接、自定义依赖或模型版本错误；回到第 6 步验证实际归档 |
 | 挂载目录 Permission denied | 检查 UID/GID、目录权限、rootless 映射及 SELinux 策略；按服务最小权限处理，不递归放宽整个生产目录 |
 | AISBench 非零退出或报告含失败请求 | `docker logs llm-bench-nvidia-aisbench`；核对模型 ID、API 类型、请求参数、上下文长度、服务错误和负载 |

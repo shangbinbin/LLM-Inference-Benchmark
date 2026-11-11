@@ -128,3 +128,5 @@ docker run --rm --network <project>-net \
 将时间戳与 Grafana 上的设备利用率/显存/功耗、SGLang 排队、node_exporter CPU/网络指标以及 Loki 错误日志对齐。高 TTFT 但低设备利用率不自动等于算力不足；应检查客户端限流、排队/路由、数据准备和网络。PD 场景分别观察角色指标，避免重复汇总服务端请求计数。
 
 官方依据：[合成数据指南](https://ais-bench-benchmark.readthedocs.io/en/latest/advanced_tutorials/synthetic_dataset.html)、[性能测试与组合配置](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/docs/source_zh_cn/base_tutorials/scenes_intro/performance_benchmark.md)、[CLI 参数实现](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/ais_bench/benchmark/cli/argument_parser.py)。动态 latest 文档可能变化，工程执行行为以固定提交为准。
+
+AISBench 的单次、顺序和 SLO 压测入口统一限制客户端 OpenBLAS/OpenMP/MKL/NumExpr 为单线程，并设置 `TOKENIZERS_PARALLELISM=false`，避免受限容器中计算库初始化线程失败。此设置不改变请求并发数；旧镜像由当前启动器传入这些变量，新镜像也内置相同默认值。手工 tokenizer 验证命令见 [离线部署说明](offline-deployment.md#34-准备真实-tokenizer-并做无网络加载检查)。

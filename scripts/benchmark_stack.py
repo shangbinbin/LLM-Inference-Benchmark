@@ -21,6 +21,14 @@ from render_observability import config_dir, render, write_json, ROOT
 
 LABEL = 'io.llm-benchmark.project'
 ADAPTERS = {'nvidia': 'gpu/nvidia/model-agnostic', 'hygon': 'gpu/hygon/model-agnostic-hcu-v3'}
+CLIENT_THREAD_ENV = {
+    'OPENBLAS_NUM_THREADS': '1',
+    'OMP_NUM_THREADS': '1',
+    'MKL_NUM_THREADS': '1',
+    'NUMEXPR_NUM_THREADS': '1',
+    'TOKENIZERS_PARALLELISM': 'false',
+}
+
 
 
 def command(args, capture=False, check=True):
@@ -62,9 +70,10 @@ def aisbench_environment(cfg):
         extension = ROOT / 'containers/aisbench/llm_bench_auth.py'
         auth += ['-e', 'PYTHONPATH=/config', '--mount',
                  f'type=bind,src={extension},dst=/config/llm_bench_auth.py,readonly']
+    env = auth + [arg for key, value in CLIENT_THREAD_ENV.items() for arg in ('-e', key + '=' + value)]
     if not cfg.get('offline', False):
-        return auth
-    return auth + [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
+        return env
+    return env + [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
                            'HF_HUB_DISABLE_TELEMETRY') for arg in ('-e', key + '=1')]
 
 

@@ -63,6 +63,22 @@ class StackTests(unittest.TestCase):
                 if spec['name'] != 'gpu-exporter':
                     self.assertNotIn('--runtime=nvidia', spec['args'])
 
+    def test_client_thread_limits_apply_online_and_offline_without_changing_concurrency(self):
+        expected = {'OPENBLAS_NUM_THREADS=1', 'OMP_NUM_THREADS=1', 'MKL_NUM_THREADS=1',
+                    'NUMEXPR_NUM_THREADS=1', 'TOKENIZERS_PARALLELISM=false'}
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            concurrency = cfg['benchmark']['concurrency']
+            for offline in (False, True):
+                cfg['offline'] = offline
+                with patch.dict(os.environ, OPENBLAS_NUM_THREADS='48', OMP_NUM_THREADS='48'):
+                    args = stack.aisbench_environment(cfg)
+                env = [args[i + 1] for i, arg in enumerate(args) if arg == '-e']
+                self.assertTrue(expected.issubset(env))
+                self.assertEqual(len(env), len({value.split('=', 1)[0] for value in env}))
+                self.assertEqual('HF_HUB_OFFLINE=1' in env, offline)
+                self.assertEqual(cfg['benchmark']['concurrency'], concurrency)
+
     def test_failed_readiness_never_starts_benchmark(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg=self.config(tmp);folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)

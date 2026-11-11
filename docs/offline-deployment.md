@@ -132,6 +132,8 @@ subprocess.run(['docker', 'image', 'save', '-o', str(bundle / 'images/images-lin
 
 在线无 GPU 测试可使用 [ModelScope 下载 Qwen3-0.6B tokenizer 的步骤](online-cpu-to-offline-nvidia.md#61-无-gpu-测试从-modelscope-下载-qwen3-06b-tokenizer)，缺少 ModelScope 时通过清华 PyPI 安装；生产仍需匹配真实被测模型。
 
+AISBench 客户端默认设置 `OPENBLAS_NUM_THREADS=1`、`OMP_NUM_THREADS=1`、`MKL_NUM_THREADS=1`、`NUMEXPR_NUM_THREADS=1`、`TOKENIZERS_PARALLELISM=false`。正式启动器对单次、顺序和 SLO 压测都传入这些变量，已导入的旧镜像也能使用；手工 docker run 须显式传入下方参数。它们限制客户端计算库线程，不改变请求并发。新 Dockerfile 同时内置默认值；本次调整不要求仅为这些变量重新构建离线镜像。旧离线源码需更新启动器，既有压测容器需结束后重新创建才生效。
+
 至少包括 tokenizer_config.json，以及模型所需的 tokenizer.json 或 vocab/merges/SentencePiece 文件。还可能需要 special_tokens_map.json、added_tokens.json、config.json、chat template 文件等；应携带模型发布的完整 tokenizer 目录，而非只挑一个文件。Hugging Face snapshots 常含指向 blobs 的软链接，打包时需解引用或同时携带完整目标内容。
 
 ```bash
@@ -140,6 +142,9 @@ tar -chzf generated/offline-bundle/tokenizer/model-tokenizer.tar.gz \
 
 docker run --rm --platform linux/amd64 --network none \
   --mount type=bind,src=/absolute/path/to/model-tokenizer,dst=/tokenizer,readonly \
+  -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 \
+  -e MKL_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 \
+  -e TOKENIZERS_PARALLELISM=false \
   --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 \
   -c 'from transformers import AutoTokenizer; t=AutoTokenizer.from_pretrained("/tokenizer", local_files_only=True, trust_remote_code=False); print(type(t).__name__, len(t.encode("offline tokenizer check")))'
 ```

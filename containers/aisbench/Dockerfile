@@ -3,7 +3,9 @@ ARG AISBENCH_COMMIT=e330dc134c33f47671926144d9c143b554bc71cc
 LABEL org.opencontainers.image.source="https://github.com/AISBench/benchmark"
 LABEL org.opencontainers.image.revision=$AISBENCH_COMMIT
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 HF_HUB_OFFLINE=1 \
-    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
 RUN set -eux; \
     for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
         if [ -f "$source" ]; then \
