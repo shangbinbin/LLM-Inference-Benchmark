@@ -6,7 +6,7 @@
 
 ## 配置范围
 
-工程支持顶层 JSON 布尔值 `legacy_seccomp_unconfined`，省略或设为 false 时保持运行时默认安全策略。只有明确设为 true 才添加 `--security-opt seccomp=unconfined`：
+工程支持顶层 JSON 布尔值 `legacy_seccomp_unconfined`，未填写时按 offline 取默认值：offline=true 时自动补为 true，在线模式默认 false；显式 false 始终保持运行时默认安全策略。启用时添加 `--security-opt seccomp=unconfined`：
 
 ```json
 "legacy_seccomp_unconfined": true
@@ -20,7 +20,7 @@
 
 只影响使用当前 stack 配置创建的项目容器，不改变 Docker daemon 配置、宿主机已有推理服务或其他工程的容器；不额外添加 privileged。`exec`、`start`、`restart` 不接受新的安全参数，已有容器须删除后重新创建才生效。offline 模式仍禁止拉取和构建。`plan` 输出中的 `container_security_options` 显示统一追加的参数。
 
-该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任项目工作负载（包含监控和临时探测）。不应默认应用于所有环境。手工 docker run 不读取 stack JSON，需要单独指定参数。
+该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任项目工作负载（包含监控和临时探测）。本工程按现场需求对离线配置默认启用，因此新生成的离线配置和未填写该字段的已有离线配置都会在新建容器时取消过滤；在线配置仍默认关闭。若现场不需要此兼容性，应显式设 false。手工 docker run 不读取 stack JSON，需要单独指定参数。
 
 ## 离线机现有模拟栈的启用步骤
 
@@ -60,7 +60,7 @@ python3 scripts/verify_simulation.py --config "$CONFIG"
 
 ## 升级运行时后恢复默认策略
 
-使用当前配置正常 down，把该字段删除或改为 false，再重新 up。先确认不带兼容参数的最小 Python 线程测试可以成功。不要仅使用 docker restart 代替重新创建，restart 会保留原容器的安全选项。
+使用当前配置正常 down，把该字段显式改为 false（离线配置删除字段会再次默认开启），再重新 up。先确认不带兼容参数的最小 Python 线程测试可以成功。不要仅使用 docker restart 代替重新创建，restart 会保留原容器的安全选项。
 
 ## Alloy 启动崩溃与后续 DNS 错误
 

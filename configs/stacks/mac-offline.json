@@ -71,5 +71,6 @@
     }
   },
   "platform": "linux/arm64",
-  "offline": true
+  "offline": true,
+  "legacy_seccomp_unconfined": true
 }

@@ -20,7 +20,7 @@ llm-bench down
 | --- | --- |
 | [CLI 使用手册](docs/cli.md) | 快速上手、参数优先级、顺序用例、复用观测栈、结果及排障 |
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
-| [旧 Docker 线程兼容](docs/legacy-docker-threads.md) | 默认关闭的 seccomp 兼容开关、适用范围与恢复步骤 |
+| [旧 Docker 线程兼容](docs/legacy-docker-threads.md) | 离线默认开启的 seccomp 兼容设置、显式关闭与恢复步骤 |
 | [推理服务 Bearer Token](docs/inference-auth.md) | 环境变量鉴权、就绪探测、单次/顺序/SLO 压测与离线升级 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
 | [离线日志与故障回传](docs/offline-diagnostics.md) | 一键打包全链路组件日志、AISBench/SLO 结果和异常信息 |

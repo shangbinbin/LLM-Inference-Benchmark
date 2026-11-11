@@ -25,6 +25,7 @@ class CommandLineTests(unittest.TestCase):
             cfg = plan['config']
             self.assertEqual(cfg['storage']['root'], str((path/'data').resolve()))
             self.assertEqual(cfg['platform'], 'linux/amd64')
+            self.assertTrue(cfg['legacy_seccomp_unconfined'])
             self.assertEqual(cfg['topology']['metrics_endpoints'][0]['target'], 'inference.internal:8080')
             self.assertEqual(cfg['node_exporter_target'], 'host.internal:9100')
             self.assertEqual(plan['gpu_vendor'], 'hygon')
@@ -33,7 +34,7 @@ class CommandLineTests(unittest.TestCase):
     def test_overlay_does_not_discard_other_settings_or_override_explicit_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             site = Path(tmp)/'overlay.json'
-            site.write_text(json.dumps({'benchmark': {'input_length': 48, 'concurrency': 3},
+            site.write_text(json.dumps({'legacy_seccomp_unconfined': False, 'benchmark': {'input_length': 48, 'concurrency': 3},
                 'topology': {'metrics_endpoints': [{'target': 'metrics:9000', 'role': 'worker'}]}}))
             result = self.cli(tmp, 'plan', '--profile', 'mac-offline', '--config', site, '--concurrency', '4',
                               '--endpoint', 'http://fixture:18000', '--data-dir', 'state', '--log-dir', 'logs',
@@ -42,6 +43,7 @@ class CommandLineTests(unittest.TestCase):
             plan = json.loads(result.stdout)
             cfg = plan['config']
             self.assertTrue(cfg['offline'])
+            self.assertFalse(cfg['legacy_seccomp_unconfined'])
             self.assertEqual(cfg['benchmark']['input_length'], 48)
             self.assertEqual(cfg['benchmark']['concurrency'], 4)
             self.assertEqual(cfg['topology']['metrics_endpoints'][0]['target'], 'metrics:9000')

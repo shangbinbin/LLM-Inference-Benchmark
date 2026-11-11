@@ -68,8 +68,8 @@ def inference_environment(cfg):
 
 
 def container_security_options(cfg):
-    """Opt in for project containers only; never change daemon-wide policy."""
-    enabled = cfg.get('legacy_seccomp_unconfined', False)
+    """Resolve project compatibility defaults without changing daemon-wide policy."""
+    enabled = cfg.get('legacy_seccomp_unconfined', cfg.get('offline', False))
     if type(enabled) is not bool:
         raise ValueError('legacy_seccomp_unconfined must be a JSON boolean (true/false)')
     return ['--security-opt', 'seccomp=unconfined'] if enabled else []
@@ -125,7 +125,8 @@ def validate_config(cfg):
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
         raise ValueError('offline must be a JSON boolean (true/false)')
-    container_security_options(cfg)  # Validate the opt-in even when only rendering a plan.
+    cfg.setdefault('legacy_seccomp_unconfined', cfg.get('offline', False))
+    container_security_options(cfg)  # Materialize offline defaults in plans and manifests.
     if not re.fullmatch('[a-z][a-z0-9-]{0,39}', cfg['project']):
         raise ValueError('project must be a short lowercase container name')
     for key in ('root', 'logs', 'tokenizer'):

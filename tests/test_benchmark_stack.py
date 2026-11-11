@@ -79,7 +79,7 @@ class StackTests(unittest.TestCase):
                 self.assertEqual('HF_HUB_OFFLINE=1' in env, offline)
                 self.assertEqual(cfg['benchmark']['concurrency'], concurrency)
 
-    def test_seccomp_compatibility_is_opt_in_for_all_project_container_launches(self):
+    def test_seccomp_defaults_follow_offline_and_allow_explicit_override(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self.config(tmp)
             for offline in (False, True):
@@ -89,13 +89,14 @@ class StackTests(unittest.TestCase):
                         cfg.pop('legacy_seccomp_unconfined', None)
                     else:
                         cfg['legacy_seccomp_unconfined'] = enabled
+                    expected = offline if enabled is None else enabled
                     directory, vendor = stack.prepare(cfg)
                     for simulation in (True, False):
                         cfg['simulation'] = simulation
                         specs = stack.Stack(cfg, directory, vendor).specs()
                         for spec in specs:
                             cmd = stack.runtime_command(cfg, ['run', *spec['args'], spec['image']])
-                            self.assertEqual(cmd.count('seccomp=unconfined'), int(enabled is True))
+                            self.assertEqual(cmd.count('seccomp=unconfined'), int(expected))
                             self.assertEqual('--pull=never' in cmd, offline)
                     cfg['simulation'] = True
                     # Shared paths cover one-click clients, suite clients, SLO trials and probes.
@@ -103,11 +104,22 @@ class StackTests(unittest.TestCase):
                                    ['run', *stack.aisbench_environment(cfg), 'client-image'],
                                    ['run', '--rm', 'toolbox-image', 'probe', 'http://fixture/']):
                         cmd = stack.runtime_command(cfg, launch)
-                        self.assertEqual(cmd.count('seccomp=unconfined'), int(enabled is True))
+                        self.assertEqual(cmd.count('seccomp=unconfined'), int(expected))
                         self.assertEqual('--pull=never' in cmd, offline)
                     for action in ('inspect', 'exec', 'start', 'restart', 'rm', 'network'):
                         cmd = stack.runtime_command(cfg, [action, 'resource'])
                         self.assertNotIn('--security-opt', cmd)
+
+    def test_validation_materializes_security_default_without_overriding_false(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for offline in (False, True):
+                cfg = self.config(tmp)
+                cfg['offline'] = offline
+                cfg['storage']['tokenizer'] = str(ROOT / 'configs/fixtures/mock-tokenizer')
+                cfg.pop('legacy_seccomp_unconfined', None)
+                self.assertEqual(stack.validate_config(cfg)['legacy_seccomp_unconfined'], offline)
+                cfg['legacy_seccomp_unconfined'] = False
+                self.assertFalse(stack.validate_config(cfg)['legacy_seccomp_unconfined'])
 
     def test_invalid_seccomp_compatibility_values_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:

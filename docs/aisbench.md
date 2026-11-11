@@ -131,4 +131,4 @@ docker run --rm --network <project>-net \
 
 AISBench 的单次、顺序和 SLO 压测入口统一限制客户端 OpenBLAS/OpenMP/MKL/NumExpr 为单线程，并设置 `TOKENIZERS_PARALLELISM=false`，避免受限容器中计算库初始化线程失败。此设置不改变请求并发数；旧镜像由当前启动器传入这些变量，新镜像也内置相同默认值。手工 tokenizer 验证命令见 [离线部署说明](offline-deployment.md#34-准备真实-tokenizer-并做无网络加载检查)。
 
-旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。默认关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。

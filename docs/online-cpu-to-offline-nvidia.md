@@ -87,7 +87,7 @@ from pathlib import Path
 
 cfg = json.loads(Path('configs/stacks/nvidia-single.json').read_text())
 cfg.update(project='llm-bench-nvidia', platform='linux/amd64',
-           simulation=False, offline=True, runtime=['docker'])
+           simulation=False, offline=True, legacy_seccomp_unconfined=True, runtime=['docker'])
 cfg['gpu']['vendor'] = 'nvidia'
 cfg['gpu']['deployment'] = 'local'
 cfg['storage'] = {
@@ -308,7 +308,7 @@ import json
 from pathlib import Path
 cfg = json.loads(Path('configs/stacks/mac-offline.json').read_text())
 site = json.loads(Path('generated/offline-bundle/site/site.json').read_text())
-cfg.update(project='llm-bench-online-smoke', platform='linux/amd64', offline=True,
+cfg.update(project='llm-bench-online-smoke', platform='linux/amd64', offline=True, legacy_seccomp_unconfined=True,
            simulation=True, runtime=['docker'])
 cfg['images'] = site['images']
 cfg['gpu']['vendor'] = 'nvidia'
@@ -498,6 +498,7 @@ test -f assets/tokenizer/tokenizer_config.json
 
 | 字段 | 现场填写方式 |
 | --- | --- |
+| `legacy_seccomp_unconfined` | 离线配置默认 `true`，本工程创建的所有容器取消 seccomp 系统调用过滤；如需恢复，显式设 `false`。安全范围与重建步骤见 [兼容说明](legacy-docker-threads.md) |
 | `offline` / `simulation` / `platform` | 保持 `true` / `false` / `linux/amd64` |
 | `gpu.vendor` / `gpu.deployment` | 保持 `nvidia` / `local`；不要用 auto |
 | `gpu.nodes[0].name`、`gpus` | 本机标识、实际 GPU 数量；local 模式只配置一个节点 |
@@ -518,6 +519,44 @@ test -f assets/tokenizer/tokenizer_config.json
 推理服务需监听容器可达地址。离线仍需要 Docker bridge 到推理服务、Exporter 和内网 DNS 的通信，不要给整个栈设置 `--network none`。本机 host 模式 node_exporter 使用 9100 端口，需避免与已有服务冲突。
 
 本工程当前应用指标面板主要面向 SGLang；其他引擎即使支持 OpenAI API，也需要核对其 `/metrics` 和面板查询，不能仅凭压测成功就认为所有图表适用。
+
+### 10.4 离线机：使用已交付 tokenizer 验证线程与加载
+
+执行位置：离线源码根目录 `/home/llm-bench-runtime/LLM-Inference-Benchmark`。无需 GPU、推理服务或联网，使用已导入的 AISBench 镜像和第 10.1 节解包的真实 tokenizer。若复用其他目录，替换 cd 路径。
+
+本流程的离线配置默认 `legacy_seccomp_unconfined=true`，取消项目容器的 seccomp 系统调用过滤，以兼容现场旧 Docker 的线程创建问题。手工 docker run 不读取 JSON，下面必须显式传入 `--security-opt seccomp=unconfined`。这会降低该容器的一层隔离，不授予 privileged、不修改 Docker 全局策略，也不改变其他项目的容器。
+
+```bash
+cd /home/llm-bench-runtime/LLM-Inference-Benchmark
+test -f assets/tokenizer/tokenizer_config.json
+docker run --rm -i --pull=never --network none \
+  --security-opt seccomp=unconfined \
+  -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=1 \
+  -e MKL_NUM_THREADS=1 -e NUMEXPR_NUM_THREADS=1 \
+  -e TOKENIZERS_PARALLELISM=false \
+  --mount "type=bind,src=$PWD/assets/tokenizer,dst=/tokenizer,readonly" \
+  --entrypoint python llm-benchmark-aisbench:e330dc1-amd64 - <<'PY'
+import threading
+thread = threading.Thread(target=lambda: print('THREAD OK'))
+thread.start()
+thread.join()
+
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained(
+    '/tokenizer', local_files_only=True, trust_remote_code=False)
+text = '你好，这是离线 tokenizer 验证。Hello, Qwen!'
+tokens = tokenizer.encode(text, add_special_tokens=False)
+assert tokens, 'Empty token IDs'
+print('Tokenizer:', type(tokenizer).__name__)
+print('Token count:', len(tokens))
+print('Decoded:', tokenizer.decode(tokens))
+print('PASS: offline tokenizer validation')
+PY
+```
+
+成功标准：输出 THREAD OK、tokenizer 类型和编码结果、PASS，容器退出码为 0。此命令不会拉取镜像，也不重启 Docker；沿用现场修改过的镜像标签时须同步替换命令中的镜像名。若以 Qwen3-0.6B 做软件链路测试，可使用第 6.1 节下载并打包的 tokenizer；真实压测仍需与被测模型匹配。
+
+生成新的离线模拟配置或通过 CLI 使用 --offline 时，配置会包含开启的兼容字段。手工写的 offline=true 配置若未填写该字段，启动器也会补为 true；因此已有离线配置未显式设置该字段时，更新源码并重新创建容器后也会启用。已有栈须先用原配置 down，再更新配置/源码并 up，不要直接修改运行中的配置。显式设 false 可关闭；升级运行时后恢复过滤时应设 false，不能只删除字段。
 
 ## 11. 离线机：预检查、小规模压测与验收
 
@@ -623,4 +662,4 @@ CLI 的配置定位与结果路径见 [CLI 手册](cli.md)。诊断包可能包�
 
 两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python 通用依赖统一使用清华 PyPI 索引 `https://pypi.tuna.tsinghua.edu.cn/simple`，包括 pip/setuptools/wheel、AISBench 及其构建依赖。PyTorch 固定 `torch==2.6.0+cpu`，通过 `--find-links https://download.pytorch.org/whl/cpu/torch/` 获取官方 CPU wheel；其余依赖仍由清华 PyPI 解析。构建时需同时允许清华 PyPI 及 PyTorch 官方下载域名。
 
-旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。默认关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
