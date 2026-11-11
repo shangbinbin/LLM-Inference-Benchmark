@@ -41,10 +41,30 @@ def runtime_command(cfg, args):
     return cfg['runtime'] + args
 
 
-def aisbench_environment(cfg):
-    if not cfg.get('offline', False):
+def inference_environment(cfg):
+    """Forward a named host variable without embedding its value in argv/config."""
+    name = cfg.get('inference', {}).get('api_key_env')
+    if not name:
         return []
-    return [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
+    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name):
+        raise ValueError('inference.api_key_env must be an environment variable name')
+    value = os.environ.get(name, '')
+    if not value.strip():
+        raise ValueError('Required inference token environment variable is unset or empty: ' + name)
+    if value.lower().startswith('bearer ') or any(c.isspace() for c in value):
+        raise ValueError('Inference token must contain only the token, without Bearer prefix or whitespace')
+    return ['-e', name]
+
+
+def aisbench_environment(cfg):
+    auth = inference_environment(cfg)
+    if auth:
+        extension = ROOT / 'containers/aisbench/llm_bench_auth.py'
+        auth += ['-e', 'PYTHONPATH=/config', '--mount',
+                 f'type=bind,src={extension},dst=/config/llm_bench_auth.py,readonly']
+    if not cfg.get('offline', False):
+        return auth
+    return auth + [arg for key in ('HF_HUB_OFFLINE', 'TRANSFORMERS_OFFLINE', 'HF_DATASETS_OFFLINE',
                            'HF_HUB_DISABLE_TELEMETRY') for arg in ('-e', key + '=1')]
 
 
@@ -127,6 +147,11 @@ def validate_config(cfg):
         raise ValueError('Each external exporter requires an independent target')
     if not cfg.get('simulation') and 'REPLACE_' in json.dumps(cfg):
         raise ValueError('Fill all REPLACE_ placeholders first')
+    auth_name = cfg['inference'].get('api_key_env')
+    if auth_name is not None and (not isinstance(auth_name, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', auth_name)):
+        raise ValueError('inference.api_key_env must be an environment variable name')
+    if 'api_key' in cfg['inference']:
+        raise ValueError('Use inference.api_key_env instead of storing api_key in JSON')
     bench = cfg['benchmark']
     if cfg['inference'].get('api', 'completions') not in ('completions', 'chat'):
         raise ValueError('inference.api must be completions/chat')
@@ -224,6 +249,11 @@ datasets[0]["infer_cfg"]["prompt_template"] = dict(type=LiteralPrompt, template=
              'batch_size': b['concurrency'], 'request_rate': b.get('request_rate', 0),
              'max_out_len': b['output_length'], 'retry': b.get('retry', 1),
              'generation_kwargs': b.get('generation_kwargs', {'temperature': 0, 'ignore_eos': True})}
+    auth = ''
+    if endpoint.get('api_key_env'):
+        backend = 'BearerVLLMAPIChat' if 'chat' in model_file else 'BearerVLLMAPI'
+        auth = (f"from llm_bench_auth import {backend}\n"
+                f"models[0].update(type={backend}, api_key_env={endpoint['api_key_env']!r})\n")
     return f'''# Generated from stack JSON. The backend class name is AISBench's upstream name.
 from mmengine.config import read_base
 with read_base():
@@ -231,7 +261,7 @@ with read_base():
     from ais_bench.benchmark.configs.datasets.{dataset_import} as datasets
     from ais_bench.benchmark.configs.models.vllm_api.{model_file} import models
 {extension}models[0].update({model!r})
-{settings}
+{auth}{settings}
 work_dir = "/results"
 '''
 
@@ -443,14 +473,17 @@ class Stack:
                 spec['args'] += ['-p', f'127.0.0.1:{port}:{internal}']
         return specs
 
-    def probe(self, url, contains=''):
-        self.call('run','--rm','--platform',self.cfg['platform'],'--network',self.network,self.cfg['images']['toolbox'],
-                  'probe',url,'--timeout',str(self.cfg.get('startup_timeout',120)),'--contains',contains)
+    def probe(self, url, contains='', *, inference=False):
+        auth = inference_environment(self.cfg) if inference else []
+        options = ['--api-key-env', self.cfg['inference']['api_key_env']] if auth else []
+        self.call('run','--rm',*auth,'--platform',self.cfg['platform'],'--network',self.network,self.cfg['images']['toolbox'],
+                  'probe',url,'--timeout',str(self.cfg.get('startup_timeout',120)),'--contains',contains,*options)
 
     def up(self, run_benchmark=True, *, needs_client=False):
         needs_client = run_benchmark or needs_client
         if self.statefile.exists():
             raise ValueError('Stack state exists; use status/down before starting a new run')
+        inference_environment(self.cfg)
         self.call('info',capture=True)
         if self.cfg.get('offline', False):
             self.preflight_images(needs_client)
@@ -496,7 +529,7 @@ class Stack:
             for node in self.cfg['gpu']['nodes']:
                 if self.cfg['gpu']['deployment']=='external' and not self.cfg.get('simulation'):
                     self.probe('http://'+node['target']+'/metrics', 'DCGM_FI_DEV_GPU_UTIL' if self.vendor=='nvidia' else 'hcu_memorycap_bytes')
-            self.probe(self.cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
+            self.probe(self.cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data', inference=True)
             self.save('ready')
             if run_benchmark:
                 self.bench()

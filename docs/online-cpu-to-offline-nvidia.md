@@ -1,5 +1,7 @@
 # 无 GPU 在线 Linux 构建，离线 NVIDIA 服务器压测操作手册
 
+推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。离线升级需重新交付 toolbox 镜像和当前源码。
+
 适用场景：在线构建机是 **x86_64 Linux，没有 NVIDIA GPU**；离线目标机是 **x86_64 Linux，有 NVIDIA GPU**。在在线机准备完整镜像和物料，在离线机运行 NVIDIA 采集与 AISBench 压测。
 
 构建机不需要 NVIDIA 驱动、CUDA Toolkit 或 NVIDIA Container Toolkit。AISBench 镜像使用 CPU Torch；DCGM Exporter 镜像可以在没有 GPU 的机器上下载、保存，真正启动采集时才需要目标机的 GPU 和驱动。

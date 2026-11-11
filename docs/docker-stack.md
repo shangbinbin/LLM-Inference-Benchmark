@@ -1,5 +1,7 @@
 # 配置驱动的容器压测链路
 
+推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。离线升级需重新交付 toolbox 镜像和当前源码。
+
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
 
 本入口以 AISBench 为唯一发压客户端，启动已有推理服务之外的观测组件。生产模式不会启动或改动被测推理服务；`simulation: true` 才创建明确标识的测试 fixture，以便 Mac 无 GPU 验证。

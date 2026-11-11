@@ -8,7 +8,7 @@ import subprocess
 import time
 
 from benchmark_stack import (LABEL, ais_config, write_json,
-                             runtime_command, aisbench_environment, check_local_images)
+                             runtime_command, aisbench_environment, inference_environment, check_local_images)
 
 
 def utc_now():
@@ -51,6 +51,7 @@ class TrialSession:
             json.dump({'pid': os.getpid(), 'kind': 'slo-search', 'run_dir': str(self.run_dir)}, f)
         self.locked = True
         try:
+            inference_environment(self.cfg)
             if self.cfg.get('offline', False):
                 required = {}
                 for key in ('aisbench', 'toolbox'):
@@ -98,6 +99,14 @@ class TrialSession:
                       '--network', self.state['network'], self.cfg['images']['toolbox'],
                       'targets', 'http://prometheus:9090/api/v1/targets', '--minimum', str(expected),
                       '--timeout', '10', timeout=20, capture_output=True, check=True)
+            auth = inference_environment(self.cfg)
+            options = ['--api-key-env', self.cfg['inference']['api_key_env']] if auth else []
+            self.call('run', '--rm', '--name', self.probe_name, '--label', LABEL+'='+self.cfg['project'],
+                      '--label', LABEL+'.trial='+token, *auth, '--platform', self.cfg['platform'],
+                      '--network', self.state['network'], self.cfg['images']['toolbox'],
+                      'probe', self.cfg['inference']['base_url'].rstrip('/')+'/v1/models',
+                      '--contains', 'data', '--timeout', '10', *options,
+                      timeout=20, capture_output=True, check=True)
         finally:
             self.remove_owned(self.probe_name, token)
 

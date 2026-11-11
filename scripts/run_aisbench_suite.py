@@ -146,7 +146,7 @@ def run_suite(cfg, suite):
                         raise RuntimeError('A one-click benchmark is still running')
                 elif not info or not info['State']['Running'] or info['Config']['Labels'].get(LABEL) != cfg['project']:
                     raise RuntimeError('Required owned container is unavailable: '+container)
-            stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data')
+            stack.probe(cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data', inference=True)
             cmd = ['run',*aisbench_environment(cfg),'--rm','--platform',cfg['platform'],
                   '--name',cfg['project']+'-suite-client','--label',LABEL+'='+cfg['project'],
                   '--network',state['network'],

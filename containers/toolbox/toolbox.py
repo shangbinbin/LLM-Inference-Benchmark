@@ -1,6 +1,7 @@
 """Readiness probes and log rotation; no container runtime socket required."""
 import argparse
 import json
+import os
 import signal
 import shutil
 import subprocess
@@ -8,12 +9,24 @@ import time
 import urllib.request
 
 
-def probe(url, timeout, contains):
+class NoAuthRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Authenticated readiness probe refuses redirects; use the final service URL')
+
+
+def probe(url, timeout, contains, api_key_env=None):
+    headers = {}
+    if api_key_env:
+        token = os.environ.get(api_key_env, '')
+        if not token.strip() or token.lower().startswith('bearer ') or any(c.isspace() for c in token):
+            raise SystemExit('Missing or invalid inference token environment variable: ' + api_key_env)
+        headers['Authorization'] = 'Bearer ' + token
+    opener = urllib.request.build_opener(NoAuthRedirect()) if headers else urllib.request.build_opener()
     deadline = time.monotonic() + timeout
     error = ''
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=3) as response:
+            with opener.open(urllib.request.Request(url, headers=headers), timeout=3) as response:
                 body = response.read().decode()
             if contains and contains not in body:
                 raise ValueError(f'required content missing: {contains}')
@@ -66,6 +79,7 @@ if __name__ == '__main__':
     p.add_argument('url')
     p.add_argument('--timeout', type=int, default=120)
     p.add_argument('--contains', default='')
+    p.add_argument('--api-key-env', help='environment variable holding the raw inference Bearer token')
     p = sub.add_parser('targets')
     p.add_argument('url')
     p.add_argument('--minimum', type=int, required=True)
@@ -74,7 +88,7 @@ if __name__ == '__main__':
     p.add_argument('--interval', type=int, default=60)
     args = parser.parse_args()
     if args.command == 'probe':
-        probe(args.url, args.timeout, args.contains)
+        probe(args.url, args.timeout, args.contains, args.api_key_env)
     elif args.command == 'targets':
         check_targets(args.url, args.minimum, args.timeout)
     else:

@@ -1,5 +1,7 @@
 # AISBench 多测试例顺序执行
 
+推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。离线升级需重新交付 toolbox 镜像和当前源码。
+
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
 
 离线运行时，在启动栈的 JSON 中设置 `"offline": true`，后续使用同一配置。客户端和就绪探测自动禁止拉取，缺少 AISBench/toolbox 会在发压前列出清单；完整准备步骤见 [离线部署手册](offline-deployment.md)。
