@@ -12,6 +12,8 @@
 
 Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用正式离线策略，只额外注入内部网络隔离，不再替正式代码补充禁止拉取参数。需提前备齐 Mac 模板的七个 arm64 镜像；不修改 Docker Desktop 全局网络，不删除镜像或已有模拟栈。见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。Mac 模拟不等同于真实 Linux/GPU 或整机断网验收。
 
+> **离线机先跑软件全链路冒烟测试：** 按 [生成配置 → 启动 → 验收 → 停止](online-cpu-to-offline-nvidia.md#offline-smoke) 使用已交付 tokenizer 和内置模拟服务。`generated/offline-smoke.json` 需要按步骤生成，仓库不会预置；同一节说明了日志/报告持久化位置和 down 前的诊断采集。
+
 ## 1. 必须准备的内容
 
 | 类别 | 准备内容 | 说明 |

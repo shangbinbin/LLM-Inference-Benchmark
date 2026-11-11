@@ -22,6 +22,7 @@ llm-bench down
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [旧 Docker 线程兼容](docs/legacy-docker-threads.md) | 离线默认开启的 seccomp 兼容设置、显式关闭与恢复步骤 |
 | [推理服务 Bearer Token](docs/inference-auth.md) | 环境变量鉴权、就绪探测、单次/顺序/SLO 压测与离线升级 |
+| [离线冒烟测试：生成、启动、验收、停止](docs/online-cpu-to-offline-nvidia.md#offline-smoke) | 使用已交付 tokenizer，生成 offline-smoke.json，查看日志与报告 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
 | [离线日志与故障回传](docs/offline-diagnostics.md) | 一键打包全链路组件日志、AISBench/SLO 结果和异常信息 |
 | [无 GPU 在线构建 → 离线 NVIDIA 压测](docs/online-cpu-to-offline-nvidia.md) | 逐步构建、镜像导出、tokenizer 校验、现场部署、验收与排错 |

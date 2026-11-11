@@ -8,6 +8,8 @@
 
 本手册覆盖单台 NVIDIA 服务器、本机 Exporter、Docker 运行方式。真实推理服务由现场另行部署，本工程不部署模型权重或推理引擎。多机、外部 Exporter、海光、containerd 等场景见[离线部署总说明](offline-deployment.md)与[容器配置手册](docker-stack.md)。
 
+> **离线冒烟测试：先生成 offline-smoke.json，再启动、验收和停止。完整可复制命令见 [第 10.5 节](#offline-smoke)**；只完成 tokenizer 加载验证不会自动生成模拟配置。
+
 ## 执行目录约定（先阅读）
 
 本文使用以下示例绝对路径。在线机与离线机是两台不同服务器；这些目录不共享。可按现场磁盘规划替换，但同一台机器上的前后引用必须同步替换。
@@ -557,6 +559,142 @@ PY
 成功标准：输出 THREAD OK、tokenizer 类型和编码结果、PASS，容器退出码为 0。此命令不会拉取镜像，也不重启 Docker；沿用现场修改过的镜像标签时须同步替换命令中的镜像名。若以 Qwen3-0.6B 做软件链路测试，可使用第 6.1 节下载并打包的 tokenizer；真实压测仍需与被测模型匹配。
 
 生成新的离线模拟配置或通过 CLI 使用 --offline 时，配置会包含开启的兼容字段。手工写的 offline=true 配置若未填写该字段，启动器也会补为 true；因此已有离线配置未显式设置该字段时，更新源码并重新创建容器后也会启用。已有栈须先用原配置 down，再更新配置/源码并 up，不要直接修改运行中的配置。显式设 false 可关闭；升级运行时后恢复过滤时应设 false，不能只删除字段。
+
+<a id="offline-smoke"></a>
+
+### 10.5 离线机完整冒烟测试：生成配置、启动、验收、停止
+
+> **离线软件链路验证入口：`generated/offline-smoke.json` 不是仓库自带文件，必须先执行下面的生成步骤。** 本节使用第 10.4 节已验证的 tokenizer、已导入镜像和内置模拟推理服务，不需要真实推理服务、GPU 或 Bearer Token。完成本节后执行停止步骤，再按第 11 节连接真实服务。模拟响应和 GPU 指标不代表真实模型性能。
+
+**所有命令均在离线机源码根目录执行**，示例为 `/home/llm-bench-runtime/LLM-Inference-Benchmark`，不是 generated/ 或交付包目录。实际使用其他源码目录时替换 cd 路径。
+
+**第一步：生成独立配置（首次执行）**
+
+```bash
+cd /home/llm-bench-runtime/LLM-Inference-Benchmark
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+output = Path('generated/offline-smoke.json')
+if output.exists():
+    raise SystemExit('配置已存在，请勿覆盖：' + str(output))
+tokenizer = Path('assets/tokenizer')
+if not (tokenizer / 'tokenizer_config.json').is_file():
+    raise SystemExit('未找到 assets/tokenizer/tokenizer_config.json，请先完成第 10.1/10.4 节')
+
+cfg = json.loads(Path('configs/stacks/mac-offline.json').read_text())
+site_path = Path('generated/site/site.json')
+image_config = site_path if site_path.is_file() else Path('configs/stacks/nvidia-single.json')
+cfg['images'] = json.loads(image_config.read_text())['images']
+cfg.update(
+    project='llm-bench-offline-smoke',
+    platform='linux/amd64',
+    offline=True,
+    simulation=True,
+    legacy_seccomp_unconfined=True,
+    runtime=['docker'],
+)
+cfg['storage'] = {
+    'root': 'generated/offline-smoke',
+    'logs': 'generated/offline-smoke-logs',
+    'tokenizer': 'assets/tokenizer',
+}
+cfg['benchmark'].update(
+    dataset_type='string', input_length=32, output_length=16,
+    request_count=8, concurrency=2, request_rate=0, warmups=1, mode='perf',
+)
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+print('已生成：', output.resolve())
+print('镜像名称来源：', image_config)
+print('Tokenizer：', tokenizer.resolve())
+PY
+```
+
+虽然读取了 mac-offline 模板，本代码已明确改为 Linux amd64。仅从 site.json 复制镜像名称，不会复制真实服务地址或鉴权。若 site.json 不存在，使用 NVIDIA 模板的镜像名称；这些名称必须与已导入镜像匹配，下一步会检查。后续再次验收可复用已有配置，不要重新覆盖。
+
+核心配置关系：
+
+| 文件 / 字段 | 本节中的作用 |
+| --- | --- |
+| `generated/offline-smoke.json` | 启动、验收、停止统一读取的核心配置 |
+| `generated/site/site.json` | 生成时只读取 images，不修改生产配置 |
+| `storage.tokenizer` | 已解包的 `assets/tokenizer`，按源码根目录解析 |
+| `offline` / `simulation` | 均为 true：禁拉取构建，使用内置模拟服务 |
+| `legacy_seccomp_unconfined` | true，取消所有项目新建容器的 seccomp 过滤，兼容现场旧运行时；不改变其他容器 |
+| `ports` | Grafana 33003、Prometheus 39093、Loki 33103，启动前应确认空闲 |
+
+**第二步：检查镜像并启动（逐条执行，前一步成功再继续）**
+
+```bash
+python3 scripts/benchmark_stack.py check-images \
+  --config generated/offline-smoke.json
+```
+
+```bash
+set -o pipefail
+python3 scripts/benchmark_stack.py up \
+  --config generated/offline-smoke.json \
+  2>&1 | tee generated/offline-smoke-up.log
+```
+
+`up` 会创建独立模拟网络，启动 fixture、node_exporter、Loki、logrotate、Alloy、Prometheus、Grafana，然后自动执行 8 个正式请求、并发 2 的 AISBench 压测。**不要加 --no-benchmark**，完整验收需要本次压测报告；不会启动真实 DCGM Exporter。线程环境变量由当前启动器统一传入，offline=true 禁止拉取/构建，不需要重启 Docker。
+
+如果提示已有 state，先确认没有正在执行的测试，再按第四步 down，随后重新 up，不删除 state.json 绕过检查。若提示 Name collision，先检查同名容器/网络归属；不要清理其他工程资源。失败后保留容器和日志，便于诊断，不反复 up。
+
+**第三步：验收并查看结果**
+
+```bash
+python3 scripts/verify_simulation.py --config generated/offline-smoke.json
+python3 -m json.tool generated/offline-smoke/verification.json
+```
+
+验收命令应以 0 退出并生成 verification.json，确认容器状态正常、Prometheus 目标 UP、模拟请求计数与指标可见、Grafana 面板/数据源正常、Loki 可查询请求日志、本次 AISBench 报告存在且请求无失败。
+
+需要验证日志轮转和采集组件重启后的持久化时，可额外执行：
+
+```bash
+python3 scripts/verify_simulation.py \
+  --config generated/offline-smoke.json --exercise-restart
+```
+
+该命令只重启本模拟栈的采集组件，不重启真实推理服务或 Docker daemon。服务器本机访问入口为 Grafana `http://127.0.0.1:33003`、Prometheus `http://127.0.0.1:39093/targets`；默认绑定回环地址。
+
+**第四步：保存诊断并停止冒烟测试**
+
+需要保留容器控制台日志时，在 down 前采集（可选）：
+
+```bash
+bin/llm-bench logs collect --config generated/offline-smoke.json
+```
+
+确认当前没有进行中的压测、suite 或 SLO 搜索后，执行：
+
+```bash
+python3 scripts/benchmark_stack.py down --config generated/offline-smoke.json
+
+docker ps -a \
+  --filter label=io.llm-benchmark.project=llm-bench-offline-smoke
+```
+
+**down 删除本模拟项目拥有的容器及网络，保留配置、tokenizer、日志、指标数据和压测报告，不停止外部推理服务。** 它不等于重启 Docker。若找不到 state.json 或存在 suite.lock，先排查原配置、storage.root 和进行中的任务，不批量删除容器/网络或盲删锁。
+
+**持久化内容位置（以下均相对源码根目录，down 后保留）**
+
+| 内容 | 路径 |
+| --- | --- |
+| 模拟推理服务请求日志 | `generated/offline-smoke-logs/server.log` |
+| 轮转后的日志 | `generated/offline-smoke-logs/server.log-*.gz` |
+| 本节 tee 保存的启动/压测终端输出 | `generated/offline-smoke-up.log`（再次使用同一命令会覆盖） |
+| AISBench 压测报告 | `generated/offline-smoke/data/results/` |
+| Loki 日志存储 | `generated/offline-smoke/data/loki/`（内部存储，原文用 Loki 查询或查看 server.log） |
+| Prometheus 指标存储 | `generated/offline-smoke/data/prometheus/` |
+| 验收证据 | `generated/offline-smoke/verification.json` |
+| 故障诊断包 | `generated/offline-smoke/diagnostics/`，具体文件名见采集输出 |
+
+`docker logs` 的容器控制台日志不等于上述持久化文件，删除容器后不能继续通过 docker logs 查询；需要时应提前采集。重新启动同一模拟配置仍使用这些数据目录，验收脚本检查最新压测报告；不要以旧 verification.json 代替本次验收命令成功。
 
 ## 11. 离线机：预检查、小规模压测与验收
 
