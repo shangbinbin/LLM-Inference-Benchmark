@@ -79,6 +79,39 @@ class StackTests(unittest.TestCase):
                 self.assertEqual('HF_HUB_OFFLINE=1' in env, offline)
                 self.assertEqual(cfg['benchmark']['concurrency'], concurrency)
 
+    def test_seccomp_compatibility_is_opt_in_and_scoped_to_python_workloads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            for offline in (False, True):
+                cfg['offline'] = offline
+                for enabled in (None, False, True):
+                    if enabled is None:
+                        cfg.pop('legacy_seccomp_unconfined', None)
+                    else:
+                        cfg['legacy_seccomp_unconfined'] = enabled
+                    directory, vendor = stack.prepare(cfg)
+                    specs = stack.Stack(cfg, directory, vendor).specs()
+                    for spec in specs:
+                        self.assertEqual('seccomp=unconfined' in spec['args'],
+                                         bool(enabled and spec['name'] == 'fixture'))
+                    client = stack.runtime_command(cfg, ['create', *stack.aisbench_environment(cfg), 'client-image'])
+                    self.assertEqual('seccomp=unconfined' in client, enabled is True)
+                    self.assertEqual('--pull=never' in client, offline)
+                    cfg['simulation'] = False
+                    production = stack.Stack(cfg, directory, vendor).specs()
+                    self.assertFalse(any('seccomp=unconfined' in spec['args'] for spec in production))
+                    cfg['simulation'] = True
+
+    def test_invalid_seccomp_compatibility_values_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for value in ('true', 'false', 1, 0, None, []):
+                cfg = self.config(tmp)
+                cfg['legacy_seccomp_unconfined'] = value
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'JSON boolean'):
+                    stack.validate_config(cfg)
+                with self.assertRaisesRegex(ValueError, 'JSON boolean'):
+                    stack.aisbench_environment(cfg)
+
     def test_failed_readiness_never_starts_benchmark(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg=self.config(tmp);folder,vendor=stack.prepare(cfg);s=stack.Stack(cfg,folder,vendor)

@@ -130,3 +130,5 @@ docker run --rm --network <project>-net \
 官方依据：[合成数据指南](https://ais-bench-benchmark.readthedocs.io/en/latest/advanced_tutorials/synthetic_dataset.html)、[性能测试与组合配置](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/docs/source_zh_cn/base_tutorials/scenes_intro/performance_benchmark.md)、[CLI 参数实现](https://github.com/AISBench/benchmark/blob/e330dc134c33f47671926144d9c143b554bc71cc/ais_bench/benchmark/cli/argument_parser.py)。动态 latest 文档可能变化，工程执行行为以固定提交为准。
 
 AISBench 的单次、顺序和 SLO 压测入口统一限制客户端 OpenBLAS/OpenMP/MKL/NumExpr 为单线程，并设置 `TOKENIZERS_PARALLELISM=false`，避免受限容器中计算库初始化线程失败。此设置不改变请求并发数；旧镜像由当前启动器传入这些变量，新镜像也内置相同默认值。手工 tokenizer 验证命令见 [离线部署说明](offline-deployment.md#34-准备真实-tokenizer-并做无网络加载检查)。
+
+旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。默认关闭，仅影响 fixture 和 AISBench 客户端；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
