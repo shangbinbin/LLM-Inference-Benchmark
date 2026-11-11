@@ -321,11 +321,12 @@ for expected in json.loads(Path('offline-bundle/metadata/images.json').read_text
 PY
 TOOLBOX_IMAGE=$(python3 -c 'import json; print(json.load(open("offline-bundle/site/site.json"))["images"]["toolbox"])')
 docker run --rm --pull=never --platform linux/amd64 --network none \
-  --gpus all -e NVIDIA_DRIVER_CAPABILITIES=utility \
+  --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
   --entrypoint nvidia-smi "$TOOLBOX_IMAGE"
 ```
 
-最后一条通过 Toolkit 向现有 toolbox 容器注入宿主机 GPU 工具，不需要额外下载 CUDA 测试镜像。成功标准：宿主机与容器中均能显示 NVIDIA 设备。此检查不替代后续 DCGM Exporter 实际指标验证。
+最后一条显式使用已注册的 `nvidia` runtime，并通过 `NVIDIA_VISIBLE_DEVICES=all` 注入设备，与正式启动器中的本地 DCGM Exporter 参数一致；无需依赖 Docker 的 `--gpus` 设备请求机制。若 runtime 已注册且此命令通过，不必仅因 `--gpus all` 报错而重装 Toolkit 或重启 Docker。该命令通过 Toolkit 向现有 toolbox 容器注入宿主机 GPU 工具，不需要额外下载 CUDA 测试镜像。成功标准：宿主机与容器中均能显示 NVIDIA 设备。此检查不替代后续 DCGM Exporter 实际指标验证。
 
 ## 10. 离线机：解包源码、tokenizer 并填写现场参数
 

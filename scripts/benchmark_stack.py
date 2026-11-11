@@ -437,7 +437,9 @@ class Stack:
                                      '-e', 'MOCK_OVERLOAD_DELAY_SECONDS='+str(latency['overload_delay_seconds'])]
         if self.cfg['gpu']['deployment'] == 'local' and not self.cfg.get('simulation'):
             if self.vendor == 'nvidia':
-                args = ['--gpus','all','--cap-add','SYS_ADMIN','-e','DCGM_EXPORTER_KUBERNETES=false']
+                args = ['--runtime=nvidia', '-e', 'NVIDIA_VISIBLE_DEVICES=all',
+                        '-e', 'NVIDIA_DRIVER_CAPABILITIES=compute,utility',
+                        '--cap-add', 'SYS_ADMIN', '-e', 'DCGM_EXPORTER_KUBERNETES=false']
                 image = images['nvidia_exporter']; port = 9400; marker = 'DCGM_FI_DEV_GPU_UTIL'
             else:
                 args = ['--privileged','-e','CONNECT_K8S=false','-e','METRICS_LEVEL=low']

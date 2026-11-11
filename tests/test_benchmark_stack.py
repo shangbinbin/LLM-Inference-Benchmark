@@ -53,7 +53,15 @@ class StackTests(unittest.TestCase):
             directory,vendor=stack.prepare(cfg)
             specs=stack.Stack(cfg,directory,vendor).specs()
             self.assertNotIn('fixture',[s['name'] for s in specs])
-            self.assertIn('--gpus',specs[0]['args'])
+            exporter = next(s for s in specs if s['name'] == 'gpu-exporter')
+            self.assertIn('--runtime=nvidia', exporter['args'])
+            self.assertIn('NVIDIA_VISIBLE_DEVICES=all', exporter['args'])
+            self.assertIn('NVIDIA_DRIVER_CAPABILITIES=compute,utility', exporter['args'])
+            self.assertIn('SYS_ADMIN', exporter['args'])
+            self.assertNotIn('--gpus', exporter['args'])
+            for spec in specs:
+                if spec['name'] != 'gpu-exporter':
+                    self.assertNotIn('--runtime=nvidia', spec['args'])
 
     def test_failed_readiness_never_starts_benchmark(self):
         with tempfile.TemporaryDirectory() as tmp:
