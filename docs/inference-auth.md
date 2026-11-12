@@ -39,7 +39,7 @@ unset INFERENCE_API_KEY
 
 ## 探测、指标和凭据存储
 
-推理服务 `/v1/models` 就绪探测使用同一个 Token，401/403 会导致探测失败；认证探测拒绝重定向，请填写最终服务根地址。顺序用例及每次 SLO trial 都会重新检查推理服务。监控组件和 GPU Exporter 的探测不会收到推理 Token。若推理服务 `/metrics` 也要求鉴权，需要单独配置 Prometheus 抓取鉴权；此字段不控制指标采集。
+推理服务 `/v1/models` 就绪探测使用同一个 Token，401/403 会导致探测失败；认证探测拒绝重定向，请填写最终服务根地址。顺序用例及每次 SLO trial 都会重新检查推理服务。监控组件和 GPU Exporter 的探测不会收到推理 Token。应用 `/metrics` 默认复用 inference.api_key_env 的 Bearer Token，由启动器渲染 Prometheus credentials_file；独立鉴权或匿名指标通过 topology.metrics_api_key_env 覆盖，见下方统一基础 URL 说明。
 
 Docker 命令使用 `-e INFERENCE_API_KEY` 转发值，命令日志只显示变量名。生成配置、manifest、suite/trial JSON 不保存实际 Token；AISBench 扩展在构建 API 客户端时才读取环境变量，避免其 MMEngine 配置快照写出 Token。运行的客户端及推理探测容器环境仍含 Token，Docker 管理员可以查看，运行账户须具备相应授权。优先使用 HTTPS 保护网络传输，不把 Token 写入 base_url。
 

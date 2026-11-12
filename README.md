@@ -16,10 +16,11 @@ llm-bench down
 
 结果位于 `generated/mac-smoke/data/results/suites/`，Grafana 入口为 `http://localhost:33000`。已有环境可直接执行 `llm-bench up --config site.json --cases cases.json`。Linux 单机支持直接指定服务地址、模型、tokenizer 和存储路径；生产镜像为 linux/amd64。
 
-**离线对接已有服务：** 从 [GPU41 示例](docs/gpu41-qwen3-random-1k.md)开始。在仓库根目录执行 `python3 scripts/create_site_config.py --runtime docker`，或选择 `--runtime nerdctl --namespace benchmark`，生成 `generated/site/site.json` 后修改现场地址、路径及端口。已有文件不会被覆盖；该配置不属于模拟冒烟测试。
+**离线对接已有服务：** 先阅读 [修改 site.json 后启动压测](docs/site-config-and-benchmark.md)，核对 NVIDIA/海光与 Docker/nerdctl 的选择和各字段；完整实例见 [GPU41 示例](docs/gpu41-qwen3-random-1k.md)。在仓库根目录执行 `python3 scripts/create_site_config.py --runtime docker`，或选择 `--runtime nerdctl --namespace benchmark`，生成 `generated/site/site.json` 后修改现场地址、路径及端口。已有文件不会被覆盖；该配置不属于模拟冒烟测试。
 
 | 入口 | 内容 |
 | --- | --- |
+| [site.json 配置与启动压测手册](docs/site-config-and-benchmark.md) | 各字段含义与修改点、NVIDIA/海光差异、占位符、单档/多例、日志和停机 |
 | [GPU41 离线单实例完整示例](docs/gpu41-qwen3-random-1k.md) | 生成 site.json、Docker/nerdctl 选择、1k/1k × 1000 请求、并发 16、日志及停止 |
 | [CLI 使用手册](docs/cli.md) | 快速上手、参数优先级、顺序用例、复用观测栈、结果及排障 |
 | [任务标签与统一 Dashboard](docs/task-observability.md) | 推理任务筛选、GPU 节点/型号/卡序号联动、角色/副本日志与 Logs Volume |

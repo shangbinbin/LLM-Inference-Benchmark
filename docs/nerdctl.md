@@ -66,6 +66,8 @@ nerdctl --namespace benchmark logs --tail 100 llm-nerdctl-smoke-aisbench
 
 ## 对接真实推理服务
 
+NVIDIA/海光需要修改的字段、完整 site 含义和启动后发压流程见 [site.json 配置与启动压测手册](site-config-and-benchmark.md)。
+
 单机 NVIDIA 以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)生成现场文件：
 
 ```bash

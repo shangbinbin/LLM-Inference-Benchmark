@@ -496,6 +496,8 @@ test -f assets/tokenizer/tokenizer_config.json
 
 ### 10.3 填写现场配置并选择 NVIDIA 或海光 DCU
 
+需要逐字段解释和完整启动顺序时，使用 [site.json 配置与启动压测手册](site-config-and-benchmark.md)，涵盖设备、引擎、占位符、Token、单档/多测试例和结果位置。
+
 生成或复制只需选择一种：第 10.1 节已经将交付 site.json 复制到 `generated/site/site.json`，直接编辑它。若交付包没有现场配置，按 [离线生成步骤](offline-deployment.md#offline-site)从仓库完整示例生成（不要覆盖已有文件），再修改。不要跳过本节直接运行占位模板。
 
 **最关键的选择是 `gpu.vendor`，不是只修改 images 中的镜像名。** 在源码根目录执行下面脚本，先将 BENCH_GPU_VENDOR 改成目标硬件，BENCH_RUNTIME 改成已导入镜像的运行时：

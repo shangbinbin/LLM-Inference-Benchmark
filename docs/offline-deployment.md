@@ -2,7 +2,7 @@
 
 推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。仅更新现场配置、标签、Dashboard 或切换 Docker/nerdctl 时，同步当前源码即可复用已有兼容镜像；若旧 toolbox 尚未包含鉴权探测能力，则按鉴权文档单独更新该镜像。
 
-命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。已经完成镜像导入、准备编辑 site.json 时，可直接使用 [site.json 配置与启动压测手册](site-config-and-benchmark.md)，逐项核对字段、NVIDIA/海光差异、占位符以及单档/多例执行顺序。
 
 **真实单实例服务以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)为接口和负载示例：随机 1k/1k、1000 次请求、并发 16。离线按硬件选择 gpu.vendor=nvidia 或 hygon（海光 DCU），Docker/nerdctl 自主选择；它与模拟冒烟配置是两个独立文件。在线交付默认准备两个厂商 Exporter，实际只启动选中厂商，选择规则见第 2、3.3、4.4.3 节。**
 

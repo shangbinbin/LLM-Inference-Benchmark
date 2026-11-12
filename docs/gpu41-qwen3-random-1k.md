@@ -29,6 +29,8 @@ python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 
 ## 2. 核对现场字段
 
+逐字段说明、占位符定位、NVIDIA/海光和 Docker/nerdctl 对照，以及修改后完整启动顺序见 [site.json 配置与启动压测手册](site-config-and-benchmark.md)。
+
 编辑 `generated/site/site.json`。示例的 GPU41 地址与 NFS 目录不会自动发现或转换，换节点、模型时必须同步修改。
 
 | 字段 | GPU41 示例与修改要求 |
