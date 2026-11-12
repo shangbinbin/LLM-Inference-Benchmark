@@ -8,6 +8,8 @@
 
 无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置，并在栈 JSON 中设置 `"offline": true`。未设置时默认保持在线行为。
 
+任务指标、GPU 与多副本日志的统一标签，以及预置 SGLang/vLLM/GPU/Logs Volume Dashboard，见 [按任务查看指标与日志](task-observability.md)。
+
 ## Mac 一键模拟
 
 前提：Docker Desktop 已运行，主机有 Python 3.9+，能够拉取镜像及 AISBench 官方源码/依赖。无需 Compose。首次运行会构建缺失的工具与 AISBench 镜像，耗时取决于网络；后续复用镜像。
@@ -136,6 +138,7 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | --- | --- |
 | `schema_version` | 当前为 1 |
 | `project` | 独立容器/网络名称前缀；并行栈必须不同 |
+| `task` | 推理任务标签，指标/GPU/日志共用；省略时使用 project |
 | `runtime` | CLI 参数数组，默认 `["docker"]` |
 | `offline` | 可选 JSON 布尔值，默认 false；true 时完整本地镜像预检查、禁构建/拉取，并关闭组件已知外联功能 |
 | `platform` | 生产固定 linux/amd64；Apple Silicon Mac 模拟 linux/arm64，启动前校验缓存镜像架构 |
@@ -143,16 +146,18 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `storage.root` | 生成配置、组件数据、运行状态、AISBench 输出所在目录 |
 | `storage.logs` | 推理服务已写出的日志目录；由 Alloy 只读挂载，由 logrotate 写入 |
 | `storage.tokenizer` | 必填本地 tokenizer 目录，两种合成模式的结果汇总都需要；不需要模型权重 |
-| `log_files` | 相对 logs 的活跃文件列表，可含 rank/角色子目录；不允许 glob 或路径越界 |
+| `log_sources` | 推荐：每项 path、role、replica、可选 node；统一生成采集及轮转清单 |
+| `log_files` | 兼容旧活跃文件列表；设置 log_sources 时忽略此项；不允许 glob 或路径越界 |
 | `gpu.vendor` | auto/nvidia/hygon，当前每个观测栈一个厂商 |
 | `gpu.nvidia_metrics_profile` | basic（默认）：只读挂载 8 项基础指标列表，避开 profiling；full：使用镜像默认集合，仅在现场已验证兼容时开启 |
 | `gpu.deployment` | local：启动本机一个 Exporter；external：只采集已部署的逐节点 Exporter |
-| `gpu.nodes` | 节点名、卡数；external 每个节点还需独立 `target: host:port` |
+| `gpu.nodes` | 节点 name、gpus、可选实际 model；external 还需独立 target: host:port |
+| `gpu.model_label` / `gpu.index_label` | 可选 Exporter 型号/卡序号原生标签名；NVIDIA 默认 modelName/gpu，海光默认只映射 minor_number，型号建议填 nodes[].model |
 | `host_metrics` | host：Linux 主机 /proc、/sys、根文件系统只读采集；container：容器/VM 视角（Mac 示例） |
 | `node_exporter_target` | host 模式必填宿主机可达 IP；端口由 ports.node-exporter 同步，默认 39100；该 exporter 使用 host 网络/PID，以采集真实主机网络指标，其余组件使用隔离网络 |
-| `inference` | base_url、model、api（completions/chat）；服务由外部管理 |
+| `inference` | base_url、model、api（completions/chat）；engine 支持 auto/vllm/sglang，服务由外部管理 |
 | `topology.kind` | single/distributed/pd：场景标识，不自动部署推理拓扑 |
-| `topology.metrics_endpoints` | 每个独立采集入口的 target、role、可选 group |
+| `topology.metrics_endpoints` | 每个独立采集入口的 target、role、replica、可选 group；勿重复采集同一统计边界 |
 | `topology.tp/pp` | 拓扑标签信息，不启动推理进程 |
 | `network` | 可选复用现有 IB 适配；Mac/单机示例不启用 |
 | `images` | 各组件镜像；自建镜像可通过 build 更新，使用固定版本而非 latest |
@@ -168,7 +173,7 @@ Prometheus/Grafana/Loki 默认以发起 CLI 的 UID/GID 运行以写入其目录
 
 ## 分布式及多 P 多 D 接口
 
-`inference.base_url` 指向调度器/代理对外入口，AISBench 不直接决定 Prefill/Decode 路由。`topology.metrics_endpoints` 列出 master、router、prefill、decode、worker，按 role/group 附加标签。`gpu.deployment: external` 可采集多台已部署 Exporter；本启动器不通过 SSH 自动跨节点创建容器。
+`inference.base_url` 指向调度器/代理对外入口，AISBench 不直接决定 Prefill/Decode 路由。`topology.metrics_endpoints` 列出 master、router、prefill、decode、worker，按 task/instance_role/replica 附加标签。`gpu.deployment: external` 可采集多台已部署 Exporter；本启动器不通过 SSH 自动跨节点创建容器。
 
 ```json
 {
@@ -177,9 +182,9 @@ Prometheus/Grafana/Loki 默认以发起 CLI 的 UID/GID 运行以写入其目录
     "tp": 8,
     "pp": 1,
     "metrics_endpoints": [
-      {"target": "router-host:30000", "role": "router", "group": "router"},
-      {"target": "prefill-host:30000", "role": "prefill", "group": "p0"},
-      {"target": "decode-host:30000", "role": "decode", "group": "d0"}
+      {"target": "router-host:30000", "role": "router", "replica": "router-0"},
+      {"target": "prefill-host:30000", "role": "prefill", "replica": "prefill-0"},
+      {"target": "decode-host:30000", "role": "decode", "replica": "decode-0"}
     ]
   },
   "gpu": {
@@ -190,11 +195,15 @@ Prometheus/Grafana/Loki 默认以发起 CLI 的 UID/GID 运行以写入其目录
       {"name": "decode-host", "gpus": 8, "target": "decode-host:9400"}
     ]
   },
-  "log_files": ["prefill/rank-0.log", "decode/rank-0.log"]
+  "task": "example-inference-task",
+  "log_sources": [
+    {"path": "prefill/rank-0.log", "role": "prefill", "replica": "prefill-0"},
+    {"path": "decode/rank-0.log", "role": "decode", "replica": "decode-0"}
+  ]
 }
 ```
 
-此为合并到完整栈配置的片段。只填写实际存在的指标端点；SGLang 某些 worker 没有独立请求指标入口，不能为补全节点数量虚构端点。多角色请求计数可能重复，应按 role/group 选择统计边界；现有通用应用面板是 SGLang 指标面板，不宣称覆盖所有推理引擎或所有 PD 指标。若日志非共享卷，需要逐节点部署 Alloy/轮转并向同一 Loki 写入，避免多采集器重复读取。
+此为合并到完整栈配置的片段。只填写实际存在的指标端点；SGLang 某些 worker 没有独立请求指标入口，不能为补全节点数量虚构端点。多角色请求计数可能重复，需仅配置统计边界不重复的端点；统一总览中的 SGLang/vLLM 性能面板按任务聚合，不自动去重，也不宣称覆盖所有 PD 指标。若日志非共享卷，需要逐节点部署 Alloy/轮转并向同一 Loki 写入，避免多采集器重复读取。
 
 ## containerd 与后续 Kubernetes
 

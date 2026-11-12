@@ -18,6 +18,8 @@ import time
 import urllib.request
 from urllib.parse import urlsplit
 
+from observability_labels import (task_name, log_sources, validate_labels, application_labels, log_labels, configure_gpu_labels)
+from task_dashboard import build_dashboard
 from diagnostics import record_event
 from render_observability import config_dir, render, write_json, ROOT
 
@@ -84,6 +86,13 @@ def metrics_settings(cfg):
     targets = topology.get('metrics_endpoints', [{'target': base.netloc, 'role': 'master'}])
     if not isinstance(targets, list) or not targets:
         raise ValueError('topology.metrics_endpoints must be a nonempty array when provided')
+    for endpoint in targets:
+        if not isinstance(endpoint, dict) or not isinstance(endpoint.get('target'), str):
+            raise ValueError('Each metrics endpoint must provide target=host:port')
+        address = urlsplit('//' + endpoint['target'])
+        if not address.hostname or address.path or address.query or address.fragment or address.username or address.password or any(c.isspace() for c in endpoint['target']):
+            raise ValueError('Metrics target must be host:port without URL path or credentials')
+        address.port  # Validate the optional numeric port and IPv6 brackets.
     path = topology.get('metrics_path', base.path.rstrip('/') + '/metrics')
     if not isinstance(path, str) or not re.fullmatch(r'/[^\s?#]*', path):
         raise ValueError('topology.metrics_path must be an absolute HTTP path without query or fragment')
@@ -244,6 +253,7 @@ def validate_config(cfg):
         raise ValueError('inference.api_key_env must be an environment variable name')
     if 'api_key' in cfg['inference']:
         raise ValueError('Use inference.api_key_env instead of storing api_key in JSON')
+    validate_labels(cfg)
     bench = cfg['benchmark']
     if cfg['inference'].get('api', 'completions') not in ('completions', 'chat'):
         raise ValueError('inference.api must be completions/chat')
@@ -284,9 +294,7 @@ def validate_config(cfg):
             raise ValueError('request_count must cover the largest requests_per_level')
     elif 'requests_per_level' in bench:
         raise ValueError('requests_per_level requires concurrency_levels')
-    for item in metrics['targets']:
-        if item['role'] not in ('master', 'prefill', 'decode', 'router', 'worker'):
-            raise ValueError('Unsupported inference endpoint role')
+    # Roles/replicas are validated as bounded labels; custom deployment roles are supported.
     return cfg
 
 
@@ -366,6 +374,8 @@ def prepare(cfg):
     vendor = detect_vendor(cfg)
     root = Path(cfg['storage']['root'])
     source_hash = hashlib.sha256(Path(__file__).read_bytes() + (ROOT/'scripts/render_observability.py').read_bytes())
+    for module in ('observability_labels.py', 'task_dashboard.py'):
+        source_hash.update((ROOT/'scripts'/module).read_bytes())
     # Suite files and local corpora do not affect the rendered monitoring stack.
     asset_dirs = [ROOT/'configs/common', ROOT/'configs/gpu']
     if cfg.get('network'):
@@ -390,15 +400,14 @@ def prepare(cfg):
     metrics = metrics_settings(cfg)
     targets = metrics['targets']
     gpu_nodes = cfg['gpu']['nodes']
-    logs = cfg.get('log_files', ['server.log'])
-    if any(not re.fullmatch(r'[A-Za-z0-9_./-]+', x) or '..' in Path(x).parts or x.startswith('/') for x in logs):
-        raise ValueError('log_files must be safe relative paths under storage.logs')
+    sources = log_sources(cfg)
+    logs = [source['path'] for source in sources]
     # Legacy renderer supplies common assets; the new topology interface replaces scrape/log targets below.
     env = {'name': cfg['project'], 'status': 'reference', 'gpu_profile': ADAPTERS[vendor],
            'nodes': [{'name': n['name'], 'gpus': n['gpus'], 'gpu_target':
                       n.get('target', 'gpu-exporter:9400' if vendor == 'nvidia' else 'gpu-exporter:16080')}
                      for n in gpu_nodes],
-           'inference': {'engine': 'sglang', 'deployment': cfg['project'], 'group': cfg['project'],
+           'inference': {'engine': cfg['inference'].get('engine', 'auto'), 'deployment': cfg['project'], 'group': cfg['project'],
                          'model': cfg['inference']['model'], 'tp': cfg['topology'].get('tp', 1),
                          'pp': cfg['topology'].get('pp', 1), 'metrics_target': targets[0]['target'],
                          'log_files': [f'/logs/node-{i}.log' for i in range(len(gpu_nodes))]},
@@ -414,24 +423,23 @@ def prepare(cfg):
     application['scheme'] = metrics['scheme']
     if metrics['api_key_env']:
         application['authorization'] = {'type': 'Bearer', 'credentials_file': '/run/benchmark-metrics.token'}
-    application['static_configs'] = []
-    for endpoint in targets:
-        application['static_configs'].append({'targets': [endpoint['target']], 'labels': {
-            'deployment': cfg['project'], 'inference_group': endpoint.get('group', cfg['project']),
-            'role': endpoint['role'], 'environment': cfg['project']}})
+    application['job_name'] = 'inference'
+    application['static_configs'] = [
+        {'targets': [endpoint['target']], 'labels': application_labels(cfg, endpoint, i)}
+        for i, endpoint in enumerate(targets)]
+    application['metric_relabel_configs'] = [
+        {'source_labels': ['__name__'], 'regex': '(vllm|sglang):.*',
+         'target_label': 'inference_engine', 'replacement': '$1'}]
     gpu = prom['scrape_configs'][1]
-    if cfg.get('simulation'):
-        gpu['metrics_path'] = '/gpu-metrics'
-        gpu['static_configs'] = [{'targets': ['fixture:18000'], 'labels': {'node': 'simulated', 'simulation': 'true'}}]
+    configure_gpu_labels(gpu, cfg, vendor)
     node_target = node_metrics_target(cfg)
-    prom['scrape_configs'].append({'job_name': 'node-exporter', 'static_configs': [{'targets': [node_target]} ]})
+    prom['scrape_configs'].append({'job_name': 'node-exporter', 'static_configs': [{'targets': [node_target],
+        'labels': {'task': task_name(cfg), 'deployment': cfg['project'], 'environment': cfg['project']}}]})
+    for job in prom['scrape_configs']:
+        job.setdefault('relabel_configs', []).append({'target_label': 'task', 'replacement': task_name(cfg).replace('$', '$$')})
     write_json(run_dir / 'prometheus/prometheus.yml', prom)
     # Logs are independent of TP/PP and node count: allow per-role/subdirectory paths for future PD deployments.
-    entries = []
-    for filename in logs:
-        entries.append({'__path__': '/logs/'+filename, 'job': 'inference', 'service_name': 'inference',
-                        'deployment': cfg['project'], 'environment': cfg['project'], 'source_file': filename,
-                        'simulation': str(bool(cfg.get('simulation'))).lower()})
+    entries = [log_labels(cfg, source) for source in sources]
     target_text = '[\n'+',\n'.join('{' + ', '.join(json.dumps(k)+' = '+json.dumps(v) for k,v in t.items()) + '}' for t in entries)+',\n]'
     template = (ROOT/'configs/common/alloy/config.alloy.tmpl').read_text()
     (run_dir/'alloy/config.alloy').write_text(template.replace('@@LOG_TARGETS@@', target_text).replace('@@LOKI_PUSH_URL@@', 'http://loki:3100/loki/api/v1/push'))
@@ -439,6 +447,9 @@ def prepare(cfg):
     (run_dir/'logrotate/inference.conf').write_text(template.replace('@@LOG_FILES@@', ' '.join('/logs/'+p for p in logs)))
     with (run_dir/'loki/loki.yaml').open('a') as f:
         f.write('\ningester:\n  wal:\n    dir: /var/lib/loki/wal\ncompactor:\n  working_directory: /var/lib/loki/compactor\n')
+    for legacy in ('sglang.json', 'gpu.json'):
+        (run_dir/'grafana/dashboards'/legacy).unlink(missing_ok=True)
+    write_json(run_dir/'grafana/dashboards/task-overview.json', build_dashboard(vendor, cfg))
     (run_dir/'aisbench.py').write_text(ais_config(cfg))
     if cfg.get('offline', False):
         ini = configparser.ConfigParser(interpolation=None)

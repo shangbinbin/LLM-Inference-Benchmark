@@ -57,3 +57,5 @@ configs/
 生成工具仅依赖 Python 3.9+ 标准库。JSON 配置片段由工具组合为完整 Prometheus/Grafana YAML（使用合法的 JSON 表示形式），不是让 Prometheus 自动 include job 片段。运行命令、输出目录挂载与限制见[使用指南](../docs/observability.md)。
 
 AISBench 参数目前放 `stacks/*.json` 的 `benchmark` 字段，详见 [AISBench 指南](../docs/aisbench.md)。新增容器部署请从 [Docker 指南](../docs/docker-stack.md)开始；上文旧环境清单的单组限制不适用于新入口的多角色 targets。
+
+正式 llm-bench 链路的 task / instance_role / replica / gpu_node / gpu_model / gpu_index 标签与统一 Dashboard 见 [任务观测说明](../docs/task-observability.md)。多副本完整模板为 [task-multi-replica.example.json](sites/task-multi-replica.example.json)。`common/grafana/dashboards/task-overview-{nvidia,hygon}.json` 为预生成快照，启动器按当前厂商只生成并挂载一份任务总览；旧 sglang.json、GPU 适配器 gpu.json 继续供历史独立渲染器参考。

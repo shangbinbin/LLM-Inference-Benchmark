@@ -2,6 +2,8 @@
 
 本页说明独立配置渲染器及历史环境格式。新的容器启动/AISBench 入口请使用 [Docker 一键部署](docker-stack.md)和 `configs/stacks/`；它支持独立的多角色采集入口，不受本页旧环境格式的单 master 约定限制。
 
+正式 `llm-bench` 链路的标签已统一为 task、instance_role/replica 和 gpu_node/gpu_model/gpu_index，Dashboard 合并为带 Logs Volume 的任务总览；详见 [任务观测配置](task-observability.md)。本页下面的 deployment/rank 标签和独立渲染命令仅描述历史参考格式。
+
 ## 生成配置
 
 从仓库根目录执行：

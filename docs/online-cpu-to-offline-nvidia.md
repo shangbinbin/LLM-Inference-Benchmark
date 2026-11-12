@@ -506,7 +506,9 @@ test -f assets/tokenizer/tokenizer_config.json
 | `gpu.nodes[0].name`、`gpus` | 本机标识、实际 GPU 数量；local 模式只配置一个节点 |
 | `storage.root` | 默认 `generated/nvidia-site`；足够容量、当前用户可写的独立目录 |
 | `storage.logs` | 推理服务实际持续写入的日志目录，如 `/srv/inference-logs` |
-| `log_files` | 相对日志目录的真实活跃文件，如 `server.log`；不支持通配符 |
+| `task` | 业务推理任务名，指标/GPU/日志共用；省略时使用 project |
+| `log_sources` | 推荐填写 path、role、replica、可选 node；如 `[{"path":"server.log","role":"master","replica":"replica-0"}]`。path 相对 storage.logs；设置后优先于旧 log_files |
+| `log_files` | 仅未配置 log_sources 时生效，兼容旧活跃文件清单；不支持通配符 |
 | `storage.tokenizer` | 使用第 10.1 节布局时填 `assets/tokenizer`；复用已有目录时填写实际路径，不能只创建空目录 |
 | `inference.base_url` | 实际服务根地址，如 `http://10.20.0.10:30000/`，不含 `/v1/completions` |
 | `inference.api_key_env` | 服务需 Bearer Token 时设置变量名（如 `INFERENCE_API_KEY`），执行第 11 节前在同一终端导出纯 Token；详见 [鉴权说明](inference-auth.md) |
@@ -520,7 +522,7 @@ test -f assets/tokenizer/tokenizer_config.json
 
 推理服务需监听容器可达地址。离线仍需要 Docker bridge 到推理服务、Exporter 和内网 DNS 的通信，不要给整个栈设置 `--network none`。本机 host 模式 node_exporter 默认使用 39100 端口（可在 ports.node-exporter 修改），需避免与已有服务冲突。
 
-本工程当前应用指标面板主要面向 SGLang；其他引擎即使支持 OpenAI API，也需要核对其 `/metrics` 和面板查询，不能仅凭压测成功就认为所有图表适用。
+本工程会自动预置包含 SGLang、vLLM、当前厂商 GPU、实时刷新的日志和 Logs Volume 的统一任务总览。设置 inference.engine 为 auto/vllm/sglang；具体版本未暴露的指标显示 No data。任务、GPU 节点/型号/卡序号及多副本角色的配置见 [任务标签与 Dashboard](task-observability.md)。不能仅凭压测成功就认为所有图表适用。
 
 ### 10.4 离线机：使用已交付 tokenizer 验证线程与加载
 

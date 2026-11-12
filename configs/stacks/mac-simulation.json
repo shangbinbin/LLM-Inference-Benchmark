@@ -34,7 +34,8 @@
   "inference": {
     "base_url": "http://fixture:18000/",
     "model": "mock-model",
-    "api": "completions"
+    "api": "completions",
+    "engine": "auto"
   },
   "topology": {
     "kind": "single",

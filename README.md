@@ -19,6 +19,7 @@ llm-bench down
 | 入口 | 内容 |
 | --- | --- |
 | [CLI 使用手册](docs/cli.md) | 快速上手、参数优先级、顺序用例、复用观测栈、结果及排障 |
+| [任务标签与统一 Dashboard](docs/task-observability.md) | 推理任务筛选、GPU 节点/型号/卡序号联动、角色/副本日志与 Logs Volume |
 | [Docker 一键部署](docs/docker-stack.md) | 启动顺序、配置项、存储、分布式及 containerd 接口 |
 | [旧 Docker 线程兼容](docs/legacy-docker-threads.md) | 离线默认开启的 seccomp 兼容设置、显式关闭与恢复步骤 |
 | [推理服务 Bearer Token](docs/inference-auth.md) | 环境变量鉴权、就绪探测、单次/顺序/SLO 压测与离线升级 |

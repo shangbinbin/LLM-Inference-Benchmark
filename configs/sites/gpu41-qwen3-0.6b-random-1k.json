@@ -37,16 +37,14 @@
     "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",
     "model": "Qwen3-0.6B",
     "api": "chat",
-    "api_key_env": "INFERENCE_API_KEY"
+    "api_key_env": "INFERENCE_API_KEY",
+    "engine": "vllm"
   },
   "topology": {
     "kind": "single",
     "tp": 1,
     "pp": 1
   },
-  "log_files": [
-    "server_log.log"
-  ],
   "ports": {
     "grafana": 33000,
     "prometheus": 39090,
@@ -76,5 +74,14 @@
   "platform": "linux/amd64",
   "offline": true,
   "legacy_seccomp_unconfined": true,
-  "port_bind_address": "0.0.0.0"
+  "port_bind_address": "0.0.0.0",
+  "task": "qwen3-0.6b",
+  "log_sources": [
+    {
+      "path": "server_log.log",
+      "role": "master",
+      "replica": "replica-0",
+      "node": "gpu41"
+    }
+  ]
 }

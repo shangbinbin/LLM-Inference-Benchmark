@@ -11,6 +11,7 @@ import urllib.request
 import uuid
 
 from benchmark_stack import load_config, Stack, LABEL
+from observability_labels import task_name
 
 
 def get(url, auth=False):
@@ -75,7 +76,9 @@ def main():
     assert len(targets) >= 3 and all(t['health']=='up' for t in targets)
     checks['targets_up'] = [t['scrapeUrl'] for t in targets]
     metric = 'DCGM_FI_DEV_GPU_UTIL' if manifest['vendor']=='nvidia' else 'hcu_memorycap_bytes'
-    checks['gpu_series'] = eventually(lambda: query(metric))
+    checks['gpu_series'] = eventually(lambda: query(metric+'{task='+json.dumps(task_name(cfg))+'}'))
+    for series in checks['gpu_series']:
+        assert all(series['metric'].get(label) for label in ('task', 'gpu_node', 'gpu_model', 'gpu_index'))
     assert not query('hcu_memorycap_bytes' if manifest['vendor']=='nvidia' else 'DCGM_FI_DEV_GPU_UTIL')
     checks['other_vendor_absent'] = True
     checks['node_series'] = eventually(lambda: query('node_cpu_seconds_total'))[0]['metric']
@@ -86,11 +89,11 @@ def main():
     datasources = get(grafana+'/api/datasources', True)
     assert {'prometheus','loki'} <= {d['type'] for d in datasources}
     dashboards = get(grafana+'/api/search?type=dash-db', True)
-    assert len(dashboards) >= 2
+    assert any(d.get('uid') == 'inference-task-overview' for d in dashboards), 'Task overview dashboard missing'
     checks['grafana_dashboards'] = [d['title'] for d in dashboards]
     checks['grafana_datasources'] = [d['type'] for d in datasources]
     def logs(marker):
-        expr = '{deployment="'+cfg['project']+'"} |= '+json.dumps(marker)
+        expr = '{task='+json.dumps(task_name(cfg))+'} |= '+json.dumps(marker)
         result = get(loki+'/loki/api/v1/query_range?'+urllib.parse.urlencode({
             'query': expr, 'start': str(time.time_ns()-3600*10**9), 'end': str(time.time_ns()), 'limit': 100}))
         return result['data']['result']

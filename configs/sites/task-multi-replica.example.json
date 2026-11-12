@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "project": "llm-multi-replica",
+  "simulation": false,
+  "host_metrics": "host",
+  "runtime": [
+    "docker"
+  ],
+  "storage": {
+    "root": "generated/multi-replica",
+    "logs": "/srv/REPLACE_SHARED_LOGS",
+    "tokenizer": "/srv/REPLACE_TOKENIZER"
+  },
+  "images": {
+    "toolbox": "llm-benchmark-toolbox:local-amd64",
+    "aisbench": "llm-benchmark-aisbench:e330dc1-amd64",
+    "prometheus": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0",
+    "grafana": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2",
+    "loki": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
+    "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
+    "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
+    "nvidia_exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4",
+    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
+  },
+  "gpu": {
+    "vendor": "nvidia",
+    "deployment": "external",
+    "nodes": [
+      {
+        "name": "gpu-node-a",
+        "gpus": 8,
+        "target": "REPLACE_GPU_A:9400",
+        "model": "REPLACE_GPU_MODEL"
+      },
+      {
+        "name": "gpu-node-b",
+        "gpus": 8,
+        "target": "REPLACE_GPU_B:9400",
+        "model": "REPLACE_GPU_MODEL"
+      }
+    ],
+    "nvidia_metrics_profile": "basic"
+  },
+  "inference": {
+    "base_url": "http://REPLACE_GATEWAY:8000/",
+    "model": "REPLACE_MODEL",
+    "api": "completions",
+    "engine": "auto"
+  },
+  "topology": {
+    "kind": "pd",
+    "tp": 1,
+    "pp": 1,
+    "metrics_endpoints": [
+      {
+        "target": "REPLACE_PREFILL:8000",
+        "role": "prefill",
+        "replica": "prefill-0"
+      },
+      {
+        "target": "REPLACE_DECODE_A:8000",
+        "role": "decode",
+        "replica": "decode-0"
+      },
+      {
+        "target": "REPLACE_DECODE_B:8000",
+        "role": "decode",
+        "replica": "decode-1"
+      }
+    ]
+  },
+  "ports": {
+    "grafana": 33000,
+    "prometheus": 39090,
+    "loki": 33100,
+    "alloy": 32345,
+    "node-exporter": 39100,
+    "gpu-exporter": 39400,
+    "fixture": 38080
+  },
+  "startup_timeout": 120,
+  "benchmark": {
+    "dataset_type": "string",
+    "input_length": 1024,
+    "output_length": 256,
+    "request_count": 1000,
+    "concurrency": 16,
+    "request_rate": 0,
+    "warmups": 1,
+    "mode": "perf",
+    "generation_kwargs": {
+      "temperature": 0,
+      "ignore_eos": true
+    }
+  },
+  "platform": "linux/amd64",
+  "node_exporter_target": "REPLACE_HOST_ADDRESS:39100",
+  "port_bind_address": "0.0.0.0",
+  "task": "REPLACE_TASK_NAME",
+  "offline": true,
+  "legacy_seccomp_unconfined": true,
+  "log_sources": [
+    {
+      "path": "prefill-0/server.log",
+      "role": "prefill",
+      "replica": "prefill-0",
+      "node": "gpu-node-a"
+    },
+    {
+      "path": "decode-0/server.log",
+      "role": "decode",
+      "replica": "decode-0",
+      "node": "gpu-node-b"
+    },
+    {
+      "path": "decode-1/server.log",
+      "role": "decode",
+      "replica": "decode-1",
+      "node": "gpu-node-b"
+    }
+  ]
+}

@@ -32,7 +32,7 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(chosen,vendor)
                 self.assertEqual(len(prom['scrape_configs'][0]['static_configs']),3)
                 self.assertEqual(prom['scrape_configs'][1]['job_name'],job)
-                self.assertIn(metric,(folder/'grafana/dashboards/gpu.json').read_text())
+                self.assertIn(metric,(folder/'grafana/dashboards/task-overview.json').read_text())
                 self.assertIn('/logs/decode/rank-0.log',(folder/'alloy/config.alloy').read_text())
                 specs=stack.Stack(cfg,folder,vendor).specs()
                 self.assertFalse(any(s['name']=='gpu-exporter' for s in specs))

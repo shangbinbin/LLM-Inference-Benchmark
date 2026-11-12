@@ -33,8 +33,8 @@ def validate(env, profile, adapter, allow_template):
                                or 'REPLACE_' in json.dumps([env, profile, adapter])):
         raise ValueError('Unfinished template; use --allow-template for preview only')
     inf = env['inference']
-    if inf['engine'] != 'sglang':
-        raise ValueError('Only the SGLang application metrics adapter is implemented')
+    if inf['engine'] not in ('sglang', 'vllm', 'auto'):
+        raise ValueError('Inference engine must be sglang/vllm/auto')
     nodes = env['nodes']
     if not nodes or len({n['name'] for n in nodes}) != len(nodes):
         raise ValueError('Nodes must be nonempty with unique names')
@@ -64,7 +64,7 @@ def render(environment, output, allow_template=False):
         raise ValueError(f'Output already exists: {output}; choose a new directory')
     inf = env['inference']
     nodes = env['nodes']
-    labels = {'service': 'sglang', 'deployment': inf['deployment'],
+    labels = {'service': inf['engine'], 'deployment': inf['deployment'],
               'inference_group': inf['group'], 'model': inf['model'],
               'topology': f"{len(nodes)}node-tp{inf['tp']}-pp{inf['pp']}",
               'environment': env['name'], 'gpu_vendor': profile['vendor'],
