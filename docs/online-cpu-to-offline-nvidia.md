@@ -1,6 +1,6 @@
 # 无 GPU 在线 Linux 构建，离线 NVIDIA 服务器压测操作手册
 
-推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。离线升级需重新交付 toolbox 镜像和当前源码。
+推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。仅更新配置、标签、Dashboard 或切换 Docker/nerdctl 可复用已有兼容镜像并同步当前源码；旧 toolbox 尚不支持鉴权探测时才需按鉴权文档更新该镜像。
 
 适用场景：在线构建机是 **x86_64 Linux，没有 NVIDIA GPU**；离线目标机是 **x86_64 Linux，有 NVIDIA GPU**。在在线机准备完整镜像和物料，在离线机运行 NVIDIA 采集与 AISBench 压测。
 
@@ -9,6 +9,8 @@
 本手册覆盖单台 NVIDIA 服务器、本机 Exporter、Docker 运行方式。真实推理服务由现场另行部署，本工程不部署模型权重或推理引擎。多机、外部 Exporter、海光、containerd 等场景见[离线部署总说明](offline-deployment.md)与[容器配置手册](docker-stack.md)。
 
 > **离线冒烟测试：先生成 offline-smoke.json，再启动、验收和停止。完整可复制命令见 [第 10.5 节](#offline-smoke)**；只完成 tokenizer 加载验证不会自动生成模拟配置。
+
+> **对接 GPU41 Qwen3-0.6B 时，使用 [GPU41 完整现场指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.json`，可选择 Docker 或 nerdctl，默认 workload 为 1000 次、并发 16、随机 1k/1k。** 本文后续第 3 节生成的是另一份通用 Docker 配置（project=llm-bench-nvidia、root=generated/nvidia-site、8 次请求），保留用于构建/交付演示；不要混用两份配置的路径和结果位置。联网侧仍可用 Docker 构建/导出，再在离线侧导入 nerdctl，无需仅为切换引擎重建镜像。
 
 ## 执行目录约定（先阅读）
 
@@ -513,7 +515,7 @@ test -f assets/tokenizer/tokenizer_config.json
 | `inference.base_url` | 实际服务根地址，如 `http://10.20.0.10:30000/`，不含 `/v1/completions` |
 | `inference.api_key_env` | 服务需 Bearer Token 时设置变量名（如 `INFERENCE_API_KEY`），执行第 11 节前在同一终端导出纯 Token；详见 [鉴权说明](inference-auth.md) |
 | `inference.model` / `api` | `/v1/models` 返回的模型 ID；接口选 `completions` 或 `chat` |
-| `topology.metrics_endpoints[0].target` | 实际提供 `/metrics` 的 `主机:端口`，可与推理 API 不同 |
+| `topology.metrics_endpoints[0].target` | 可选独立指标覆盖，填写实际指标 `主机:端口`；若复用统一 base_url 自动派生 metrics，应删除模板的 metrics_endpoints 占位符及其他 metrics 覆盖字段 |
 | `topology.tp` / `pp` | 与真实部署一致的标签；不会替你启动推理进程 |
 | `node_exporter_target` | 此 NVIDIA 主机可从容器访问的 IP；默认监听端口由 ports.node-exporter 决定，为 39100；host 模式不要写容器 localhost |
 | `benchmark` | 先保留 8 请求/并发 2 的小负载；`generation_kwargs` 必须是服务支持的参数 |
@@ -726,7 +728,7 @@ python3 scripts/benchmark_stack.py status --config generated/site/site.json
 2. Prometheus Targets 全部 UP；默认在目标机访问 `http://127.0.0.1:39090/targets`，检查 `nvidia-dcgm-exporter`、主机与推理指标目标。
 3. 查询 `DCGM_FI_DEV_GPU_UTIL` 等真实指标，核对卡数/UUID/标签；空闲 GPU 利用率为 0 不代表采集失败。
 4. Grafana 默认 `http://127.0.0.1:33000`，检查 NVIDIA 与推理面板、Prometheus/Loki 数据源。默认 admin/admin 首次登录后应修改；默认绑定所有网卡，可通过节点 IP:33000 访问；按现场防火墙限制可信访问。
-5. 在 Grafana Explore 的 Loki 数据源查询 `{deployment="llm-bench-nvidia"}`，确认来自真实服务日志；如果改过 project，同步修改查询标签。
+5. 在 Grafana Explore 的 Loki 数据源按 `task` 查询真实服务日志；本页通用模板未设置 task 时使用 `{task="llm-bench-nvidia"}`，GPU41 配置使用 `{task="qwen3-0.6b"}`。角色/副本可继续筛选 instance_role、replica；旧 deployment 标签仍兼容。
 6. 查本次新增的 `generated/nvidia-site/data/results/<时间戳>/performances/*/synthetic.json`。首次小负载应为正式请求 8、成功 8、失败 0，预热不计入正式请求数；检查当前运行，不能拿旧成功报告作证据。
 
 `verify_simulation.py` **只允许 simulation 栈**，不要用它验收真实 NVIDIA 配置。真实吞吐、TTFT、TPOT 与 SLO 指标解释参见 [AISBench 使用](aisbench.md)。

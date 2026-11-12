@@ -38,6 +38,25 @@ def validate_runtime(cfg):
         namespace(cfg)
 
 
+def select_runtime(cfg, kind=None, namespace_name=None):
+    """Apply an explicit engine choice to a configuration, preserving its workload."""
+    if kind is None and namespace_name is None:
+        return
+    if kind not in (None, 'docker', 'nerdctl'):
+        raise ValueError('runtime must be docker/nerdctl')
+    if kind == 'docker':
+        if namespace_name is not None:
+            raise ValueError('--namespace is only valid for nerdctl')
+        cfg['runtime'] = ['docker']
+    else:
+        selected = namespace_name
+        if selected is None:
+            selected = namespace(cfg) if runtime_kind(cfg) == 'nerdctl' else 'benchmark'
+        cfg['runtime'] = ['nerdctl', '--namespace', selected]
+    cfg.pop('runtime_kind', None)
+    validate_runtime(cfg)
+
+
 def adapt_command(cfg, args):
     """Use Docker-compatible inspection explicitly, independent of nerdctl defaults."""
     args = list(args)

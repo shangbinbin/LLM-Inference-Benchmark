@@ -1,8 +1,10 @@
 # 离线环境准备与部署
 
-推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。离线升级需重新交付 toolbox 镜像和当前源码。
+推理服务需要 Bearer Token 时，设置 `inference.api_key_env` 并导出对应环境变量；单次、顺序及 SLO 搜索均支持，详见 [推理鉴权说明](inference-auth.md)。仅更新现场配置、标签、Dashboard 或切换 Docker/nerdctl 时，同步当前源码即可复用已有兼容镜像；若旧 toolbox 尚未包含鉴权探测能力，则按鉴权文档单独更新该镜像。
 
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
+
+**真实单实例服务以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)为配置基准：随机 1k/1k、1000 次请求、并发 16。Docker 和 nerdctl 自主选择，生成的 `generated/site/site.json` 需要核对现场参数；它与模拟冒烟配置是两个独立文件。**
 
 推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
 
@@ -19,7 +21,7 @@ Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用
 | 类别 | 准备内容 | 说明 |
 | --- | --- | --- |
 | 工程 | 固定 Git 提交的源码包，包含 bin、scripts、configs、containers、docs、tests | 启动器依赖仓库相对结构；不要只复制一个 Python 文件 |
-| 主机运行工具 | Python 3.9+、Docker Engine/CLI 及依赖安装包；可选 Git、tar、校验工具 | 主机脚本只用 Python 标准库；Compose 不是必需项；用源码压缩包时运行不要求 Git |
+| 主机运行工具 | Python 3.9+；Docker Engine/CLI 或 nerdctl/containerd/OCI 后端/CNI 及依赖安装包；可选 Git、tar、校验工具 | 按 runtime 选择，nerdctl 明确 namespace；启动不要求 BuildKit，Compose 不是必需项；用源码包时不要求 Git |
 | 项目镜像 | AISBench 与 toolbox 的 **linux/amd64** 完整镜像 | 生产服务器都是 x86，不要带 Mac 的 arm64 镜像冒充 amd64 |
 | 观测镜像 | Prometheus、Grafana、Loki、Alloy、node_exporter | logrotate/就绪探测已包含在 toolbox 中 |
 | 设备采集 | NVIDIA DCGM Exporter 或海光 HCU Exporter 镜像 | 根据实际厂商准备；external 模式在各设备节点准备，不一定在观测主机启动 |
@@ -34,7 +36,7 @@ Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联
 
 ## 2. 当前版本的镜像清单
 
-以 `configs/stacks/nvidia-single.json` 为准。五个公共观测镜像已切换为渡渡鸟提供的华为云地址，仅验证 linux/amd64；Mac 模板保留原地址。完整上游名称、拉取命令与结果见 [镜像拉取验证记录](reports/dodo-images-2026-11-10.md)。下面是当前默认值；如果 site.json 修改过标签，以现场配置中的镜像名为准，并保存实际 image ID/digest。
+以 `configs/sites/gpu41-qwen3-0.6b-random-1k.json` 为 NVIDIA 单机示例。五个公共观测镜像已切换为渡渡鸟提供的华为云地址，仅验证 linux/amd64；Mac 模板保留原地址。完整上游名称、拉取命令与结果见 [镜像拉取验证记录](reports/dodo-images-2026-11-10.md)。下面是当前默认值；如果 site.json 修改过标签，以现场配置中的镜像名为准，并保存实际 image ID/digest。
 
 | 组件 | 镜像 |
 | --- | --- |
@@ -58,7 +60,7 @@ AISBench 镜像包含 Python 3.11、CPU Torch、AISBench 与其 Python 依赖；
 
 ## 3. 联网侧：制作交付包
 
-以下命令在仓库根目录、联网 **x86 Linux** 构建机执行。构建 CPU 客户端不要求构建机有 GPU。若已经用本工程 build 命令完成 amd64 镜像构建，可跳过 3.2；不要直接拿 Mac 模拟镜像改标签。
+以下命令在仓库根目录、联网 **x86 Linux** 构建机执行，使用 Docker 构建/导出；离线目标机可独立选择 Docker 或 nerdctl 导入同一归档。构建 CPU 客户端不要求构建机有 GPU。若已经用本工程 build 命令完成 amd64 镜像构建，可跳过 3.2；不要直接拿 Mac 模拟镜像改标签。
 
 ### 3.1 固定仓库版本与目录
 
@@ -109,7 +111,7 @@ from pathlib import Path
 vendor = 'nvidia'  # 或 hygon
 if vendor not in ('nvidia', 'hygon'):
     raise ValueError('Unsupported vendor')
-cfg = json.loads(Path('configs/stacks/nvidia-single.json').read_text())
+cfg = json.loads(Path('configs/sites/gpu41-qwen3-0.6b-random-1k.json').read_text())
 keys = ['toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy',
         'node-exporter', vendor + '_exporter']
 images = [cfg['images'][key] for key in keys]
@@ -159,7 +161,18 @@ docker run --rm --platform linux/amd64 --network none \
 
 将匹配目标系统的运行时安装包放 runtime/，设备驱动/设备运行时包及安装说明放 drivers/，现场配置放 site/。同一套 rpm/deb 不能默认适用于其他发行版、版本或内核。NVIDIA 需准备 NVIDIA Container Toolkit 及驱动；海光需准备对应驱动/运行库、hy-smi 与 HCU Exporter 所需宿主机路径。
 
-site.json 可从 `configs/stacks/nvidia-single.json` 复制后修改：设置 `offline: true`，保持 `platform: linux/amd64`、`simulation: false`，填写真实存储路径、推理服务地址/模型、指标端点及 node_exporter_target。GPU 在本机时可用 auto 识别；观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入 Docker/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
+**先生成要交付的 site.json，再修改现场值。** 以下命令从 GPU41 完整示例生成文件，不覆盖已存在文件，选择目标运行时执行一条：
+
+```bash
+python3 scripts/create_site_config.py --runtime docker \
+  --output generated/offline-bundle/site/site.json
+# 或：python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark \
+#   --output generated/offline-bundle/site/site.json
+```
+
+默认源文件为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`；指定 --source 可换其他完整模板。保留 `offline: true`、`platform: linux/amd64`、`simulation: false`，核对 project/task、runtime、存储、接口/模型/鉴权变量、GPU 节点、日志角色和空闲端口。GPU41 默认 host_metrics=container；如需宿主机指标，选择 host 并填写可达的 node_exporter_target。`inference.base_url` 自动派生 API 和 metrics 路径，独立指标端点仅在需要覆盖时填写。逐项说明见 [GPU41 指南](gpu41-qwen3-random-1k.md)。
+
+观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入运行时/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
 
 在全部物料放齐后生成 SHA-256 清单（流式计算，避免把大镜像归档一次读入内存）：
 
@@ -186,34 +199,46 @@ for path in sorted(bundle.rglob('*')):
 
 ```bash
 sha256sum -c SHA256SUMS
-docker image load -i images/images-linux-amd64.tar
+# 按 site.json 运行时选择一条导入命令
+nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
+# Docker 则使用：docker image load -i images/images-linux-amd64.tar
 tar -xzf repository.tar.gz -C /path/to/workspace
 mkdir -p /srv/model-tokenizer
 tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
 ```
 
-`docker load` 恢复镜像和标签；镜像只读层不包含主机 bind mount 数据。[Docker load 文档](https://docs.docker.com/reference/cli/docker/image/load/)。建议在 **新建空 tokenizer 目录**解包，避免与旧模型词表混合。将 site.json 的 storage.tokenizer 指向该目录。
+导入恢复镜像和标签；Docker 与 containerd 的存储独立，nerdctl load 的 namespace 必须与现场配置一致。镜像只读层不包含主机 bind mount 数据。[Docker load 文档](https://docs.docker.com/reference/cli/docker/image/load/)。建议在 **新建空 tokenizer 目录**解包，避免与旧模型词表混合。将 site.json 的 storage.tokenizer 指向该目录。
 
 离线运行前逐项确认：
 
-1. `docker info` 成功；主机 Python 版本满足要求；容器运行账户具有实际所需权限。
+1. 所选运行时的 `docker info` 或 `nerdctl --namespace benchmark info` 成功；主机 Python 版本满足要求；容器运行账户具有实际所需权限。
 2. site.json 的所有选用镜像标签存在、架构为 linux/amd64，并与 metadata/images.json 的 image ID 对照。导入后如重命名标签，需同步修改 site.json；不要只修改镜像名字而忽略内容。
-3. storage.root、storage.logs、tokenizer 和 log_files 路径真实有效；目标机可创建数据目录，容器 UID/GID 有读写权限。
+3. storage.root、storage.logs、tokenizer 和 log_sources[].path 路径真实有效；log_sources 优先于旧 log_files。目标机可创建数据目录，容器 UID/GID 有读写权限。
 4. 被测服务、逐节点 Exporter、host 模式 node_exporter_target 地址在容器内可达；不能把容器 localhost 当成宿主机。NVIDIA 驱动/容器设备注入可用，或海光 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 已准备。
-5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许 Docker bridge 与推理服务/Exporter/日志接收端通信。项目 HTTP 服务默认映射到 0.0.0.0 的高位端口，可通过节点 IP 访问；使用 port_bind_address 指定网卡或仅回环，按现场规则放行可信客户端。
+5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许所选运行时的容器网络与推理服务/Exporter/日志接收端通信，nerdctl 需完整 CNI。项目 HTTP 服务默认映射到 0.0.0.0 的高位端口，可通过节点 IP 访问；使用 port_bind_address 指定网卡或仅回环，按现场规则放行可信客户端。
 6. 若要求严格禁止公网请求，按下一节关闭相关功能并由现场网络策略控制出站访问；不要用 `--network none` 启动整栈，因为这会同时切断压测与观测必需通信。
 
-从解包后的仓库根目录执行：
+从解包后的仓库根目录执行。`generated/site/site.json` 是现场输入文件，需要从交付包的 site/site.json 复制到该路径（存在时先保留自己的修改），或在本机生成：
 
 ```bash
-llm-bench images check --config /absolute/path/site.json
-llm-bench up --config /absolute/path/site.json --no-benchmark
-llm-bench bench slo --config /absolute/path/site.json \
-  --policy /absolute/path/search.json
-# 或使用 llm-bench bench suite --cases cases.json 执行预设清单
+# 仅在尚无现场配置时生成；Docker 改为 --runtime docker，省略 --namespace
+python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
+# 编辑 generated/site/site.json：实际地址、模型、路径、GPU、端口与 runtime
+# GPU41 示例需要鉴权；在同一 Bash 终端输入实际 Token
+read -r -s -p 'Inference Token: ' INFERENCE_API_KEY
+export INFERENCE_API_KEY
+./bin/llm-bench plan --config generated/site/site.json
+./bin/llm-bench images check --config generated/site/site.json
+./bin/llm-bench up --config generated/site/site.json --no-benchmark
+./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
+# 小规模验证通过后，按示例执行 1000 次、并发 16、随机 1k/1k
+./bin/llm-bench bench run --config generated/site/site.json
+./bin/llm-bench status --config generated/site/site.json
+./bin/llm-bench logs collect --config generated/site/site.json
+./bin/llm-bench down --config generated/site/site.json
 ```
 
-site.json 必须包含顶层 `"offline": true`。`images check` 检查全部选用镜像，`up` 自动复查；`plan` 仅渲染计划，不检查镜像。要运行单档 AISBench，可直接 up 不带 --no-benchmark。SLO 搜索即使先只启动了观测栈，也必须提前导入 AISBench 镜像。正式大规模搜索前先用小请求数确认服务、指标、日志和报告完整。
+site.json 必须包含顶层 `"offline": true`。`images check` 检查全部选用镜像，`up` 自动复查；`plan` 校验本地 tokenizer 并渲染计划，不检查镜像或服务。要启动并直接运行单档 AISBench，可 up 不带 --no-benchmark；已有栈再次压测用 bench run。down 保留监控数据、原始日志和报告，路径见 [GPU41 数据与停止说明](gpu41-qwen3-random-1k.md#5-数据停止与切换引擎)。SLO 搜索需另行准备 search.json，按 [搜索指南](aisbench-auto-slo.md)操作。
 
 ## 5. 正式离线策略与错误处理
 
@@ -259,7 +284,7 @@ Docker 镜像本地存储与独立 containerd namespace 不互通，不能认为
 nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
 ```
 
-对应 stack runtime 为 `["nerdctl", "--namespace", "benchmark"]`，现已实现运行时适配。使用 [nerdctl 部署指南](nerdctl.md)中的单机/离线冒烟模板，验证方式及真实硬件覆盖边界见该文档。[nerdctl 官方命令文档](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
+对应 stack runtime 为 `["nerdctl", "--namespace", "benchmark"]`，可由 `python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark` 生成。Docker 可选择 `--runtime docker`；已运行栈先 down 再切换，不重启系统运行时。已验证 nerdctl 1.7.7 和 2.1.3 的软件链路，CNI/namespace、GPU 注入、删除兼容行为与真实硬件覆盖边界见 [nerdctl 部署指南](nerdctl.md)。[nerdctl 官方命令文档](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
 
 Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/device plugin 镜像与安装清单、运行时/CDI/RuntimeClass 配置、ConfigMap/PVC/Job 等资源、证书与存储。镜像通常要导入 CRI 使用的 k8s.io namespace，具体由目标发行版确认；设置与离线策略匹配的 imagePullPolicy（IfNotPresent 或已逐节点导入时的 Never），避免 Always 在无可达 registry 时解析镜像失败。[Kubernetes 镜像拉取策略](https://kubernetes.io/docs/concepts/containers/images/)。现有 CLI 不会自动生成或部署这些 Kubernetes 资源。
 

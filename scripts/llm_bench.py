@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from diagnostics import collect, run_diagnosed
 from benchmark_stack import ROOT, Stack, prepare, validate_config, published_ports
-from container_runtime import runtime_scope
+from container_runtime import runtime_scope, select_runtime
 from run_aisbench_suite import prepare_suite, run_suite
 from slo_search import run_search
 
@@ -52,10 +52,12 @@ def workload(args):
 def configure(parser):
     parser.add_argument('--config', type=Path, help='stack JSON (overlay when used with --profile)')
     parser.add_argument('--profile', choices=PROFILES, help='built-in stack defaults')
+    parser.add_argument('--runtime', choices=('docker', 'nerdctl'), help='choose the container runtime for plan/up/images')
+    parser.add_argument('--namespace', help='explicit nerdctl namespace (implies nerdctl when used alone)')
     parser.add_argument('--project', help='unique container and network name prefix')
     parser.add_argument('--endpoint', help='inference service root URL')
     parser.add_argument('--model', help='served model identifier')
-    parser.add_argument('--host-address', help='node_exporter host (port 9100)')
+    parser.add_argument('--host-address', help='reachable node_exporter host; port follows ports.node-exporter')
     parser.add_argument('--gpu-vendor', choices=('auto', 'nvidia', 'hygon'))
     parser.add_argument('--gpus', type=int, help='GPU count for a single-node configuration')
     for name, help_text in [('tokenizer', 'local tokenizer directory'), ('data-dir', 'state, data and reports'),
@@ -150,6 +152,7 @@ def configured_stack(args):
         cfg['gpu']['nodes'][0]['gpus'] = args.gpus
     if args.offline:
         cfg['offline'] = True
+    select_runtime(cfg, args.runtime, args.namespace)
     settings = workload(args)
     if 'concurrency' in settings:
         cfg['benchmark'].pop('concurrency_levels', None)

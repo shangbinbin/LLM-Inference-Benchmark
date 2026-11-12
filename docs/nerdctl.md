@@ -66,15 +66,21 @@ nerdctl --namespace benchmark logs --tail 100 llm-nerdctl-smoke-aisbench
 
 ## 对接真实推理服务
 
-单机 NVIDIA 复制 [nerdctl-nvidia-single.json](../configs/stacks/nerdctl-nvidia-single.json)，或使用 `nerdctl-single` profile。已有现场配置只需将 runtime 改成上述 nerdctl 数组，其余推理 URL、鉴权、日志和数据集配置继续使用。
+单机 NVIDIA 以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)生成现场文件：
 
-需要填写：`project`、`task`、`storage.root/logs/tokenizer`、`node_exporter_target`、`gpu.nodes`、`inference.base_url/model/api/api_key_env` 和 benchmark。标签、日志角色与 GPU 节点/型号/卡序号配置见 [任务观测说明](task-observability.md)。默认的 task 仍可省略并使用 project。
+```bash
+python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
+```
+
+输出 `generated/site/site.json`；已存在时拒绝覆盖，直接编辑已有文件或用 --output 另选路径。示例为随机 1k/1k、1000 次请求、并发 16，需核对接口、模型、日志、tokenizer、节点及端口。选择 Docker 可改用生成参数 `--runtime docker`；两者业务字段相同。通用模板 [nerdctl-nvidia-single.json](../configs/stacks/nerdctl-nvidia-single.json) 和 `nerdctl-single` profile 仍可使用，参数与 GPU41 现场示例不同。已有栈先 down，再更改 runtime 并 up。
+
+需要核对：`project`、`task`、`storage.root/logs/tokenizer`、`gpu.nodes`、`inference.base_url/model/api/api_key_env`、端口和 benchmark。GPU41 使用 host_metrics=container；只有选择 host 模式才需填写可达的 `node_exporter_target`。标签、日志角色与 GPU 节点/型号/卡序号配置见 [任务观测说明](task-observability.md)。默认的 task 仍可省略并使用 project。
 
 ```bash
 # 需要鉴权时，在同一终端导出 inference.api_key_env 指定的变量。
-./bin/llm-bench images check --config generated/site/nerdctl-site.json
-./bin/llm-bench up --config generated/site/nerdctl-site.json --no-benchmark
-./bin/llm-bench bench run --config generated/site/nerdctl-site.json
+./bin/llm-bench images check --config generated/site/site.json
+./bin/llm-bench up --config generated/site/site.json --no-benchmark
+./bin/llm-bench bench run --config generated/site/site.json
 ```
 
 NVIDIA 本机 Exporter 的参数按引擎区分：

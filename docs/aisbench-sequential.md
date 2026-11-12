@@ -20,7 +20,7 @@
 
 ## 方式一：原生并发档扫描，一键启动
 
-1. 复制 `configs/stacks/nvidia-single.json`，填写 x86 Linux 的服务地址、真实 tokenizer、日志/数据路径。
+1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)用 `scripts/create_site_config.py` 选择 Docker/nerdctl 并生成现场配置，填写实际服务地址、真实 tokenizer、日志/数据路径；通用场景也可复制 `configs/stacks/nvidia-single.json`。后续清单覆盖各例 workload，不要求沿用 GPU41 的 1000 次/并发 16。
 2. 在 benchmark 中增加两个配对数组：
 
 ```json

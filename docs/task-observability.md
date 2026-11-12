@@ -20,12 +20,12 @@
 
 ## 配置模板
 
-单机从 [nvidia-single.json](../configs/stacks/nvidia-single.json) 复制；已有 GPU41 服务可参考 [现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.json)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.json 的片段：
+单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.json`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.json](../configs/stacks/nvidia-single.json)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.json)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.json 的片段：
 
 ```json
 {
   "project": "llm-bench-qwen-real",
-  "task": "qwen-service",
+  "task": "qwen3-0.6b",
   "inference": {
     "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",
     "model": "Qwen3-0.6B",
@@ -40,8 +40,8 @@
   },
   "storage": {
     "root": "generated/qwen-real",
-    "logs": "/srv/inference-logs",
-    "tokenizer": "assets/tokenizer"
+    "logs": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279",
+    "tokenizer": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279"
   },
   "log_sources": [
     {"path": "server_log.log", "role": "master", "replica": "replica-0", "node": "gpu41"}
@@ -152,7 +152,7 @@ python3 scripts/task_dashboard.py --output-dir configs/common/grafana/dashboards
 ./bin/llm-bench plan --config generated/site/site.json
 ./bin/llm-bench up --config generated/site/site.json --no-benchmark
 # 需要发压时，再复用观测栈。
-./bin/llm-bench run --config generated/site/site.json
+./bin/llm-bench bench run --config generated/site/site.json
 ```
 
 新标签仅作用于重新采集的数据，不回填历史 TSDB/Loki。保留的旧数据仍可用 deployment 查询；选择过渡后的时间范围再使用新任务 Dashboard。旧的生成式 SGLang/GPU 面板由统一任务总览替代，Grafana 中自行保存的自定义面板不会自动重写。

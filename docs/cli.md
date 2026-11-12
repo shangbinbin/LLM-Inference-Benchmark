@@ -35,6 +35,10 @@ llm-bench down
 
 `bench run` 创建一条名为 single 的独立用例。每次运行都产生新目录。down 清理当前栈拥有的容器和网络，保留指标、日志、配置快照和压测结果。
 
+## GPU41 离线现场示例与运行时选择
+
+从仓库根目录执行 `python3 scripts/create_site_config.py --runtime docker`，或 `python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark`，生成 `generated/site/site.json`（拒绝覆盖已有文件）。核对现场地址、日志和 tokenizer 后，用该文件 plan、images check、up 和 bench run。GPU41 示例固定为随机 1k/1k、1000 次请求、并发 16，完整流程见 [GPU41 指南](gpu41-qwen3-random-1k.md)。下节 linux-single 是另一份通用模板，不会继承 GPU41 的接口、日志或 workload。
+
 ## Linux x86 单机
 
 在运行推理服务的 Linux 主机上准备实际 tokenizer、服务日志和驱动。以下示例中的地址、模型名和目录须换成现场值。默认使用本机的设备工具识别 NVIDIA 或海光，也可显式加 `--gpu-vendor nvidia` 或 `--gpu-vendor hygon`。
@@ -95,8 +99,9 @@ llm-bench up --config site.json --cases cases.json
 
 | 选项 | 含义 |
 | --- | --- |
-| `--profile NAME` | linux-single、mac-simulation、mac-offline、mac-slo-search。省略 profile 和 config 时从 linux-single 开始。 |
+| `--profile NAME` | linux-single、nerdctl-single、nerdctl-offline-smoke、mac-simulation、mac-offline、mac-slo-search。省略 profile 和 config 时从 linux-single 开始。 |
 | `--config FILE` | 单独使用时读取完整栈 JSON。与 profile 同用时，以该 profile 为底稿递归覆盖 JSON 对象，数组整体替换。 |
+| `--runtime docker/nerdctl`、`--namespace NAME` | 选择本次引擎/namespace，覆盖 JSON runtime。仅 plan、up、images 支持；省略时保持 JSON。namespace 单独使用表示 nerdctl；nerdctl 未指定 namespace 时沿用源值或默认 benchmark。 |
 | `--project NAME` | 独立容器和网络的前缀。并行栈需独立名称、数据目录、日志目录及宿主机端口。 |
 | `--endpoint URL`、`--model ID` | 提供服务根 URL 和对外模型名。linux-single 模板的 metrics 占位地址从 URL 的主机和端口补全；已显式配置的 metrics 端点保留。 |
 | `--host-address HOST` | node_exporter 的可达主机名或地址；host 模式端口由 ports.node-exporter 决定，默认 39100。 |
@@ -105,6 +110,8 @@ llm-bench up --config site.json --cases cases.json
 | `--input-len N`、`--output-len N` | 合成输入长度和请求输出上限。 |
 | `--requests N`、`--concurrency N` | 正式请求数和并发。显式给出单档并发会移除继承的原生并发扫描数组。 |
 | `--offline` | 开启本地镜像预检查、禁止构建/拉取并关闭已知组件外联功能。配置里已开启时省略此选项也会生效。 |
+
+显式 runtime 选择会替换命令数组；需要自定义 socket/snapshotter/sudo 包装时在 JSON 中配置，省略 CLI runtime 覆盖。已有栈的 status、down、bench 从启动快照读取运行时；切换引擎前先 down 原栈、向目标引擎/namespace 导入镜像，再按新配置 up，不需要重启 Docker/containerd 或重建已有镜像。
 
 优先级从低到高为 profile、配置文件、显式 CLI 参数、单个用例内的 benchmark 字段。文件名和 CLI 目录参数按当前工作目录解析，栈 JSON 内的相对 storage 路径延续旧版语义，按工程根目录解析。
 

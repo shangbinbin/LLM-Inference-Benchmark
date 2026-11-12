@@ -2,17 +2,20 @@
 
 | 目录 | 职责 |
 | --- | --- |
-| `configs/common/` | 与 GPU 无关的组件配置、日志模板和 SGLang 应用面板 |
+| `configs/common/` | 与 GPU 无关的组件配置、日志模板、任务总览及历史 SGLang 面板 |
 | `configs/gpu/<厂商>/<型号或适配器>/` | 型号选择、厂商采集接口、指标口径和 GPU 面板 |
 | `configs/network/` | 独立于 GPU 的可选网络采集、告警和面板 |
 | `configs/environments/` | 实际节点、模型、拓扑、地址及日志路径 |
+| `configs/sites/` | GPU41 等现场完整配置、多副本例子；以 create_site_config.py 生成本地 site.json |
 | `configs/stacks/` | 容器部署及 AISBench workload 的统一 JSON 入口 |
 | `containers/` | AISBench 与探测/轮转/模拟端点的 OCI 镜像 |
 | `scripts/` | 配置渲染、容器生命周期及模拟验证工具 |
 | `tests/` | 组合完整性、GPU 隔离和未完成模板拦截测试 |
 | `docs/` | 操作指南、方案与验证记录 |
 | `references/` | 固定来源档案与其他项目测试场景 |
-| `generated/` | Mac 默认配置、组件数据和 AISBench 报告，Git 忽略 |
+| `generated/` | 本地 site.json、配置快照、组件数据和 AISBench 报告，Git 忽略 |
+
+现场输入 `generated/site/site.json` 的生成和 Docker/nerdctl 选择见 [GPU41 指南](gpu41-qwen3-random-1k.md)。`scripts/create_site_config.py` 负责生成并拒绝覆盖；`scripts/container_runtime.py` 处理运行时差异；`scripts/llm_bench.py` 提供 CLI。后续 bench/status/down 使用启动时 manifest，不直接读取被修改后的 runtime。
 
 ## 2026-11-06 迁移
 
@@ -34,7 +37,7 @@
 
 上表新配置路径均相对于 `configs/`。更早的 2026-11-05 整理把 `configs/<组件>/` 移到旧平台参考目录；现在请从[配置入口](../configs/README.md)使用四层组合结构。
 
-新增海光型号请按[海光说明](../configs/gpu/hygon/README.md)扩展，避免按型号复制整套日志与监控链路。数据集实体、测试输出和密码不放配置目录；运行输出放 `results/<run-id>/`，需版本化的精选报告放 `docs/reports/`。
+新增海光型号请按[海光说明](../configs/gpu/hygon/README.md)扩展，避免按型号复制整套日志与监控链路。数据集实体、测试输出和密码不放配置目录；正式启动器的运行输出放 `storage.root/data/results/`，需版本化的精选报告放 `docs/reports/`。
 
 ## 海光官方资料补充
 

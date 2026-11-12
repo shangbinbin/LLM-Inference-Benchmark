@@ -5,13 +5,14 @@
 ```text
 configs/
 ├── stacks/                        # Mac 模拟 / NVIDIA 单机完整运行配置
+├── sites/                         # GPU41 等现场完整示例，复制后按实际环境修改
 ├── suites/                        # 按顺序执行的 AISBench 测试例清单
 ├── search/                        # 自适应 SLO 搜索范围、阈值及预算
 ├── fixtures/datasets/              # 混合 suite 使用的业务 JSONL 与 ShareGPT 示例
 ├── fixtures/mock-tokenizer/        # 仅模拟使用的小型 tokenizer
 ├── common/
 │   ├── prometheus/base.json         # 全局采集周期
-│   ├── grafana/                     # 服务、provider、SGLang 应用面板
+│   ├── grafana/                     # 服务、provider、统一任务/GPU/日志面板
 │   ├── alloy/config.alloy.tmpl      # 日志采集机制
 │   ├── loki/loki.yaml               # 单实例日志存储
 │   └── logrotate/inference.conf.tmpl
@@ -32,16 +33,27 @@ configs/
     └── hygon-template/             # 海光待适配环境
 ```
 
+## 生成现场 site.json
+
+单实例真实服务以 [gpu41-qwen3-0.6b-random-1k.json](sites/gpu41-qwen3-0.6b-random-1k.json) 为完整示例，步骤见 [GPU41 操作指南](../docs/gpu41-qwen3-random-1k.md)。在工程根目录执行以下命令，按运行时选择一条：
+
+```bash
+python3 scripts/create_site_config.py --runtime docker
+# 或：python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
+```
+
+输出 `generated/site/site.json`，已存在时拒绝覆盖；之后编辑该文件，不直接修改 `storage.root/config/<哈希>/` 中的渲染快照。`sites/` 保存具体现场例子，`stacks/` 保留通用模板和模拟模板，`generated/` 为本地文件，不随仓库预置。只切换引擎不会改变示例的接口、路径及 workload；已有栈应先 down 再 up。
+
 ## 各层修改边界
 
 | 变化 | 修改位置 |
 | --- | --- |
-| 容器镜像、存储、客户端 workload、多角色采集入口 | `stacks/<场景>.json` |
+| 容器镜像、存储、客户端 workload、多角色采集入口 | `sites/` 完整示例或 `stacks/` 通用模板，生成到本地 site.json 后修改 |
 | 采集周期、日志重试、保留策略、Grafana/Loki 通用设置 | `common/` |
 | GPU Exporter 的 job、接口、指标与专属面板 | `gpu/<厂商>/<适配器>/` |
 | 型号对应的适配器、验证状态 | `gpu/<厂商>/<型号>/profile.json` |
 | IB 等网络指标、规则与面板 | `network/<网络类型>/` |
-| 节点数量、卡数、地址、模型、TP/PP、日志路径、服务 URL | `environments/<环境>/environment.json` |
+| 节点数量、卡数、地址、模型、TP/PP、日志路径、服务 URL | llm-bench 修改本地 site.json；旧独立渲染入口修改 `environments/<环境>/environment.json` |
 
 型号可以共享已经确认兼容的适配器；不同型号、驱动或 Exporter 指标不兼容时建立独立适配器目录。不要整套复制 `common/`。网络类型单独选择，不由 GPU 厂商推断；`network: null` 不生成网络 job、规则或面板。
 

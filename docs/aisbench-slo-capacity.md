@@ -4,6 +4,8 @@
 
 需要根据每轮结果自动调整并发时，使用新增的 [SLO 自适应搜索功能](aisbench-auto-slo.md)和 `llm-bench bench slo`。本页保留固定候选扫描、离线报告筛选和 SLO 业务口径说明；两种入口均不调整被测推理服务。
 
+真实服务先按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)生成 site.json，选择 Docker/nerdctl，并完成小规模单档验证；之后再按本页设置扫描 workload 和业务阈值。
+
 ## 1. 先明确搜索目标与版本能力
 
 SLO（服务等级目标）是业务给定的约束，例如 P99 TTFT ≤ 1000 ms、P99 TPOT ≤ 50 ms。压测可以找出满足这些约束的并发/吞吐范围，不能自动决定业务应该接受多大的延迟。

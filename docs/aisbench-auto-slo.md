@@ -42,7 +42,7 @@ llm-bench down --config configs/stacks/mac-slo-search.json
 
 ## Linux x86 生产运行
 
-1. 从 `configs/stacks/nvidia-single.json` 复制完整 site.json，填写服务 URL、model、真实 tokenizer、指标/日志地址与存储目录。海光按既有 GPU 适配配置切换。
+1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)选择 Docker/nerdctl 并生成 site.json，核对服务 URL、model、真实 tokenizer、指标/日志地址与存储目录。通用场景也可复制 `configs/stacks/nvidia-single.json`；海光按既有 GPU 适配配置切换。搜索策略会另行覆盖 workload，不固定使用 GPU41 的并发 16。
 2. 保持 `platform: linux/amd64` 与 `*-amd64` 镜像标签。生产镜像应在 x86 Linux 构建并完成常规单次 AISBench 验证。
 3. benchmark 使用 `mode: perf`、`request_rate: 0`、`retry: 1`；移除 concurrency_levels/requests_per_level。输入输出长度、样本数、tokenizer、生成参数、预热数在整个搜索中保持不变，只有 concurrency 被搜索器覆盖。
 4. request_count 至少达到搜索 max_concurrency 和 min_requests；output_length 至少为 2。准备固定输出长度负载，并确认后端支持相应生成参数。

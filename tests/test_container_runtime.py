@@ -11,10 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import benchmark_stack as stack
 from container_runtime import (adapt_command, namespace, runtime_kind, runtime_scope,
-                               service_network, validate_runtime, remove_container)
+                               service_network, validate_runtime, remove_container, select_runtime)
 
 
 class ContainerRuntimeTests(unittest.TestCase):
+    def test_explicit_runtime_selection_and_namespace_defaults(self):
+        cfg={'runtime':['sudo','-n','nerdctl','--namespace','site'], 'runtime_kind':'nerdctl', 'task':'model'}
+        original=copy.deepcopy(cfg)
+        select_runtime(cfg)
+        self.assertEqual(cfg,original)
+        select_runtime(cfg,'nerdctl')
+        self.assertEqual(cfg,{'runtime':['nerdctl','--namespace','site'],'task':'model'})
+        select_runtime(cfg,'docker')
+        self.assertEqual(cfg['runtime'],['docker'])
+        select_runtime(cfg,'nerdctl')
+        self.assertEqual(namespace(cfg),'benchmark')
+        select_runtime(cfg,namespace_name='new')
+        self.assertEqual(namespace(cfg),'new')
+        with self.assertRaisesRegex(ValueError,'only valid for nerdctl'):
+            select_runtime(cfg,'docker','new')
+
     def config(self, root):
         cfg = stack.load_config(ROOT/'configs/stacks/mac-offline.json')
         cfg.update(runtime=['nerdctl','--namespace','benchmark'], platform='linux/amd64')

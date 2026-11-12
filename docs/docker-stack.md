@@ -121,7 +121,7 @@ host_metrics=host 时 node_exporter 使用宿主网络，不添加 Docker -p；�
 
 ## Linux NVIDIA 单机
 
-复制 [nvidia-single.json](../configs/stacks/nvidia-single.json)，填写推理服务地址、模型名称和存储路径。实际发压入口是 `inference.base_url`（服务根 URL，不含 `/v1/completions`），指标入口单独填写。服务必须可从 Docker 网络访问；不要把容器内 `localhost` 当成宿主机。可使用宿主机实际局域网 IP。
+已知 GPU41 服务建议按 [完整现场示例](gpu41-qwen3-random-1k.md)执行 `python3 scripts/create_site_config.py --runtime docker`，生成 `generated/site/site.json`；选择 nerdctl 可替换为 `--runtime nerdctl --namespace benchmark`。也可复制通用 [nvidia-single.json](../configs/stacks/nvidia-single.json)，填写推理服务地址、模型名称和存储路径。实际发压入口是 `inference.base_url`（服务根 URL，可含网关前缀，不含 `/v1/completions`）。不配置显式 metrics 覆盖时自动拼接 metrics；通用模板中的 metrics_endpoints 占位符需删除或填写有效端点。服务必须可从 Docker 网络访问；不要把容器内 `localhost` 当成宿主机。可使用宿主机实际局域网 IP。
 
 ```bash
 llm-bench plan --config /path/to/site.json

@@ -99,4 +99,4 @@ docker build --network=host --platform linux/amd64 \
 
 启动时将指标 Token 写入 storage.root/.credentials/metrics.token（文件权限 0600、目录 0700），仅只读挂载到 Prometheus。生成的 Prometheus 配置只引用 credentials_file，不写 Token 值；plan 不读取 Token，也不生成凭据文件。启动需要对应环境变量存在且有效；正常 down 在移除容器后删除该文件，其他压测产物仍保留。启动失败时文件可能留存于受限目录，需保护现场磁盘，不能将整个 storage.root 原样分享。更换 Token 后需正常 down/up 重新生成凭据。
 
-站点示例见 [GPU41 Qwen3-0.6B 随机 1k/1k、1000 请求、并发 16 配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json)。示例采用统一 base_url，不重复填写指标路径或地址。它使用 GPU41 本机单卡 NVIDIA Exporter、容器模式 node_exporter；网关须支持流式 chat、v1/models 和 metrics。日志/tokenizer 使用现场 NFS 模型目录，logrotate 管理 server_log.log，需有权限且不与其他轮转机制冲突。实际 Token 长度以报告为准，ignore_eos 需后端支持。
+配置生成、Docker/nerdctl 选择及完整启动步骤见 [GPU41 操作指南](gpu41-qwen3-random-1k.md)。站点示例见 [GPU41 Qwen3-0.6B 随机 1k/1k、1000 请求、并发 16 配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json)。示例采用统一 base_url，不重复填写指标路径或地址。它使用 GPU41 本机单卡 NVIDIA Exporter、容器模式 node_exporter；网关须支持流式 chat、v1/models 和 metrics。日志/tokenizer 使用现场 NFS 模型目录，logrotate 管理 server_log.log，需有权限且不与其他轮转机制冲突。实际 Token 长度以报告为准，ignore_eos 需后端支持。

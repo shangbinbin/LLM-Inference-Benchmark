@@ -175,7 +175,8 @@ def load_config(path):
     return validate_config(json.loads(path.read_text()))
 
 
-def validate_config(cfg):
+def validate_config(cfg, *, check_tokenizer=True):
+    """Validate settings; only offline site creation may defer local tokenizer existence."""
     if cfg.get('schema_version') != 1:
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
@@ -270,7 +271,7 @@ def validate_config(cfg):
     if bench['dataset_type'] not in ('string', 'tokenid'):
         raise ValueError('dataset_type must be string/tokenid')
     tokenizer = Path(cfg['storage']['tokenizer'])
-    if not (tokenizer / 'tokenizer_config.json').is_file():
+    if check_tokenizer and not (tokenizer / 'tokenizer_config.json').is_file():
         raise ValueError('storage.tokenizer requires a local tokenizer_config.json; used by synthetic generation/results')
     if type(bench.get('retry', 1)) is not int or bench.get('retry', 1) < 1:
         raise ValueError('benchmark.retry is the total attempt count in this AISBench version; it must be >= 1')
