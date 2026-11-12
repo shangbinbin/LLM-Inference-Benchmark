@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from diagnostics import collect, run_diagnosed
 from benchmark_stack import ROOT, Stack, prepare, validate_config, published_ports
 from container_runtime import runtime_scope, select_runtime
+from log_health import check_logs
 from run_aisbench_suite import prepare_suite, run_suite
 from slo_search import run_search
 
@@ -90,6 +91,9 @@ def parser_for_cli():
     for name, desc in [('status', 'Inspect running stack'), ('down', 'Remove owned containers and network')]:
         select_stack(commands.add_parser(name, help=desc))
     logs = commands.add_parser('logs', help='Collect offline diagnostics').add_subparsers(dest='action', required=True)
+    logcheck = logs.add_parser('check', help='Check configured log files, read-only mount and Loki ingestion')
+    select_stack(logcheck)
+    logcheck.add_argument('--lookback-minutes', type=int, default=60, help='Loki query window, 1..10080 (default 60)')
     bundle = logs.add_parser('collect', help='Write a local diagnostic tar.gz')
     select_stack(bundle)
     bundle.add_argument('--output', type=Path, help='new tar.gz file (default: storage.root/diagnostics/)')
@@ -301,6 +305,34 @@ def execute(args):
         return 0
 
     if args.command == 'logs':
+        if args.action == 'check':
+            if not 1 <= args.lookback_minutes <= 10080:
+                raise ValueError('--lookback-minutes must be 1..10080')
+            network = None
+            try:
+                active, _ = running_stack(args)
+            except ValueError:
+                if not args.config:
+                    raise
+                site = read_object(args.config)
+                root = (ROOT / Path(site['storage']['root']).expanduser()).resolve()
+                if (root / 'state.json').exists():
+                    raise
+                cfg = site
+                origin = 'site JSON (no active stack; checking local files only)'
+            else:
+                cfg = active.cfg
+                network = active.network
+                origin = 'saved running manifest'
+            from benchmark_stack import runtime_command
+            report = check_logs(cfg, runtime_command, network, args.lookback_minutes)
+            report['config_source'] = origin
+            if args.config and origin == 'saved running manifest':
+                site = read_object(args.config)
+                report['site_log_settings_differ'] = any(site.get(key) != cfg.get(key)
+                    for key in ('task', 'log_sources', 'log_files')) or str((ROOT / Path(site['storage']['logs']).expanduser()).resolve()) != cfg['storage']['logs']
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1 if report['errors'] else 0
         cfg, vendor = diagnostic_context(args)
         path = collect(cfg, vendor, output=args.output, lines=args.tail, extra_logs=args.extra_log, selected=args.run)
         print('Diagnostic bundle: ' + str(path))

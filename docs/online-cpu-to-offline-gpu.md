@@ -546,6 +546,8 @@ PY
 
 相对 storage 路径按工程根目录解析。日志由服务提前写到节点可访问路径，启动器负责挂载给 Alloy/logrotate；不会自动进入推理 Pod 读取日志，也不要用空文件冒充。避免与已有轮转任务同时管理同一文件。容器网络需能访问推理服务、应用 metrics、各 Exporter；不能将整个栈设为 --network none。
 
+真实日志路径必须替换通用示例：storage.logs=/srv/inference-logs 配合 path=server.log 只会读取该实际文件。真实模式默认启动前检查；不要为绕过缺失错误创建空文件冒充服务日志。用 `./bin/llm-bench logs check --config generated/site/site.json` 定位，完整案例见 [日志路径修复](loki-log-troubleshooting.md)。
+
 真实服务字段的完整修改脚本、网关统一 base_url、日志映射和 Token 步骤见 [离线对接说明](offline-deployment.md#real-service)。海光配置同样使用相同的推理 API 和任务标签，但其 Exporter 的设备路径、采集指标与 NVIDIA 不同。
 
 #### 10.3.1 离线切换后实际会发生什么

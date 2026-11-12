@@ -89,6 +89,7 @@ llm-bench up --config site.json --cases cases.json
 | `images build` | 在线构建 toolbox 和 AISBench。offline 配置会拒绝构建。 |
 | `up` | 启动新的观测栈并跑默认压测。--cases 指定清单，--no-benchmark 仅启动观测，两者互斥。 |
 | `status` | 输出状态快照及各容器实际状态。 |
+| `logs check` | 检查真实文件与 /logs 挂载、Alloy/Loki 及当前任务最近日志；可加 --lookback-minutes。无活动栈时只检查本地文件。 |
 | `logs collect` | 导出离线故障包。支持选择运行、日志行数、外部日志及输出路径。[采集与回传](offline-diagnostics.md) |
 | `bench run` | 在现有栈执行一条用例，接受 --input-len、--output-len、--requests、--concurrency。 |
 | `bench suite --cases FILE` | 在现有栈运行另一份清单。 |
@@ -160,6 +161,7 @@ llm-bench bench slo --config configs/stacks/mac-slo-search.json \
 - **缺少镜像**。用相同配置运行 images check，导入匹配平台和标签的镜像后重试。up --cases 在创建网络前也会检查客户端。详见 [离线部署](offline-deployment.md)。
 - **已有运行状态**。用 status 检查；继续测试用 bench，重新部署用 down 后再 up。清单失败后观测栈仍可用于排查和重试。
 - **多个活动栈或找不到栈**。用 --data-dir 指定实际目录。不要把不同栈的状态目录互相复制。
+- **Loki 无标签/日志**。运行 `llm-bench logs check --config site.json`，根据实际 storage.logs + log_sources 修正，down/up 后生效；详见 [现场修复](loki-log-troubleshooting.md)。
 - **用例失败**。先找 suite-results.json 中的 case 和退出码，再查该用例的 client.log、正式请求数和失败请求数。若失败发生在观测组件启动阶段，先用 status 定位组件。
 
 原有 benchmark_stack.py、run_aisbench_suite.py、slo_search.py 仍支持已有自动化。新的日常操作可统一使用 llm-bench。

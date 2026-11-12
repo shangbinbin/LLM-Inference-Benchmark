@@ -23,6 +23,7 @@ from task_dashboard import build_dashboard
 from container_runtime import (runtime_kind, validate_runtime, adapt_command, service_network,
                                runtime_scope, missing_resource, remove_container)
 from diagnostics import record_event
+from log_health import require_log_files, container_report, file_errors
 from render_observability import config_dir, render, write_json, ROOT
 
 LABEL = 'io.llm-benchmark.project'
@@ -181,6 +182,8 @@ def validate_config(cfg, *, check_tokenizer=True):
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
         raise ValueError('offline must be a JSON boolean (true/false)')
+    if type(cfg.get('allow_missing_logs', False)) is not bool:
+        raise ValueError('allow_missing_logs must be a JSON boolean (true/false)')
     cfg.setdefault('legacy_seccomp_unconfined', cfg.get('offline', False))
     container_security_options(cfg)  # Materialize offline defaults in plans and manifests.
     if type(cfg.get('publish_ports', True)) is not bool:
@@ -376,7 +379,7 @@ def prepare(cfg):
     vendor = detect_vendor(cfg)
     root = Path(cfg['storage']['root'])
     source_hash = hashlib.sha256(Path(__file__).read_bytes() + (ROOT/'scripts/render_observability.py').read_bytes())
-    for module in ('observability_labels.py', 'task_dashboard.py', 'container_runtime.py'):
+    for module in ('observability_labels.py', 'task_dashboard.py', 'container_runtime.py', 'log_health.py'):
         source_hash.update((ROOT/'scripts'/module).read_bytes())
     # Suite files and local corpora do not affect the rendered monitoring stack.
     asset_dirs = [ROOT/'configs/common', ROOT/'configs/gpu']
@@ -396,7 +399,8 @@ def prepare(cfg):
     if run_dir.exists():
         raise ValueError(f'Incomplete generated directory: {run_dir}; inspect and remove it before retry')
     root.mkdir(parents=True, exist_ok=True)
-    Path(cfg['storage']['logs']).mkdir(parents=True, exist_ok=True)
+    if cfg.get('simulation'):
+        Path(cfg['storage']['logs']).mkdir(parents=True, exist_ok=True)
     for name in ('prometheus', 'loki', 'grafana', 'alloy', 'logrotate', 'results'):
         (root / 'data' / name).mkdir(parents=True, exist_ok=True)
     metrics = metrics_settings(cfg)
@@ -628,6 +632,7 @@ class Stack:
         needs_client = run_benchmark or needs_client
         if self.statefile.exists():
             raise ValueError('Stack state exists; use status/down before starting a new run')
+        require_log_files(self.cfg)
         inference_environment(self.cfg)
         self.call('info',capture=True)
         if self.cfg.get('offline', False):
@@ -640,6 +645,13 @@ class Stack:
             raise ValueError('Real local GPU exporters require Linux; use simulation on macOS')
         for name in (('toolbox', 'aisbench') if needs_client else ('toolbox',)):
             self.check_image(self.cfg['images'][name])
+        if not self.cfg.get('simulation'):
+            print('Checking inference log files inside the read-only /logs mount', flush=True)
+            report = container_report(self.cfg, runtime_command)
+            errors = file_errors(self.cfg, report['files'])
+            if errors:
+                raise ValueError('Inference logs are not readable inside /logs; check paths, symlinks and permissions: ' +
+                                 json.dumps(errors, ensure_ascii=False))
         if self.inspect(self.network):
             raise ValueError('Name collision; choose a different project')
         # Refuse to adopt any existing network/container, including resources from another run.

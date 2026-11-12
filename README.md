@@ -30,6 +30,7 @@ llm-bench down
 | [推理服务 Bearer Token](docs/inference-auth.md) | 环境变量鉴权、就绪探测、单次/顺序/SLO 压测与离线升级 |
 | [离线冒烟测试：生成、启动、验收、停止](docs/online-cpu-to-offline-gpu.md#offline-smoke) | 使用已交付 tokenizer，生成 offline-smoke.json，查看日志与报告 |
 | [离线环境部署](docs/offline-deployment.md) | offline 模式、缺镜像清单、amd64 交付包、组件外联设置与 Mac 验收 |
+| [Loki 无标签与日志排查](docs/loki-log-troubleshooting.md) | 日志真实路径修正、启动前文件检查、logs check、任务/时间筛选 |
 | [离线日志与故障回传](docs/offline-diagnostics.md) | 一键打包全链路组件日志、AISBench/SLO 结果和异常信息 |
 | [在线 CPU 构建 → 离线 GPU/DCU 压测](docs/online-cpu-to-offline-gpu.md) | 默认双厂商镜像交付、NVIDIA/海光离线选择、tokenizer 校验、部署与验收 |
 | [AISBench 使用](docs/aisbench.md) | 合成数据、输入输出长度、压测模式与结果解释 |

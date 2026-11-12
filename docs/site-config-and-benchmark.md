@@ -113,6 +113,7 @@ Docker 与 containerd 的镜像存储独立，nerdctl 不同 namespace 也不自
 | `log_sources[].role` | 实例角色 | 例如 master/worker/router/prefill/decode；生成 Loki instance_role 标签 |
 | `log_sources[].replica` | 同角色实例的副本名 | 例如 replica-0；多副本分别配置，不随单次请求变化 |
 | `log_sources[].node` | 可选日志来源节点标签 | 填真实稳定节点名；不会据此自动远程挂载 |
+| `allow_missing_logs` | 可选允许延迟创建活跃日志文件 | 真实模式默认 false，目录必须存在；已存在空文件仍可启动；仅明确延迟创建时设 true |
 | `log_files` | 旧版活跃文件清单 | 新配置推荐 log_sources；设置 log_sources 后该旧字段被忽略 |
 
 storage 的相对路径按**工程根目录**解析，不按 site.json 所在目录。bind mount 的源目录必须对运行容器的节点可见。logrotate 会写入/轮转指定日志，目录应有适当权限，避免与现场已有轮转机制同时操作同一文件；不要创建空文件冒充真实服务日志。多节点日志需先通过共享目录或另行部署采集器汇集，节点名标签本身不会传输文件。
@@ -385,6 +386,8 @@ PY
 尚未启动栈时也可 `./bin/llm-bench up --config generated/site/site.json --cases generated/site/cases.json` 一次完成，只执行清单，不额外执行默认单档，且不能同时带 --no-benchmark。JSONL/ShareGPT 的文件路径、请求计数和挂载规则见 [混合数据集](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)；输入长度由真实文件内容决定。
 
 ## 8. 看实时日志、指标和本次报告
+
+Loki 无标签或日志/Logs Volume 为空时，先执行 `./bin/llm-bench logs check --config generated/site/site.json`；日志路径、只读挂载和任务入库的完整判断见 [日志链路排查](loki-log-troubleshooting.md)。
 
 以下路径以脚本中的 storage.root=generated/qwen-real 为例，换 root 后同步替换：
 

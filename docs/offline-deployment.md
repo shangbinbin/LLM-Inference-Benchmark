@@ -559,6 +559,8 @@ NVIDIA 本机 Exporter：Docker 需已注册 nvidia runtime；nerdctl 使用 --g
 
 #### 4.5.1 预检查并只启动观测栈
 
+真实模式现在会在启动前检查日志目录/活跃文件和容器只读挂载，不再因 Alloy 就绪就认定配置的日志可读。常驻组件尚未创建时发现路径错误即可修正；允许空文件，明确延迟创建才配置 allow_missing_logs=true。Loki 标签为空时使用 [logs check 与路径修复](loki-log-troubleshooting.md)。
+
 先确保 4.4 节 Token 已在当前终端导出，并且真实服务已经启动：
 
 ```bash

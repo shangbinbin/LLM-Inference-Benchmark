@@ -18,6 +18,12 @@
 
 推理性能图只按任务聚合，改变 GPU 或日志筛选不会改变推理性能图。GPU 节点、型号、卡序号和日志角色、副本、文件都支持多选 / All；下级选项依赖上级选项。配置中的标签值为最多 128 字符的非空字符串，不含控制字符、双引号、反斜杠或反引号。不要用请求 ID、时间戳等不断变化的内容作为这些标签。
 
+## 日志文件与入库验证
+
+真实日志必须实际位于 storage.logs + log_sources[].path；例如 server.log 与 server_log.log 是不同文件。真实启动前会检查文件与容器 /logs 可读性；已有空文件可启动，明确延迟创建需显式 allow_missing_logs=true。simulation 的 fixture 保留自动创建行为。
+
+`./bin/llm-bench logs check --config generated/site/site.json` 检查当前快照、文件/挂载、Alloy/Loki 及任务窗口内日志。Alloy ready 不保证已经读取文件。路径修正、Loki 无标签和 Logs Volume 为空的处理见 [日志链路排查](loki-log-troubleshooting.md)。
+
 ## 配置模板
 
 单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.json`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.json](../configs/stacks/nvidia-single.json)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.json)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.json 的片段：
