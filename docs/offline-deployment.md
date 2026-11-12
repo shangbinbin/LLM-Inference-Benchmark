@@ -4,11 +4,11 @@
 
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
 
-**真实单实例服务以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)为配置基准：随机 1k/1k、1000 次请求、并发 16。Docker 和 nerdctl 自主选择，生成的 `generated/site/site.json` 需要核对现场参数；它与模拟冒烟配置是两个独立文件。**
+**真实单实例服务以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)为接口和负载示例：随机 1k/1k、1000 次请求、并发 16。离线按硬件选择 gpu.vendor=nvidia 或 hygon（海光 DCU），Docker/nerdctl 自主选择；它与模拟冒烟配置是两个独立文件。在线交付默认准备两个厂商 Exporter，实际只启动选中厂商，选择规则见第 2、3.3、4.4.3 节。**
 
 推荐流程是：**联网 x86 Linux 机器构建并验证全部镜像 → 导出仓库、镜像、tokenizer、系统依赖与配置 → 离线服务器导入并校验 → 启动观测链路和 AISBench**。不建议在离线服务器第一次运行时才安装依赖或构建镜像。
 
-如果在线构建机没有 GPU、目标机是离线 NVIDIA 服务器，可直接按[无 GPU 在线 Linux 构建与离线 NVIDIA 压测操作手册](online-cpu-to-offline-nvidia.md)逐步执行；其中包含可复制的构建、交付包校验、现场参数填写和小规模验收步骤。
+如果在线构建机是 CPU 机器、目标机是离线 NVIDIA GPU 或海光 DCU 节点，可直接按[在线 CPU 构建与离线 GPU 部署操作手册](online-cpu-to-offline-gpu.md)逐步执行；其中包含可复制的构建、交付包校验、现场参数填写和小规模验收步骤。
 
 当前正式启动器支持顶层 `"offline": true`：启动前一次检查所有选用镜像及架构；缺失时直接列出清单并退出，不创建容器或网络；禁止构建、源码下载和自动拉取，并关闭已知组件外联功能。默认 offline=false，兼容原有在线流程。
 
@@ -24,7 +24,7 @@ Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用
 | 主机运行工具 | Python 3.9+；Docker Engine/CLI 或 nerdctl/containerd/OCI 后端/CNI 及依赖安装包；可选 Git、tar、校验工具 | 按 runtime 选择，nerdctl 明确 namespace；启动不要求 BuildKit，Compose 不是必需项；用源码包时不要求 Git |
 | 项目镜像 | AISBench 与 toolbox 的 **linux/amd64** 完整镜像 | 生产服务器都是 x86，不要带 Mac 的 arm64 镜像冒充 amd64 |
 | 观测镜像 | Prometheus、Grafana、Loki、Alloy、node_exporter | logrotate/就绪探测已包含在 toolbox 中 |
-| 设备采集 | NVIDIA DCGM Exporter 或海光 HCU Exporter 镜像 | 根据实际厂商准备；external 模式在各设备节点准备，不一定在观测主机启动 |
+| 设备采集 | 默认备齐 NVIDIA DCGM 和海光 HCU Exporter 镜像，可配置单厂商或追加镜像 | 离线按 gpu.vendor 只启动选中厂商；external 模式在各设备节点另行部署 |
 | 设备驱动/运行时 | 目标 OS/内核兼容的驱动、设备容器运行时及完整依赖 | 容器镜像不包含可替代宿主机驱动的安装环境 |
 | tokenizer | 被测模型对应的完整本地 tokenizer 文件 | string 和 tokenid 的性能汇总都需要，不能使用模拟词表替代真实模型词表 |
 | 测试配置 | site.json、suite JSON、SLO search JSON | 设置 offline=true，包含内网地址、模型 ID、GPU 厂商、挂载路径、负载与停止条件 |
@@ -52,9 +52,9 @@ Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联
 
 Python 基础镜像现按现场要求使用 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm`，此前在本在线环境测试返回 Forbidden，本次仅修改名称，不重新拉取或构建。
 
-DCGM 按现场指定改为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`。本次仅更新配置，不执行拉取或运行验证。下方在线准备脚本将其与其他公共镜像一起拉取、检查 amd64 架构并导出；若已通过其他方式准备好，可跳过该项拉取，但导出和离线配置必须使用相同标签。升级后应在真实 GPU 节点确认驱动兼容性、Exporter 启动及 Prometheus 指标。
+DCGM 按现场指定改为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`。本次仅更新配置，不执行拉取或运行验证。下方在线准备脚本将其与其他公共镜像一起拉取、检查 amd64 架构并导出；如使用另行制作的镜像归档，导出和离线配置仍必须使用相同标签；本节新工具会拉取清单中选中的公共/设备镜像。升级后应在真实 GPU 节点确认驱动兼容性、Exporter 启动及 Prometheus 指标。
 
-NVIDIA 单机链路共需要前七个镜像加 DCGM Exporter。海光替换最后一个设备镜像；同时支持两厂商的交付包可包含二者。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
+**默认交付包共 9 个镜像：7 个通用镜像 + NVIDIA DCGM + 海光 HCU Exporter。** 配置 [configs/delivery/offline-images.json](../configs/delivery/offline-images.json) 默认 selected_gpu_exporters=[nvidia,hygon]；镜像名仍从现场 site.images.nvidia_exporter/hygon_exporter 读取。离线 NVIDIA 单机 local 实际需要前七个 + DCGM（8 个），海光则为前七个 + HCU（8 个），不会同时启动两类采集。海光 DCU 的配置值为 hygon，不是 dcu；默认 HCU v3 不与旧 dcu-exporter 2.4.x 自动兼容。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
 
 AISBench 镜像包含 Python 3.11、CPU Torch、AISBench 与其 Python 依赖；toolbox 包含 Python、logrotate 与探测程序。使用这些**已构建镜像运行**时，离线主机不需要另装 pip 包，也不需要 python 基础镜像。只有离线重建时才需要基础镜像和全部构建依赖。
 
@@ -99,42 +99,46 @@ docker build --network=host --platform linux/amd64 -t llm-benchmark-aisbench:e33
 
 源码提交和归档校验值与当前启动器一致。构建会访问基础镜像仓库、Debian apt 源、Python 包索引及 PyTorch CPU 下载站；这些访问在联网构建机完成。保留构建日志与镜像内 `/opt/aisbench/dependencies.txt`，便于追溯实际依赖版本。
 
-### 3.3 拉取公共镜像并记录架构
+### 3.3 配置双厂商镜像交付并导出
 
-将下面代码保存为 `generated/prepare-offline-images.py`，从仓库根目录运行 `python3 generated/prepare-offline-images.py`。海光交付包把 vendor 改为 hygon；此处只读取模板中的镜像名，不启动模板中的服务地址。
+在线 CPU 机使用 [prepare_offline_images.py](../scripts/prepare_offline_images.py)，交付选择由 [offline-images.json](../configs/delivery/offline-images.json) 管理。默认配置为：
 
-```python
-import json
-import subprocess
-from pathlib import Path
-
-vendor = 'nvidia'  # 或 hygon
-if vendor not in ('nvidia', 'hygon'):
-    raise ValueError('Unsupported vendor')
-cfg = json.loads(Path('configs/sites/gpu41-qwen3-0.6b-random-1k.json').read_text())
-keys = ['toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy',
-        'node-exporter', vendor + '_exporter']
-images = [cfg['images'][key] for key in keys]
-metadata = []
-for key, image in zip(keys, images):
-    if key not in ('toolbox', 'aisbench'):
-        subprocess.run(['docker', 'pull', '--platform', 'linux/amd64', image], check=True)
-    info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image], text=True))[0]
-    if (info['Os'], info['Architecture']) != ('linux', 'amd64'):
-        raise RuntimeError('Wrong architecture: ' + image)
-    metadata.append({'image': image, 'id': info['Id'], 'digests': info.get('RepoDigests', []),
-                     'platform': 'linux/amd64'})
-bundle = Path('generated/offline-bundle')
-(bundle / 'metadata/images.json').write_text(json.dumps(metadata, indent=2) + '\n')
-subprocess.run(['docker', 'image', 'save', '-o', str(bundle / 'images/images-linux-amd64.tar'),
-                *images], check=True)
+```json
+{
+  "schema_version": 1,
+  "gpu_exporters": {"nvidia": "nvidia_exporter", "hygon": "hygon_exporter"},
+  "selected_gpu_exporters": ["nvidia", "hygon"],
+  "additional_images": []
+}
 ```
 
-如果实际 site.json 的 images 字段不同，修改脚本读取的文件及选择项，与现场清单保持一致。docker save 导出镜像层和标签；不要用 docker export 代替。若本机保存了同镜像的多架构变体，默认 save 可能全部导出；Docker API 1.48+ 可增加 `--platform linux/amd64` 缩小归档，旧版本不要使用此选项。[Docker save 文档](https://docs.docker.com/reference/cli/docker/image/save/)。
+在源码根目录执行。下面默认从 GPU41 示例的 images 读取引用，不读取实际 Token、不检查本地 tokenizer/GPU、不访问推理服务：
+
+```bash
+python3 scripts/prepare_offline_images.py --plan
+python3 scripts/prepare_offline_images.py
+```
+
+--plan 只输出选择，不调用 Docker、不拉取或写文件。实际执行默认拉取 5 个观测镜像和 2 个设备 Exporter；toolbox/AISBench 使用第 3.2 节本地已构建镜像，不会从仓库拉取它们。逐个核对 linux/amd64 后，导出 `generated/offline-bundle/images/images-linux-amd64.tar`，保存 `metadata/images.json`（镜像 ID/digest/平台）和 `metadata/image-plan.json`（角色/选择）。不满足架构或任何选中镜像获取失败时直接终止，不能当作已完成交付。
+
+如果已经按 3.5 节生成现场配置，或改过 images 标签，以**最终现场文件**为准重新执行，随后再生成校验和：
+
+```bash
+python3 scripts/prepare_offline_images.py \
+  --site generated/offline-bundle/site/site.json --plan
+python3 scripts/prepare_offline_images.py \
+  --site generated/offline-bundle/site/site.json
+```
+
+只交付单厂商可用 `--exporters nvidia` 或 `--exporters hygon` 覆盖默认选择（共 8 个）；后续离线切换到缺失厂商前需重新准备并导入其镜像。每次执行重写目标归档，不会把两个单厂商归档自动合并。需要通用包时保留默认两种。
+
+**其他 GPU 的预留入口：** 复制该交付 JSON，在 gpu_exporters 增加 `厂商 → site.images 字段` 映射，在 site.images 中填对应镜像并选入 selected_gpu_exporters；使用 `--config 自定义交付JSON --site 现场JSON`。additional_images 可直接追加其他完整镜像引用。工具去重后检查/导出，但不会自动添加设备运行适配：当前启动器只接受 nvidia/hygon，新厂商仍需补齐 ADAPTERS、校验/识别、Exporter 参数、GPU 采集与标签/Dashboard，见 [扩展说明](online-cpu-to-offline-gpu.md#51-其他-gpu-的扩展入口)。
+
+site.offline=true 限制的是最终运行，不阻止这个明确的在线交付工具拉取。默认 HCU v3 镜像来自官方 YAML，实际 registry 权限、镜像架构与硬件兼容性仍需验证；旧 dcu-exporter 不能只改标签就视为兼容。docker image save 导出层和标签，不要用 docker export 代替；CPU 镜像无需因 NVIDIA/DCU 切换而重建。归档不含 tokenizer、模型权重、日志和其他 bind mount 内容，仍需单独交付。
 
 ### 3.4 准备真实 tokenizer 并做无网络加载检查
 
-在线无 GPU 测试可使用 [ModelScope 下载 Qwen3-0.6B tokenizer 的步骤](online-cpu-to-offline-nvidia.md#61-无-gpu-测试从-modelscope-下载-qwen3-06b-tokenizer)，缺少 ModelScope 时通过清华 PyPI 安装；生产仍需匹配真实被测模型。
+在线无 GPU 测试可使用 [ModelScope 下载 Qwen3-0.6B tokenizer 的步骤](online-cpu-to-offline-gpu.md#61-无-gpu-测试从-modelscope-下载-qwen3-06b-tokenizer)，缺少 ModelScope 时通过清华 PyPI 安装；生产仍需匹配真实被测模型。
 
 AISBench 客户端默认设置 `OPENBLAS_NUM_THREADS=1`、`OMP_NUM_THREADS=1`、`MKL_NUM_THREADS=1`、`NUMEXPR_NUM_THREADS=1`、`TOKENIZERS_PARALLELISM=false`。正式启动器对单次、顺序和 SLO 压测都传入这些变量，已导入的旧镜像也能使用；手工 docker run 须显式传入下方参数。它们限制客户端计算库线程，不改变请求并发。新 Dockerfile 同时内置默认值；本次调整不要求仅为这些变量重新构建离线镜像。旧离线源码需更新启动器，既有压测容器需结束后重新创建才生效。
 
@@ -170,7 +174,7 @@ python3 scripts/create_site_config.py --runtime docker \
 #   --output generated/offline-bundle/site/site.json
 ```
 
-默认源文件为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`；指定 --source 可换其他完整模板。保留 `offline: true`、`platform: linux/amd64`、`simulation: false`，核对 project/task、runtime、存储、接口/模型/鉴权变量、GPU 节点、日志角色和空闲端口。GPU41 默认 host_metrics=container；如需宿主机指标，选择 host 并填写可达的 node_exporter_target。`inference.base_url` 自动派生 API 和 metrics 路径，独立指标端点仅在需要覆盖时填写。逐项说明见 [GPU41 指南](gpu41-qwen3-random-1k.md)。
+默认源文件为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`；指定 --source 可换其他完整模板。保留 `offline: true`、`platform: linux/amd64`、`simulation: false`，核对 project/task、runtime、存储、接口/模型/鉴权变量、GPU 厂商/节点、日志角色和空闲端口。NVIDIA 选 nvidia，海光 DCU 选 hygon，保留两个 images 引用以便通用交付；不要在在线 CPU 构建机运行生产 auto 检测。GPU41 默认 host_metrics=container；如需宿主机指标，选择 host 并填写可达的 node_exporter_target。`inference.base_url` 自动派生 API 和 metrics 路径，独立指标端点仅在需要覆盖时填写。逐项说明见 [GPU41 指南](gpu41-qwen3-random-1k.md)。
 
 观测机没有设备、采集远端 Exporter 时应明确厂商及 external 配置，不能靠观测机识别远端卡。顺序用例和搜索参数分别参考 [顺序压测手册](aisbench-sequential.md) 与 [自动 SLO 搜索手册](aisbench-auto-slo.md)。私有 CA 还需按实际使用方式导入运行时/registry 和有关容器的信任库，仅在宿主机安装证书不会自动让所有容器信任它。
 
@@ -259,7 +263,7 @@ python3 scripts/create_site_config.py --runtime docker
 python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 ```
 
-两条命令仅选择运行时，默认源文件均为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`，默认输出均为 `generated/site/site.json`。需要显式指定路径时，例如：
+两条命令仅选择运行时，尚未选择目标硬件；后续在 gpu.vendor 设置 nvidia/hygon。默认源文件均为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`，默认输出均为 `generated/site/site.json`。需要显式指定路径时，例如：
 
 ```bash
 python3 scripts/create_site_config.py \
@@ -433,7 +437,7 @@ down 删除本项目拥有的容器和网络，保留以上文件以及真实 to
 | `inference.model/api/engine` | 服务接受的模型 ID / chat 或 completions / vllm、sglang 或 auto；engine 是描述标签，不启动对应引擎 |
 | `inference.api_key_env` | Bearer Token 环境变量名，如 INFERENCE_API_KEY；只写变量名，不写 Token；无鉴权服务删除该字段 |
 | `topology` | 单实例 kind=single，tp/pp 填实际部署值，作为观测标签；不据此启动或调整服务并行 |
-| `gpu.vendor/deployment/nodes` | 明确 nvidia 或 hygon；本机启动 Exporter 用 local、一个节点及实际卡数，已有 Exporter 用 external、逐节点填写 target |
+| `gpu.vendor/deployment/nodes` | NVIDIA 选 nvidia、海光 DCU 选 hygon（不是 dcu）；local 启动所选厂商 Exporter，填一个真实节点/卡数；已有 Exporter 用 external、逐节点填写 target |
 | `gpu.nvidia_metrics_profile` | NVIDIA 推荐先 basic；本机 DCGM 默认 profiling 字段失败时不必先启用 full |
 | `host_metrics` | GPU41 示例 container，只采容器视角主机指标；需要宿主机指标用 host 并填写容器可达的 node_exporter_target |
 | `images` | 所选 runtime 中已经导入的完整标签与 amd64 架构；不要只改标签忽略镜像内容 |
@@ -462,7 +466,7 @@ cfg['inference'] = {
     'api_key_env': 'INFERENCE_API_KEY',
 }
 cfg['topology'] = {'kind':'single', 'tp':1, 'pp':1}
-cfg['gpu'].update(vendor='nvidia', deployment='local',
+cfg['gpu'].update(vendor='nvidia', deployment='local',  # 海光 DCU 改 vendor='hygon'
                   nodes=[{'name':'gpu41', 'gpus':1}], nvidia_metrics_profile='basic')
 cfg['log_sources'] = [
     {'path':'server_log.log', 'role':'master', 'replica':'replica-0', 'node':'gpu41'}
@@ -504,6 +508,30 @@ export INFERENCE_API_KEY
 重新登录或换终端时重新导出；Token 不写入 JSON、命令参数值或 Git。Prometheus 按启动时 Token 生成凭据文件。更换基础服务配置或 metrics Token 时，先 down 原栈，再导出新值并 up，避免旧监控配置继续使用。无鉴权服务删除 inference.api_key_env，且不要遗留独立 metrics 鉴权覆盖。详见 [鉴权说明](inference-auth.md)。
 
 #### 4.4.3 设备与网络补充
+
+**双厂商默认交付不等于双厂商同时启动。** 离线编辑 `generated/site/site.json` 的 `gpu.vendor`、节点和卡数即可选择本机采集；无需删除另一个 images 字段或重建 CPU 镜像。默认调用关系如下：
+
+| 现场选择（simulation=false） | 实际使用的镜像 | 启动/就绪与面板 |
+| --- | --- | --- |
+| nvidia + local | images.nvidia_exporter | 仅启动 DCGM，内部 9400，检查 DCGM_FI_DEV_GPU_UTIL；NVIDIA 总览 |
+| hygon + local | images.hygon_exporter | 仅启动 HCU v3，内部 16080，检查 hcu_memorycap_bytes；海光总览 |
+| nvidia/hygon + external | 设备节点已有的对应 Exporter | 不启动本机 GPU 采集容器，按 nodes[].target 抓取，按厂商渲染面板 |
+
+本机两类 Exporter 的宿主发布端口都由 ports.gpu-exporter 控制（默认 39400），映射到各自内部端口。NVIDIA 或海光的 images check 只要求所选模式实际用到的镜像，默认本机单卡场景均为 8 个，不会因为包里有 9 个而启动两种。simulation=true 只使用 fixture 模拟指标，不启动真实设备采集。
+
+可先在未启动的完整 site.json 中改成以下 GPU 片段来选择海光（实际节点/卡数替换），无需改变推理服务 API 配置：
+
+```json
+{
+  "gpu": {
+    "vendor": "hygon",
+    "deployment": "local",
+    "nodes": [{"name": "dcu-node", "gpus": 1}]
+  }
+}
+```
+
+这是字段片段，不可替换整个 site.json。切换已有栈时必须**先 down 原栈，再改 vendor/runtime/节点，最后 plan、images check、up**；bench/status/down 仍用原 manifest，不会自动热切换。Docker/nerdctl 镜像存储独立，换运行时时仍需向目标 namespace 导入归档。新设备的驱动、挂载与指标契约也必须匹配。
 
 NVIDIA 本机 Exporter：Docker 需已注册 nvidia runtime；nerdctl 使用 --gpus all，需可用的 NVIDIA Container Toolkit/nvidia-container-cli，不把 Docker runtime 别名直接当 containerd shim。真实设备/驱动需在现场确认。海光改 gpu.vendor=hygon 并核对对应设备和运行库；如果已有 dcu-exporter，先检查它真实暴露的指标，不假定旧 dcu-exporter 2.4.1 符合 HCU v3 指标契约。
 

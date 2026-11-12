@@ -5,6 +5,7 @@
 ```text
 configs/
 ├── stacks/                        # Mac 模拟 / NVIDIA 单机完整运行配置
+├── delivery/                      # 在线镜像交付选择：默认 NVIDIA/DCU Exporter，保留追加入口
 ├── sites/                         # GPU41 等现场完整示例，复制后按实际环境修改
 ├── suites/                        # 按顺序执行的 AISBench 测试例清单
 ├── search/                        # 自适应 SLO 搜索范围、阈值及预算
@@ -73,3 +74,5 @@ AISBench 参数目前放 `stacks/*.json` 的 `benchmark` 字段，详见 [AISBen
 正式 llm-bench 链路的 task / instance_role / replica / gpu_node / gpu_model / gpu_index 标签与统一 Dashboard 见 [任务观测说明](../docs/task-observability.md)。多副本完整模板为 [task-multi-replica.example.json](sites/task-multi-replica.example.json)。`common/grafana/dashboards/task-overview-{nvidia,hygon}.json` 为预生成快照，启动器按当前厂商只生成并挂载一份任务总览；旧 sglang.json、GPU 适配器 gpu.json 继续供历史独立渲染器参考。
 
 nerdctl 模板：`stacks/nerdctl-nvidia-single.json` 用于 Linux 真实单机服务，`stacks/nerdctl-offline-smoke.json` 用于无 GPU 的 amd64 离线链路验证。均显式指定 containerd namespace，见 [nerdctl 指南](../docs/nerdctl.md)。
+
+在线镜像交付由 [delivery/offline-images.json](delivery/offline-images.json) 选择要携带的 Exporter，默认 NVIDIA 与海光 HCU v3 两种，脚本为 `scripts/prepare_offline_images.py`。离线启动由现场 `gpu.vendor=nvidia/hygon` 单独选择；交付清单不决定正在运行的容器。其他 GPU 可先增加镜像映射/附加镜像，实际启动仍需完成运行适配；见 [统一 GPU 交付指南](../docs/online-cpu-to-offline-gpu.md)。
