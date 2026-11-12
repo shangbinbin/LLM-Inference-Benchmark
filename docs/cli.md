@@ -158,3 +158,7 @@ llm-bench bench slo --config configs/stacks/mac-slo-search.json \
 原有 benchmark_stack.py、run_aisbench_suite.py、slo_search.py 仍支持已有自动化。新的日常操作可统一使用 llm-bench。
 
 项目 HTTP 服务默认通过节点 IP 和高位端口访问，支持 ports、port_bind_address 和 publish_ports；详见 [端口配置](docker-stack.md#节点-ip-访问与可配置高位端口)。
+
+## nerdctl / containerd
+
+新增 `nerdctl-single`、`nerdctl-offline-smoke` profile；site.json 也可设置 `"runtime":["nerdctl","--namespace","benchmark"]`。显式 namespace 必须与镜像 load 一致，单次、顺序、SLO 搜索、状态、诊断和 down 共用运行时。完整步骤和现场 GPU 要求见 [nerdctl 部署指南](nerdctl.md)。

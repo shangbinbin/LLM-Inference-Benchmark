@@ -20,6 +20,8 @@ from urllib.parse import urlsplit
 
 from observability_labels import (task_name, log_sources, validate_labels, application_labels, log_labels, configure_gpu_labels)
 from task_dashboard import build_dashboard
+from container_runtime import (runtime_kind, validate_runtime, adapt_command, service_network,
+                               runtime_scope, missing_resource)
 from diagnostics import record_event
 from render_observability import config_dir, render, write_json, ROOT
 
@@ -76,7 +78,7 @@ def runtime_command(cfg, args):
             raise ValueError('Offline mode forbids image builds and pulls; import prepared images first')
         if args[0] in ('run', 'create'):
             args.insert(1, '--pull=never')
-    return cfg['runtime'] + args
+    return cfg['runtime'] + adapt_command(cfg, args)
 
 
 def metrics_settings(cfg):
@@ -223,8 +225,7 @@ def validate_config(cfg):
         raise ValueError('platform must explicitly be linux/amd64 or linux/arm64')
     if not cfg.get('simulation') and cfg['platform'] != 'linux/amd64':
         raise ValueError('Production GPU servers in this project require linux/amd64')
-    if not isinstance(cfg['runtime'], list) or not cfg['runtime']:
-        raise ValueError('runtime must be a command array, e.g. ["docker"]')
+    validate_runtime(cfg)
     if cfg['topology']['kind'] not in ('single', 'distributed', 'pd'):
         raise ValueError('topology.kind must be single/distributed/pd')
     if cfg.get('host_metrics') == 'host' and not cfg.get('node_exporter_target'):
@@ -374,7 +375,7 @@ def prepare(cfg):
     vendor = detect_vendor(cfg)
     root = Path(cfg['storage']['root'])
     source_hash = hashlib.sha256(Path(__file__).read_bytes() + (ROOT/'scripts/render_observability.py').read_bytes())
-    for module in ('observability_labels.py', 'task_dashboard.py'):
+    for module in ('observability_labels.py', 'task_dashboard.py', 'container_runtime.py'):
         source_hash.update((ROOT/'scripts'/module).read_bytes())
     # Suite files and local corpora do not affect the rendered monitoring stack.
     asset_dirs = [ROOT/'configs/common', ROOT/'configs/gpu']
@@ -507,6 +508,8 @@ class Stack:
     def inspect(self, name):
         result = self.call('inspect', name, capture=True, check=False)
         if result.returncode:
+            if runtime_kind(self.cfg) == 'nerdctl' and not missing_resource(result):
+                raise RuntimeError('Container inspection failed: ' + (result.stderr or result.stdout).strip())
             return None
         return json.loads(result.stdout)[0]
 
@@ -568,7 +571,8 @@ class Stack:
         if self.cfg['gpu']['deployment'] == 'local' and not self.cfg.get('simulation'):
             exporter_command = []
             if self.vendor == 'nvidia':
-                args = ['--runtime=nvidia', '-e', 'NVIDIA_VISIBLE_DEVICES=all',
+                gpu_args = ['--gpus', 'all'] if runtime_kind(self.cfg) == 'nerdctl' else ['--runtime=nvidia']
+                args = [*gpu_args, '-e', 'NVIDIA_VISIBLE_DEVICES=all',
                         '-e', 'NVIDIA_DRIVER_CAPABILITIES=compute,utility',
                         '--cap-add', 'SYS_ADMIN', '-e', 'DCGM_EXPORTER_KUBERNETES=false']
                 image = images['nvidia_exporter']; port = 9400; marker = 'DCGM_FI_DEV_GPU_UTIL'
@@ -641,6 +645,8 @@ class Stack:
         existing = self.call('network','inspect',self.network,capture=True,check=False)
         if existing.returncode == 0:
             raise ValueError('Network already exists; choose another project or clean up the owned stack')
+        if runtime_kind(self.cfg) == 'nerdctl' and not missing_resource(existing, 'network'):
+            raise RuntimeError('Network inspection failed: ' + (existing.stderr or existing.stdout).strip())
         self.write_metrics_token()
         self.call('network','create','--label',f'{LABEL}={self.project}',self.network)
         self.save('starting')
@@ -650,7 +656,7 @@ class Stack:
                 if self.inspect(name):
                     raise ValueError(f'Container already exists: {name}')
                 self.check_image(spec['image'])
-                network_args = ['--network','host'] if spec.get('host_network') else ['--network',self.network,'--network-alias',spec['name']]
+                network_args = service_network(self.cfg, self.network, spec['name'], spec.get('host_network', False))
                 # A failed docker run can still leave a created container (e.g. port conflict).
                 self.created.append(name); self.save('starting')
                 self.call('run','-d','--platform',self.cfg['platform'],'--name',name,'--label',f'{LABEL}={self.project}',
@@ -682,7 +688,16 @@ class Stack:
     def save(self, status):
         record_event(self.root, 'stack', status=status, component=self.created[-1] if self.created else None)
         write_json(self.statefile,{'project':self.project,'network':self.network,'containers':self.created,
+                                 'runtime_scope':runtime_scope(self.cfg),
                                  'config_dir':str(self.directory),'status':status,'updated_at':datetime.now(timezone.utc).isoformat()})
+
+    def check_state_runtime(self, state):
+        saved = state.get('runtime_scope')
+        if saved is None:  # Upgrade existing state without losing the original engine/namespace.
+            manifest = json.loads((Path(state['config_dir'])/'manifest.json').read_text())
+            saved = runtime_scope(manifest['stack'])
+        if saved != runtime_scope(self.cfg):
+            raise ValueError('Runtime/namespace differs from the running stack; use the original config to down before switching runtimes')
 
     def bench(self):
         b=self.cfg['benchmark']; name=self.project+'-aisbench'
@@ -728,6 +743,7 @@ class Stack:
         if (self.root/'suite.lock').exists():
             raise ValueError('Suite lock exists; wait for the suite to finish before down')
         state=json.loads(self.statefile.read_text())
+        self.check_state_runtime(state)
         for name in reversed(state['containers']):
             info=self.inspect(name)
             if info:
@@ -739,6 +755,8 @@ class Stack:
             if json.loads(r.stdout)[0].get('Labels',{}).get(LABEL)!=self.project:
                 raise ValueError('Refuse to remove unowned network')
             self.call('network','rm',state['network'])
+        elif runtime_kind(self.cfg) == 'nerdctl' and not missing_resource(r, 'network'):
+            raise RuntimeError('Network inspection failed; state retained: ' + (r.stderr or r.stdout).strip())
         self.statefile.unlink()
         self.metrics_token_file().unlink(missing_ok=True)
         print('Removed owned containers/network; persistent data retained')
@@ -760,8 +778,10 @@ def main():
         else:
             directory,vendor=prepare(cfg)
         stack=Stack(cfg,directory,vendor)
+        if args.action in ('down', 'status'):
+            stack.check_state_runtime(state)
         if args.action=='plan':
-            print(json.dumps({'gpu_vendor':vendor,'simulation':cfg.get('simulation',False),'config_dir':str(directory),'container_security_options':container_security_options(cfg),'services':stack.specs(),'final_client':'AISBench'},ensure_ascii=False,indent=2))
+            print(json.dumps({'runtime_scope':runtime_scope(cfg),'gpu_vendor':vendor,'simulation':cfg.get('simulation',False),'config_dir':str(directory),'container_security_options':container_security_options(cfg),'services':stack.specs(),'final_client':'AISBench'},ensure_ascii=False,indent=2))
         elif args.action=='build':stack.build()
         elif args.action=='check-images':
             stack.call('info',capture=True)

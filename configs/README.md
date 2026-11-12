@@ -59,3 +59,5 @@ configs/
 AISBench 参数目前放 `stacks/*.json` 的 `benchmark` 字段，详见 [AISBench 指南](../docs/aisbench.md)。新增容器部署请从 [Docker 指南](../docs/docker-stack.md)开始；上文旧环境清单的单组限制不适用于新入口的多角色 targets。
 
 正式 llm-bench 链路的 task / instance_role / replica / gpu_node / gpu_model / gpu_index 标签与统一 Dashboard 见 [任务观测说明](../docs/task-observability.md)。多副本完整模板为 [task-multi-replica.example.json](sites/task-multi-replica.example.json)。`common/grafana/dashboards/task-overview-{nvidia,hygon}.json` 为预生成快照，启动器按当前厂商只生成并挂载一份任务总览；旧 sglang.json、GPU 适配器 gpu.json 继续供历史独立渲染器参考。
+
+nerdctl 模板：`stacks/nerdctl-nvidia-single.json` 用于 Linux 真实单机服务，`stacks/nerdctl-offline-smoke.json` 用于无 GPU 的 amd64 离线链路验证。均显式指定 containerd namespace，见 [nerdctl 指南](../docs/nerdctl.md)。

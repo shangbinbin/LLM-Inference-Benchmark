@@ -12,6 +12,21 @@ class CommandLineTests(unittest.TestCase):
     def cli(self, cwd, *args):
         return subprocess.run([CLI, *args], cwd=cwd, text=True, capture_output=True)
 
+    def test_nerdctl_profiles_resolve_explicit_namespace_and_offline_mode(self):
+        for profile in ('nerdctl-single', 'nerdctl-offline-smoke'):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
+                result = self.cli(tmp, 'plan', '--profile', profile, '--data-dir', 'state', '--log-dir', 'logs',
+                                  '--tokenizer', ROOT/'configs/fixtures/mock-tokenizer',
+                                  '--endpoint', 'http://service:8000/', '--model', 'test-model',
+                                  '--host-address', 'gpu-node', '--gpu-vendor', 'nvidia')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                cfg = json.loads(result.stdout)['config']
+                self.assertEqual(cfg['runtime'], ['nerdctl', '--namespace', 'benchmark'])
+                self.assertEqual(cfg['platform'], 'linux/amd64')
+                self.assertTrue(cfg['offline'])
+                self.assertTrue(cfg['legacy_seccomp_unconfined'])
+                self.assertEqual(cfg['simulation'], profile == 'nerdctl-offline-smoke')
+
     def test_linux_flags_resolve_paths_and_complete_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)

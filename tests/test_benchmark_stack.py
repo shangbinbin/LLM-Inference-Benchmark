@@ -209,7 +209,8 @@ class StackTests(unittest.TestCase):
             instance = stack.Stack(cfg, directory, vendor)
             with patch.dict(os.environ, TEST_METRICS_TOKEN='test-secret'):
                 instance.write_metrics_token()
-            instance.statefile.write_text(json.dumps({'containers': [], 'network': instance.network}))
+            instance.created = []
+            instance.save('ready')
             result = subprocess.CompletedProcess([], 1, '', 'not found')
             with patch.object(instance, 'call', return_value=result):
                 instance.down()
@@ -460,7 +461,7 @@ class StackTests(unittest.TestCase):
             cfg['runtime']=['nerdctl','--namespace','benchmark']
             for action in ('run','create'):
                 cmd=stack.runtime_command(cfg,[action,'some-image'])
-                self.assertEqual(cmd,['nerdctl','--namespace','benchmark',action,'--pull=never','some-image'])
+                self.assertEqual(cmd,['nerdctl','--namespace','benchmark',action,'--log-driver=json-file','--pull=never','some-image'])
             for action in ('build','pull'):
                 with self.assertRaisesRegex(ValueError,'Offline mode forbids'):
                     stack.runtime_command(cfg,[action,'some-image'])

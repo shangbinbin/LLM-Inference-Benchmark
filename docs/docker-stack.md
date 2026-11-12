@@ -139,7 +139,8 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `schema_version` | 当前为 1 |
 | `project` | 独立容器/网络名称前缀；并行栈必须不同 |
 | `task` | 推理任务标签，指标/GPU/日志共用；省略时使用 project |
-| `runtime` | CLI 参数数组，默认 `["docker"]` |
+| `runtime` | CLI 参数数组，默认 `["docker"]`；nerdctl 需显式 --namespace NAME |
+| `runtime_kind` | 可选 docker/nerdctl；普通命令自动识别，自定义 nerdctl 包装器需明确指定 |
 | `offline` | 可选 JSON 布尔值，默认 false；true 时完整本地镜像预检查、禁构建/拉取，并关闭组件已知外联功能 |
 | `platform` | 生产固定 linux/amd64；Apple Silicon Mac 模拟 linux/arm64，启动前校验缓存镜像架构 |
 | `simulation` | 仅测试时 true；模拟数值不能作为真实性能数据 |
@@ -209,7 +210,7 @@ Prometheus/Grafana/Loki 默认以发起 CLI 的 UID/GID 运行以写入其目录
 
 镜像使用标准 Dockerfile/OCI 运行方式；容器只读取配置文件、挂载数据目录并通过网络通信，没有 Docker-in-Docker 或 Docker socket 依赖。配置与镜像保持分离，可复用到 containerd 下的 Pod。
 
-启动器预留 `runtime: ["nerdctl", "--namespace", "benchmark"]`，使用 Docker 兼容的 run/build/inspect/network 子命令。需配置 containerd、CNI、BuildKit 和设备运行时；本次 Mac 实测是 Docker Desktop，尚未实测裸 containerd/nerdctl。不能把这一 CLI 参数入口等同于 Kubernetes 调度支持。[nerdctl 命令说明](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
+启动器已实现 `runtime: ["nerdctl", "--namespace", "benchmark"]` 适配，包含 hostname 网络解析、明确的 inspect 模式/平台、NVIDIA --gpus 参数及 namespace 清理保护。镜像导入、Linux 冒烟模板与验证边界见 [nerdctl 部署指南](nerdctl.md)。只运行现成镜像不需要 BuildKit；在线构建才需要。此入口管理独立容器，不等同于 Kubernetes 调度支持。[nerdctl 命令说明](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
 
 迁移到 Kubernetes：配置目录改为 ConfigMap，数据目录改为 PVC，日志目录为受控 hostPath 或共享 PVC，镜像按 Linux 节点架构构建并推送 registry。GPU Exporter 使用 DaemonSet，服务组件使用 Deployment/StatefulSet，AISBench 使用 Job；为其设置等待依赖就绪的 initContainer。GPU 设备注入使用目标集群的 NVIDIA/Hygon device plugin、RuntimeClass 或已配置的 CDI，不挂载 Docker socket。Kubelet 使用 CRI 与 containerd 交互，不运行宿主机 docker CLI。[Kubernetes runtime 文档](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)、[NVIDIA containerd 配置](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)。
 

@@ -189,11 +189,12 @@ def collect_targets(bundle, obj):
 
 def collect_containers(bundle, cfg, lines):
     from benchmark_stack import LABEL
+    from container_runtime import adapt_command
     runtime = cfg.get('runtime', ['docker'])
     project = cfg['project']
 
     def query(*args):
-        result = subprocess.run([*runtime, *args], capture_output=True, timeout=10, check=True)
+        result = subprocess.run([*runtime, *adapt_command(cfg, args)], capture_output=True, timeout=10, check=True)
         return result.stdout.decode(errors='replace')
 
     try:
@@ -320,7 +321,9 @@ def collect(cfg, vendor=None, *, output=None, lines=500, extra_logs=(), selected
                 if path.exists():
                     bundle.file(root, path, 'cli/' + events, lines)
             collect_containers(bundle, cfg, lines)
-            for name in cfg.get('log_files', ['server.log']):
+            sources = cfg.get('log_sources')
+            files = [s.get('path') for s in sources if isinstance(s, dict)] if isinstance(sources, list) else cfg.get('log_files', ['server.log'])
+            for name in files:
                 if not isinstance(name, str) or Path(name).is_absolute() or '..' in Path(name).parts:
                     bundle.notes.append('invalid inference log path skipped')
                     continue

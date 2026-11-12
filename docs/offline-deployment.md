@@ -259,7 +259,7 @@ Docker 镜像本地存储与独立 containerd namespace 不互通，不能认为
 nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
 ```
 
-对应 stack runtime 为 `["nerdctl", "--namespace", "benchmark"]`。这是预留适配入口，当前仍未实测裸 containerd。[nerdctl 官方命令文档](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
+对应 stack runtime 为 `["nerdctl", "--namespace", "benchmark"]`，现已实现运行时适配。使用 [nerdctl 部署指南](nerdctl.md)中的单机/离线冒烟模板，验证方式及真实硬件覆盖边界见该文档。[nerdctl 官方命令文档](https://github.com/containerd/nerdctl/blob/main/docs/command-reference.md)。
 
 Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/device plugin 镜像与安装清单、运行时/CDI/RuntimeClass 配置、ConfigMap/PVC/Job 等资源、证书与存储。镜像通常要导入 CRI 使用的 k8s.io namespace，具体由目标发行版确认；设置与离线策略匹配的 imagePullPolicy（IfNotPresent 或已逐节点导入时的 Never），避免 Always 在无可达 registry 时解析镜像失败。[Kubernetes 镜像拉取策略](https://kubernetes.io/docs/concepts/containers/images/)。现有 CLI 不会自动生成或部署这些 Kubernetes 资源。
 
@@ -289,6 +289,6 @@ Kubernetes 还需逐节点可用的离线镜像或内网 registry、CNI/CSI/devi
 
 两个项目 Dockerfile 的 Debian 主仓库及安全更新仓库均使用清华 TUNA HTTPS 镜像：`https://mirrors.tuna.tsinghua.edu.cn/debian`、`https://mirrors.tuna.tsinghua.edu.cn/debian-security`。保留 bookworm、bookworm-updates、bookworm-security 及原有签名验证设置，兼容传统 sources.list 和 deb822 .sources 格式。构建机需能访问该域名并信任 HTTPS 证书；apt 索引下载失败时立即终止构建。Python 通用依赖统一使用清华 PyPI 索引 `https://pypi.tuna.tsinghua.edu.cn/simple`，包括 pip/setuptools/wheel、AISBench 及其构建依赖。PyTorch 固定 `torch==2.6.0+cpu`，通过 `--find-links https://download.pytorch.org/whl/cpu/torch/` 获取官方 CPU wheel；其余依赖仍由清华 PyPI 解析。构建时需同时允许清华 PyPI 及 PyTorch 官方下载域名。
 
-本地 NVIDIA DCGM Exporter 显式使用 `--runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility`，保留 `SYS_ADMIN` 能力；宿主机需注册名称为 `nvidia` 的容器运行时，不要求将其设为默认值。启动器不使用 Docker 的 `--gpus all` 设备请求机制。仅修改启动参数，无需因此重建镜像；已有栈需先用原配置正常 down，再以当前源码 up。观测/压测客户端无需 GPU，external Exporter 模式和无 GPU 模拟不使用这些参数。独立 containerd/nerdctl 的 NVIDIA runtime 配置方式需另行适配，不能直接套用 Docker runtime 名称。
+Docker 模式的本地 NVIDIA DCGM Exporter 显式使用 `--runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility`，保留 `SYS_ADMIN` 能力；宿主机需注册名称为 `nvidia` 的容器运行时，不要求将其设为默认值。启动器不使用 Docker 的 `--gpus all` 设备请求机制。仅修改启动参数，无需因此重建镜像；已有栈需先用原配置正常 down，再以当前源码 up。观测/压测客户端无需 GPU，external Exporter 模式和无 GPU 模拟不使用这些参数。nerdctl 已单独适配为 `--gpus all`，需要驱动及可执行的 nvidia-container-cli，不使用 Docker 的 runtime 别名；详见 [nerdctl GPU 说明](nerdctl.md#对接真实推理服务)。
 
 旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。

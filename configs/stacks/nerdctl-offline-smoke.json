@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "project": "llm-nerdctl-smoke",
+  "simulation": true,
+  "host_metrics": "container",
+  "runtime": [
+    "nerdctl",
+    "--namespace",
+    "benchmark"
+  ],
+  "storage": {
+    "root": "generated/nerdctl-smoke",
+    "logs": "generated/nerdctl-smoke-logs",
+    "tokenizer": "configs/fixtures/mock-tokenizer"
+  },
+  "images": {
+    "toolbox": "llm-benchmark-toolbox:local-amd64",
+    "aisbench": "llm-benchmark-aisbench:e330dc1-amd64",
+    "prometheus": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0",
+    "grafana": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2",
+    "loki": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0",
+    "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
+    "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
+    "nvidia_exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4",
+    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
+  },
+  "gpu": {
+    "vendor": "nvidia",
+    "deployment": "local",
+    "nodes": [
+      {
+        "name": "smoke-node",
+        "gpus": 1
+      }
+    ],
+    "nvidia_metrics_profile": "basic"
+  },
+  "inference": {
+    "base_url": "http://fixture:18000/",
+    "model": "mock-model",
+    "api": "completions",
+    "engine": "auto"
+  },
+  "topology": {
+    "kind": "single",
+    "tp": 1,
+    "pp": 1
+  },
+  "ports": {
+    "grafana": 33004,
+    "prometheus": 39094,
+    "loki": 33104,
+    "alloy": 32349,
+    "node-exporter": 39104,
+    "gpu-exporter": 39404,
+    "fixture": 38084
+  },
+  "startup_timeout": 120,
+  "benchmark": {
+    "dataset_type": "string",
+    "input_length": 32,
+    "output_length": 16,
+    "request_count": 8,
+    "concurrency": 2,
+    "request_rate": 0,
+    "warmups": 1,
+    "mode": "perf",
+    "generation_kwargs": {
+      "temperature": 0,
+      "ignore_eos": true
+    }
+  },
+  "platform": "linux/amd64",
+  "port_bind_address": "0.0.0.0",
+  "task": "nerdctl-smoke",
+  "offline": true,
+  "legacy_seccomp_unconfined": true,
+  "log_sources": [
+    {
+      "path": "server.log",
+      "role": "master",
+      "replica": "replica-0"
+    }
+  ]
+}

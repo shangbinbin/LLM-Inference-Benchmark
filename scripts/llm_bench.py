@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from diagnostics import collect, run_diagnosed
 from benchmark_stack import ROOT, Stack, prepare, validate_config, published_ports
+from container_runtime import runtime_scope
 from run_aisbench_suite import prepare_suite, run_suite
 from slo_search import run_search
 
@@ -23,6 +24,8 @@ PROFILES = {
     'mac-simulation': 'mac-simulation',
     'mac-offline': 'mac-offline',
     'mac-slo-search': 'mac-slo-search',
+    'nerdctl-single': 'nerdctl-nvidia-single',
+    'nerdctl-offline-smoke': 'nerdctl-offline-smoke',
 }
 
 
@@ -129,7 +132,7 @@ def configured_stack(args):
         if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ValueError('--endpoint requires an HTTP(S) service root URL')
         cfg['inference']['base_url'] = args.endpoint
-        for entry in cfg['topology']['metrics_endpoints']:
+        for entry in cfg['topology'].get('metrics_endpoints', []):
             if entry['target'].startswith('REPLACE_INFERENCE_HOST:'):
                 entry['target'] = url.netloc if url.port else f'{url.netloc}:{443 if url.scheme == "https" else 80}'
     if args.host_address:
@@ -265,7 +268,7 @@ def execute(args):
         directory, vendor = prepare(cfg)
         stack = Stack(cfg, directory, vendor)
         if args.command == 'plan':
-            print(json.dumps({'config': cfg, 'gpu_vendor': vendor, 'config_dir': str(directory),
+            print(json.dumps({'config': cfg, 'runtime_scope': runtime_scope(cfg), 'gpu_vendor': vendor, 'config_dir': str(directory),
                               'services': [s['name'] for s in stack.specs()],
                               'cases': [{'name': case.name, 'dataset': case.dataset_info(),
                                          'benchmark': case.cfg['benchmark']} for case in suite.cases] if suite else [],

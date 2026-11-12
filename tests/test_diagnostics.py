@@ -38,7 +38,8 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertIn('label=' + LABEL + '=site', args)
             out = self.owner + '\n' + self.foreign
         elif args[0] == 'inspect':
-            label = 'site' if args[1] == self.owner else 'other'
+            self.assertIn('--mode=dockercompat', args)
+            label = 'site' if args[-1] == self.owner else 'other'
             out = json.dumps([{'Name': '/site-alloy', 'Config': {'Labels': {LABEL: label},
                        'Env': ['OPENAI_API_KEY=secret-test-value'], 'Image': 'alloy:local'},
                        'State': {'Status': 'exited', 'ExitCode': 137, 'OOMKilled': True}}])
@@ -97,6 +98,19 @@ class DiagnosticsTests(unittest.TestCase):
                 collect(self.cfg, output=path)
             with self.assertRaises(ValueError):
                 collect(self.cfg, selected=Path('../sensitive'))
+
+    def test_structured_log_sources_take_precedence(self):
+        self.cfg['log_sources'] = [{'path': 'decode/server.log', 'role': 'decode', 'replica': 'decode-0'}]
+        self.cfg['log_files'] = ['old.log']
+        logs = self.root/'logs'
+        (logs/'decode').mkdir()
+        (logs/'decode/server.log').write_text('decode log')
+        (logs/'old.log').write_text('old log')
+        with patch('diagnostics.subprocess.run', side_effect=FileNotFoundError('engine unavailable')):
+            path = collect(self.cfg)
+        with tarfile.open(path) as t:
+            self.assertIn('inference/decode/server.log', t.getnames())
+            self.assertNotIn('inference/old.log', t.getnames())
 
     def test_archive_failure_preserves_original_failure(self):
         stack = Mock(root=self.root, cfg=self.cfg)
