@@ -21,7 +21,7 @@ class StackTests(unittest.TestCase):
         return cfg
 
     def test_vendor_selection_and_topology(self):
-        for vendor,metric,job in [('nvidia','DCGM_FI_DEV','nvidia-dcgm-exporter'),('hygon','hcu_','hygon-hcu-exporter')]:
+        for vendor,metric,job in [('nvidia','DCGM_FI_DEV','nvidia-dcgm-exporter'),('hygon','dcu_','hygon-dcu-exporter')]:
             with self.subTest(vendor=vendor), tempfile.TemporaryDirectory() as tmp:
                 cfg=self.config(tmp);cfg['gpu']['vendor']=vendor
                 cfg['topology']['kind']='pd'

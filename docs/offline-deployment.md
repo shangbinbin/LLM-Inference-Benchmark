@@ -24,7 +24,7 @@ Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用
 | 主机运行工具 | Python 3.9+；Docker Engine/CLI 或 nerdctl/containerd/OCI 后端/CNI 及依赖安装包；可选 Git、tar、校验工具 | 按 runtime 选择，nerdctl 明确 namespace；启动不要求 BuildKit，Compose 不是必需项；用源码包时不要求 Git |
 | 项目镜像 | AISBench 与 toolbox 的 **linux/amd64** 完整镜像 | 生产服务器都是 x86，不要带 Mac 的 arm64 镜像冒充 amd64 |
 | 观测镜像 | Prometheus、Grafana、Loki、Alloy、node_exporter | logrotate/就绪探测已包含在 toolbox 中 |
-| 设备采集 | 默认备齐 NVIDIA DCGM 和海光 HCU Exporter 镜像，可配置单厂商或追加镜像 | 离线按 gpu.vendor 只启动选中厂商；external 模式在各设备节点另行部署 |
+| 设备采集 | 默认备齐 NVIDIA DCGM 和海光 DCU Exporter 镜像，可配置单厂商或追加镜像 | 离线按 gpu.vendor 只启动选中厂商；external 模式在各设备节点另行部署 |
 | 设备驱动/运行时 | 目标 OS/内核兼容的驱动、设备容器运行时及完整依赖 | 容器镜像不包含可替代宿主机驱动的安装环境 |
 | tokenizer | 被测模型对应的完整本地 tokenizer 文件 | string 和 tokenid 的性能汇总都需要，不能使用模拟词表替代真实模型词表 |
 | 测试配置 | site.json、suite JSON、SLO search JSON | 设置 offline=true，包含内网地址、模型 ID、GPU 厂商、挂载路径、负载与停止条件 |
@@ -48,13 +48,13 @@ Docker/驱动安装包应在与目标发行版、版本、CPU 架构匹配的联
 | Alloy | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3` |
 | node_exporter | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1` |
 | NVIDIA，按需 | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4` |
-| 海光，按需 | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
+| 海光，按需 | `harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1` |
 
 Python 基础镜像现按现场要求使用 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11-slim-bookworm`，此前在本在线环境测试返回 Forbidden，本次仅修改名称，不重新拉取或构建。
 
 DCGM 按现场指定改为 `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4`。本次仅更新配置，不执行拉取或运行验证。下方在线准备脚本将其与其他公共镜像一起拉取、检查 amd64 架构并导出；如使用另行制作的镜像归档，导出和离线配置仍必须使用相同标签；本节新工具会拉取清单中选中的公共/设备镜像。升级后应在真实 GPU 节点确认驱动兼容性、Exporter 启动及 Prometheus 指标。
 
-**默认交付包共 9 个镜像：7 个通用镜像 + NVIDIA DCGM + 海光 HCU Exporter。** 配置 [configs/delivery/offline-images.json](../configs/delivery/offline-images.json) 默认 selected_gpu_exporters=[nvidia,hygon]；镜像名仍从现场 site.images.nvidia_exporter/hygon_exporter 读取。离线 NVIDIA 单机 local 实际需要前七个 + DCGM（8 个），海光则为前七个 + HCU（8 个），不会同时启动两类采集。海光 DCU 的配置值为 hygon，不是 dcu；默认 HCU v3 不与旧 dcu-exporter 2.4.x 自动兼容。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
+**默认交付包共 9 个镜像：7 个通用镜像 + NVIDIA DCGM + 海光 DCU Exporter。** 配置 [configs/delivery/offline-images.json](../configs/delivery/offline-images.json) 默认 selected_gpu_exporters=[nvidia,hygon]；镜像名仍从现场 site.images.nvidia_exporter/hygon_exporter 读取。离线 NVIDIA 单机 local 实际需要前七个 + DCGM（8 个），海光则为前七个 + DCU（8 个），不会同时启动两类采集。海光 DCU 的配置值为 hygon，不是 dcu；正式默认镜像/指标已同步为 dcu-exporter:v2.4.1 / dcu_*，不使用 HCU v3 的 hcu_*。官方下载/镜像站如需账号，应在联网侧完成授权和拉取，避免进场后才发现无权下载。[海光官方入口](hygon-official-monitoring.md)。
 
 AISBench 镜像包含 Python 3.11、CPU Torch、AISBench 与其 Python 依赖；toolbox 包含 Python、logrotate 与探测程序。使用这些**已构建镜像运行**时，离线主机不需要另装 pip 包，也不需要 python 基础镜像。只有离线重建时才需要基础镜像和全部构建依赖。
 
@@ -134,7 +134,7 @@ python3 scripts/prepare_offline_images.py \
 
 **其他 GPU 的预留入口：** 复制该交付 JSON，在 gpu_exporters 增加 `厂商 → site.images 字段` 映射，在 site.images 中填对应镜像并选入 selected_gpu_exporters；使用 `--config 自定义交付JSON --site 现场JSON`。additional_images 可直接追加其他完整镜像引用。工具去重后检查/导出，但不会自动添加设备运行适配：当前启动器只接受 nvidia/hygon，新厂商仍需补齐 ADAPTERS、校验/识别、Exporter 参数、GPU 采集与标签/Dashboard，见 [扩展说明](online-cpu-to-offline-gpu.md#51-其他-gpu-的扩展入口)。
 
-site.offline=true 限制的是最终运行，不阻止这个明确的在线交付工具拉取。默认 HCU v3 镜像来自官方 YAML，实际 registry 权限、镜像架构与硬件兼容性仍需验证；旧 dcu-exporter 不能只改标签就视为兼容。docker image save 导出层和标签，不要用 docker export 代替；CPU 镜像无需因 NVIDIA/DCU 切换而重建。归档不含 tokenizer、模型权重、日志和其他 bind mount 内容，仍需单独交付。
+site.offline=true 限制的是最终运行，不阻止这个明确的在线交付工具拉取。默认 DCU v2.4.1 镜像来自保存的光合官方镜像目录，指标来自官方 DCU 面板；实际 registry 权限、镜像架构、监听端口与硬件兼容性仍需验证。docker image save 导出层和标签，不要用 docker export 代替；CPU 镜像无需因 NVIDIA/DCU 切换而重建。归档不含 tokenizer、模型权重、日志和其他 bind mount 内容，仍需单独交付。
 
 ### 3.4 准备真实 tokenizer 并做无网络加载检查
 
@@ -163,7 +163,7 @@ docker run --rm --platform linux/amd64 --network none \
 
 ### 3.5 系统、驱动与完整性校验
 
-将匹配目标系统的运行时安装包放 runtime/，设备驱动/设备运行时包及安装说明放 drivers/，现场配置放 site/。同一套 rpm/deb 不能默认适用于其他发行版、版本或内核。NVIDIA 需准备 NVIDIA Container Toolkit 及驱动；海光需准备对应驱动/运行库、hy-smi 与 HCU Exporter 所需宿主机路径。
+将匹配目标系统的运行时安装包放 runtime/，设备驱动/设备运行时包及安装说明放 drivers/，现场配置放 site/。同一套 rpm/deb 不能默认适用于其他发行版、版本或内核。NVIDIA 需准备 NVIDIA Container Toolkit 及驱动；海光需准备对应驱动/运行库、hy-smi 与 DCU Exporter 实际所需宿主机路径。
 
 **先生成要交付的 site.json，再修改现场值。** 以下命令从 GPU41 完整示例生成文件，不覆盖已存在文件，选择目标运行时执行一条：
 
@@ -514,7 +514,7 @@ export INFERENCE_API_KEY
 | 现场选择（simulation=false） | 实际使用的镜像 | 启动/就绪与面板 |
 | --- | --- | --- |
 | nvidia + local | images.nvidia_exporter | 仅启动 DCGM，内部 9400，检查 DCGM_FI_DEV_GPU_UTIL；NVIDIA 总览 |
-| hygon + local | images.hygon_exporter | 仅启动 HCU v3，内部 16080，检查 hcu_memorycap_bytes；海光总览 |
+| hygon + local | images.hygon_exporter | 仅启动 DCU v2.4.1，内部端口项目预设 16080（可配置），检查 dcu_memorycap_bytes；海光总览 |
 | nvidia/hygon + external | 设备节点已有的对应 Exporter | 不启动本机 GPU 采集容器，按 nodes[].target 抓取，按厂商渲染面板 |
 
 本机两类 Exporter 的宿主发布端口都由 ports.gpu-exporter 控制（默认 39400），映射到各自内部端口。NVIDIA 或海光的 images check 只要求所选模式实际用到的镜像，默认本机单卡场景均为 8 个，不会因为包里有 9 个而启动两种。simulation=true 只使用 fixture 模拟指标，不启动真实设备采集。
@@ -533,7 +533,7 @@ export INFERENCE_API_KEY
 
 这是字段片段，不可替换整个 site.json。切换已有栈时必须**先 down 原栈，再改 vendor/runtime/节点，最后 plan、images check、up**；bench/status/down 仍用原 manifest，不会自动热切换。Docker/nerdctl 镜像存储独立，换运行时时仍需向目标 namespace 导入归档。新设备的驱动、挂载与指标契约也必须匹配。
 
-NVIDIA 本机 Exporter：Docker 需已注册 nvidia runtime；nerdctl 使用 --gpus all，需可用的 NVIDIA Container Toolkit/nvidia-container-cli，不把 Docker runtime 别名直接当 containerd shim。真实设备/驱动需在现场确认。海光改 gpu.vendor=hygon 并核对对应设备和运行库；如果已有 dcu-exporter，先检查它真实暴露的指标，不假定旧 dcu-exporter 2.4.1 符合 HCU v3 指标契约。
+NVIDIA 本机 Exporter：Docker 需已注册 nvidia runtime；nerdctl 使用 --gpus all，需可用的 NVIDIA Container Toolkit/nvidia-container-cli，不把 Docker runtime 别名直接当 containerd shim。真实设备/驱动需在现场确认。海光改 gpu.vendor=hygon 并核对对应设备和运行库；默认现在就是 dcu-exporter:v2.4.1，检查 dcu_memorycap_bytes，并按 name/minor_number 生成设备标签；已有 Exporter 用 external + 实际 target。端口不一致时改 gpu.hygon_exporter_port；迁移与官方来源见 [DCU 说明](dcu-exporter-v2.4.1.md)。
 
 使用已有设备 Exporter 时，例如将 GPU 部分改为以下片段，`target` 换成真实可达地址：
 
@@ -742,7 +742,7 @@ JSONL/ShareGPT 等文件型用例还需在 case 的 dataset 指定 type/path 并
 | Grafana | 渲染时合并 offline.ini，关闭统计、主程序/插件更新、预安装、在线插件管理、签名公钥下载、新闻源和反馈链接 |
 | Alloy | 正式启动参数自动追加 --disable-reporting |
 
-配置采用 JSON 布尔值 `true`，不要写成字符串 `"true"`。选择 offline 不影响生产固定 linux/amd64，也不改变厂商指标选择。simulation 不需要真实 DCGM/HCU 镜像；external 的逐节点 Exporter 由节点部署方负责准备。
+配置采用 JSON 布尔值 `true`，不要写成字符串 `"true"`。选择 offline 不影响生产固定 linux/amd64，也不改变厂商指标选择。simulation 不需要真实 DCGM/DCU 镜像；external 的逐节点 Exporter 由节点部署方负责准备。
 
 缺失清单示例：
 

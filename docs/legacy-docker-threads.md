@@ -15,7 +15,7 @@
 开启后，统一在本工程启动器发出的所有 `run` / `create` 命令中添加该参数，覆盖：
 
 - fixture 模拟推理服务和单次、顺序、SLO 搜索的 AISBench 客户端。
-- Alloy、Prometheus、Grafana、Loki、node_exporter、DCGM/HCU Exporter、logrotate 等常驻服务。
+- Alloy、Prometheus、Grafana、Loki、node_exporter、DCGM/DCU Exporter、logrotate 等常驻服务。
 - toolbox 就绪探测和 Prometheus targets 检查等临时容器。
 
 只影响使用当前 stack 配置创建的项目容器，不改变 Docker daemon 配置、宿主机已有推理服务或其他工程的容器；不额外添加 privileged。`exec`、`start`、`restart` 不接受新的安全参数，已有容器须删除后重新创建才生效。offline 模式仍禁止拉取和构建。`plan` 输出中的 `container_security_options` 显示统一追加的参数。

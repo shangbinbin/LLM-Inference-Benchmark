@@ -23,6 +23,8 @@ configs/
 │   │   ├── model-agnostic/         # 不限定 NVIDIA 卡型号
 │   │   └── h200/profile.json       # 型号到适配器的选择
 │   └── hygon/
+│       ├── dcu-exporter-v2.4.1/    # 当前 llm-bench 默认 DCU 指标契约与面板
+│       ├── model-agnostic-dcu-v2.4.1/ # 不限定型号，name/minor_number 规范化
 │       ├── hcu-exporter-v3/        # 基于最新官方文档的参考适配器
 │       ├── model-agnostic-hcu-v3/  # 暂不限定型号
 │       ├── dcu-exporter-template/  # 待确认的采集与指标契约、接入状态面板
@@ -75,4 +77,4 @@ AISBench 参数目前放 `stacks/*.json` 的 `benchmark` 字段，详见 [AISBen
 
 nerdctl 模板：`stacks/nerdctl-nvidia-single.json` 用于 Linux 真实单机服务，`stacks/nerdctl-offline-smoke.json` 用于无 GPU 的 amd64 离线链路验证。均显式指定 containerd namespace，见 [nerdctl 指南](../docs/nerdctl.md)。
 
-在线镜像交付由 [delivery/offline-images.json](delivery/offline-images.json) 选择要携带的 Exporter，默认 NVIDIA 与海光 HCU v3 两种，脚本为 `scripts/prepare_offline_images.py`。离线启动由现场 `gpu.vendor=nvidia/hygon` 单独选择；交付清单不决定正在运行的容器。其他 GPU 可先增加镜像映射/附加镜像，实际启动仍需完成运行适配；见 [统一 GPU 交付指南](../docs/online-cpu-to-offline-gpu.md)。
+在线镜像交付由 [delivery/offline-images.json](delivery/offline-images.json) 选择要携带的 Exporter，默认 NVIDIA 与海光 DCU v2.4.1 两种，脚本为 `scripts/prepare_offline_images.py`。离线启动由现场 `gpu.vendor=nvidia/hygon` 单独选择；交付清单不决定正在运行的容器。其他 GPU 可先增加镜像映射/附加镜像，实际启动仍需完成运行适配；见 [统一 GPU 交付指南](../docs/online-cpu-to-offline-gpu.md)。

@@ -12,6 +12,7 @@ import uuid
 
 from benchmark_stack import load_config, Stack, LABEL
 from observability_labels import task_name
+from gpu_metrics import DEVICE_METRICS
 
 
 def get(url, auth=False):
@@ -75,11 +76,11 @@ def main():
     targets = get(prom+'/api/v1/targets')['data']['activeTargets']
     assert len(targets) >= 3 and all(t['health']=='up' for t in targets)
     checks['targets_up'] = [t['scrapeUrl'] for t in targets]
-    metric = 'DCGM_FI_DEV_GPU_UTIL' if manifest['vendor']=='nvidia' else 'hcu_memorycap_bytes'
+    metric = DEVICE_METRICS[manifest['vendor']]
     checks['gpu_series'] = eventually(lambda: query(metric+'{task='+json.dumps(task_name(cfg))+'}'))
     for series in checks['gpu_series']:
         assert all(series['metric'].get(label) for label in ('task', 'gpu_node', 'gpu_model', 'gpu_index'))
-    assert not query('hcu_memorycap_bytes' if manifest['vendor']=='nvidia' else 'DCGM_FI_DEV_GPU_UTIL')
+    assert not query(DEVICE_METRICS['hygon' if manifest['vendor']=='nvidia' else 'nvidia'])
     checks['other_vendor_absent'] = True
     checks['node_series'] = eventually(lambda: query('node_cpu_seconds_total'))[0]['metric']
     count = eventually(lambda: query('benchmark_mock_requests_total'))

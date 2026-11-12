@@ -1,5 +1,7 @@
 # 海光 HCU/DCU + Prometheus + Grafana 官方资料与接入
 
+**当前正式链路默认：光合社区 dcu-exporter:v2.4.1，dcu_* 指标、name/minor_number 标签。** 升级、端口核对、镜像导入与 Dashboard 说明见 [DCU v2.4.1](dcu-exporter-v2.4.1.md)。下方 HCU v3 文档/适配器保留作独立版本参考，不再代表 llm-bench 的默认选择。
+
 截至 2026-11-06，本项目采用官方资源中心的 **HCU-Exporter v3.0.0** 配置及 **2026-10-27 更新的 HCU-Exporter 在线文档**作为最新参考，暂不限定卡型号。此选择不是硬件兼容性或实机验证结论。
 
 官方入口存在版本不同步：镜像栏目最高仍列 `dcu-exporter:v2.4.2`，下载中心已有 `hcu-exporter-v3.0.0.tar`；Grafana JSON 仍为旧 `dcu_*` 指标。详情及原件见[核对记录](../references/hygon-official/2026-11-06/README.md)。

@@ -1,0 +1,64 @@
+{
+  "status": "official-dashboard-contract-not-hardware-verified",
+  "exporter_version": "v2.4.1",
+  "image": "harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1",
+  "source_catalog": "references/hygon-official/2026-11-06/sources.json",
+  "source_dashboard": "references/hygon-official/2026-11-06/upstream/grafana/dcu-exporter-dashboard.json",
+  "model_label": "name",
+  "index_label": "minor_number",
+  "device_id_label": "device_id",
+  "readiness_metric": "dcu_memorycap_bytes",
+  "metrics": {
+    "dcu_utilizationrate": {
+      "unit": "percent",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_usedmemory_bytes": {
+      "unit": "bytes",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_memorycap_bytes": {
+      "unit": "bytes",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_power_usage": {
+      "unit": "watt",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_temp": {
+      "unit": "celsius",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_pciebw_mb": {
+      "unit": "MiBs",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_sclk": {
+      "unit": "MHz",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_ce_count": {
+      "unit": "raw_count",
+      "scale": 1,
+      "hardware_verified": false
+    },
+    "dcu_ue_count": {
+      "unit": "raw_count",
+      "scale": 1,
+      "hardware_verified": false
+    }
+  },
+  "notes": [
+    "Metric names and units follow the archived official DCU dashboard, not a blind hcu_ prefix replacement.",
+    "vDCU/pod copies must not be summed into physical device totals.",
+    "16080 is the configurable project port default, not a verified v2.4.1 image default.",
+    "Registry pull, device initialization, listen port and per-version metric availability require target verification."
+  ]
+}

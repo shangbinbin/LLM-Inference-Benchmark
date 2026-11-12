@@ -1,0 +1,7 @@
+{
+  "vendor": "hygon",
+  "model": "unspecified",
+  "adapter": "gpu/hygon/dcu-exporter-v2.4.1",
+  "status": "reference",
+  "notes": "Default llm-bench Hygon profile, dcu-exporter v2.4.1; native name/minor_number labels; hardware validation required."
+}

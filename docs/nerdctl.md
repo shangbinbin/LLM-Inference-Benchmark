@@ -94,7 +94,7 @@ NVIDIA 本机 Exporter 的参数按引擎区分：
 
 两者都保留 `SYS_ADMIN`、compute/utility 和默认 basic collectors。普通观测/压测容器不申请 GPU，external Exporter 和模拟模式不注入 GPU。不要把 Docker 的 runtime 别名 `nvidia` 直接当作 containerd shim 名称；Kubernetes 中已配置 NVIDIA RuntimeClass 也不等于 nerdctl 的 `--gpus` 已可用。参考 [nerdctl GPU 文档](https://github.com/containerd/nerdctl/blob/v2.1.3/docs/gpu.md)。
 
-海光配置 `gpu.vendor=hygon`，保留原有 HCU Exporter 设备、运行库和挂载要求；不添加 NVIDIA 参数。真实 NVIDIA/海光硬件仍需在现场验证。
+海光配置 `gpu.vendor=hygon`，保留原有 DCU Exporter 设备、运行库和挂载要求；不添加 NVIDIA 参数。真实 NVIDIA/海光硬件仍需在现场验证。
 
 ## 适配行为与常见排障
 

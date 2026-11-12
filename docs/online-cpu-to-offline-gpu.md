@@ -2,15 +2,15 @@
 
 适用场景：在线机器为 **x86_64 Linux CPU 构建机，无需 GPU**；离线目标为 **x86_64 Linux 的 NVIDIA GPU 或海光 DCU 节点**。在线统一构建 CPU 版 AISBench/toolbox，默认下载并交付两种设备 Exporter；离线再选择厂商、运行时和现场服务。
 
-**在线交付选择与离线启动选择是两层配置：** `configs/delivery/offline-images.json` 默认准备 NVIDIA DCGM 和海光 HCU Exporter 的镜像；`site.json` 的 `gpu.vendor` 决定离线启动哪一种采集容器、抓取规则与 Dashboard。海光 DCU 使用配置值 **hygon**，不要填 dcu。备齐两个镜像不会同时启动两个 Exporter。
+**在线交付选择与离线启动选择是两层配置：** `configs/delivery/offline-images.json` 默认准备 NVIDIA DCGM 和海光 DCU Exporter 的镜像；`site.json` 的 `gpu.vendor` 决定离线启动哪一种采集容器、抓取规则与 Dashboard。海光 DCU 使用配置值 **hygon**，不要填 dcu。备齐两个镜像不会同时启动两个 Exporter。
 
 | 离线选择 | 镜像字段 | 默认设备采集 | Dashboard |
 | --- | --- | --- | --- |
 | `gpu.vendor=nvidia` | `images.nvidia_exporter` | NVIDIA DCGM，本机模式只启动这一种 | NVIDIA 任务总览 |
-| `gpu.vendor=hygon` | `images.hygon_exporter` | 海光 HCU Exporter v3，本机模式只启动这一种 | 海光任务总览 |
+| `gpu.vendor=hygon` | `images.hygon_exporter` | 海光 DCU Exporter v2.4.1，本机模式只启动这一种 | 海光任务总览 |
 | `gpu.deployment=external` | 由设备节点另外部署 | 本项目不启动本机 GPU Exporter，抓取 nodes[].target | 按所选厂商 |
 
-本项目的海光默认镜像为 HCU Exporter v3，**不是任意旧版 dcu-exporter 的可互换替代物**。已有 dcu-exporter 2.4.1/2.4.2 需先核对 `/metrics`、标签和单位，再完成适配，不能只换镜像名。其他 GPU 的镜像交付扩展入口见第 5 节，实际运行适配仍需补齐。
+本项目海光默认已改为光合社区 **dcu-exporter:v2.4.1**，检测与面板同步使用 dcu_*，不是 HCU v3 的 hcu_*。官方镜像来源、实际监听端口核对和旧现场配置更新见 [DCU 迁移说明](dcu-exporter-v2.4.1.md)。其他 GPU 的镜像交付扩展入口见第 5 节。
 
 在线构建使用 Docker；离线可选择 Docker 或 nerdctl/containerd。构建机不需要 NVIDIA/海光驱动或设备运行库；真正启动设备采集时，离线节点才需匹配的驱动、设备访问和运行库。真实推理服务由现场另行部署，本工程不部署模型权重或推理引擎。
 
@@ -41,14 +41,14 @@
 | 物料/检查 | 在线 CPU 机器 | 离线 GPU/DCU 机器 |
 | --- | --- | --- |
 | 仓库源码、AISBench、toolbox | 获取并构建 | 解包、导入 |
-| Prometheus、Grafana、Loki、Alloy、node_exporter、DCGM 与海光 HCU Exporter | 默认准备两种 Exporter，共 9 个镜像 | 导入全部，按 gpu.vendor 只启动选中厂商 |
+| Prometheus、Grafana、Loki、Alloy、node_exporter、DCGM 与海光 DCU Exporter | 默认准备两种 Exporter，共 9 个镜像 | 导入全部，按 gpu.vendor 只启动选中厂商 |
 | 真实模型 tokenizer | 收集完整文件并验证无网络加载 | 解包并配置路径 |
 | Python、Docker 或 nerdctl/CNI、对应 GPU 驱动及设备运行库 | 按目标 OS/硬件收集安装包（目标机已有可跳过） | 选择实际运行时与设备依赖后检查 |
 | 单元测试和无 GPU 模拟 | 可以执行 | 可选 |
 | 真实 GPU 指标、推理吞吐和延迟 | 无法验证 | 必须现场验证 |
 | 被测推理服务、模型权重 | 由服务部署方准备 | 必须提前部署 |
 
-进场前记录：目标机发行版/版本、内核、CPU 架构、GPU 型号/数量、驱动版本、Docker 或 nerdctl/containerd/CNI、设备运行时版本、推理 API 和模型名称、指标端口、日志路径。DCGM/HCU Exporter 版本需要与现场驱动和指标契约兼容；本机能成功下载镜像不能证明兼容性。
+进场前记录：目标机发行版/版本、内核、CPU 架构、GPU 型号/数量、驱动版本、Docker 或 nerdctl/containerd/CNI、设备运行时版本、推理 API 和模型名称、指标端口、日志路径。DCGM/DCU Exporter 版本需要与现场驱动和指标契约兼容；本机能成功下载镜像不能证明兼容性。
 
 下文所有 Bash 步骤遇到错误都应先解决再继续。构建/导出需容纳镜像层、缓存、镜像 tar 和最终交付包，磁盘需求会明显高于压缩包大小。
 
@@ -177,7 +177,7 @@ docker run --rm --pull=never --network none --platform linux/amd64 \
 | 厂商选择 | site.images 字段 | 当前默认镜像 |
 | --- | --- | --- |
 | nvidia | nvidia_exporter | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4` |
-| hygon（海光 DCU） | hygon_exporter | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
+| hygon（海光 DCU） | hygon_exporter | `harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1` |
 
 先查看计划，再执行下载/检查/导出：
 
@@ -198,7 +198,7 @@ python3 scripts/prepare_offline_images.py \
 # 只准备 NVIDIA：7 个通用镜像 + DCGM，共 8 个
 python3 scripts/prepare_offline_images.py \
   --site generated/offline-bundle/site/site.json --exporters nvidia
-# 只准备海光 DCU：7 个通用镜像 + HCU，共 8 个
+# 只准备海光 DCU：7 个通用镜像 + DCU，共 8 个
 python3 scripts/prepare_offline_images.py \
   --site generated/offline-bundle/site/site.json --exporters hygon
 ```
@@ -424,7 +424,7 @@ nerdctl --namespace benchmark load -i offline-bundle/images/images-linux-amd64.t
 | 目标节点 | 检查与准备 |
 | --- | --- |
 | NVIDIA | nvidia-smi 正常；Docker 已注册 nvidia runtime，或 nerdctl 的 --gpus all 与 nvidia-container-cli 可用 |
-| 海光 DCU | hy-smi 正常；HCU v3 所需 /dev、/opt/hyhal、/etc/hostname、/etc/vdev 及驱动/运行库按实际部署准备，见 [海光说明](hygon-official-monitoring.md) |
+| 海光 DCU | hy-smi 正常；核对 DCU v2.4.1 及驱动实际所需的 /dev、/opt/hyhal、/etc/hostname、/etc/vdev 挂载；优先复用已工作的 Exporter，见 [海光说明](hygon-official-monitoring.md) |
 
 工具缺失时按交付 runtime/、drivers/ 中匹配系统的安装说明补齐。不要在海光节点执行 nvidia-ctk，也不要把 NVIDIA 运行参数套到海光。安装或修改系统设备运行时可能影响现有服务，应按现场维护流程处理；本工程的配置切换本身不要求重启 Docker/containerd。
 
@@ -555,7 +555,7 @@ PY
 | 模式 | 启动 gpu-exporter 的镜像 | 内部采集端口 / 代表指标 |
 | --- | --- | --- |
 | nvidia + local + simulation=false | images.nvidia_exporter，NVIDIA 设备注入与 basic collectors | 9400 / DCGM_FI_DEV_GPU_UTIL |
-| hygon + local + simulation=false | images.hygon_exporter，海光设备/运行库挂载 | 16080 / hcu_memorycap_bytes |
+| hygon + local + simulation=false | images.hygon_exporter，海光设备/运行库挂载 | 项目预设 16080，可覆盖 / dcu_memorycap_bytes |
 | external | 不启动本机设备 Exporter，读取逐节点 target | 按厂商约定的真实 /metrics |
 | simulation=true | 使用 toolbox fixture 模拟，不启动真实设备 Exporter | 模拟应用/GPU 指标，不代表真实硬件 |
 
@@ -648,15 +648,15 @@ cd /home/llm-bench-runtime/LLM-Inference-Benchmark
 ./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
 ```
 
-单机真实 local 模式 images check 需要 8 个镜像（7 个通用 + 所选设备 Exporter）；默认交付了 9 个不代表检查或启动 9 个。NVIDIA 启动 DCGM，海光启动 HCU，不启动另一厂商 Exporter 或 mock fixture；external 不启动本机设备 Exporter。就绪阶段要求应用指标和设备/主机 targets UP、真实 v1/models 可用，失败保留容器和日志，不回退成模拟或其他厂商。
+单机真实 local 模式 images check 需要 8 个镜像（7 个通用 + 所选设备 Exporter）；默认交付了 9 个不代表检查或启动 9 个。NVIDIA 启动 DCGM，海光启动 DCU，不启动另一厂商 Exporter 或 mock fixture；external 不启动本机设备 Exporter。就绪阶段要求应用指标和设备/主机 targets UP、真实 v1/models 可用，失败保留容器和日志，不回退成模拟或其他厂商。
 
 | 验收项 | NVIDIA | 海光 DCU |
 | --- | --- | --- |
-| Prometheus 设备 job | nvidia-dcgm-exporter | hygon-hcu-exporter |
-| 代表设备指标 | DCGM_FI_DEV_GPU_UTIL | hcu_memorycap_bytes，单位 bytes，不能当百分比 |
+| Prometheus 设备 job | nvidia-dcgm-exporter | hygon-dcu-exporter |
+| 代表设备指标 | DCGM_FI_DEV_GPU_UTIL | dcu_memorycap_bytes，单位 bytes，不能当百分比 |
 | 设备标签与面板 | task / gpu_node / gpu_model / gpu_index，NVIDIA 总览 | 同一筛选链，海光总览 |
 
-Grafana 默认 `http://节点IP:33000`，Prometheus `http://节点IP:39090/targets`，按 ports 变化。任务选择 gpu-inference（或现场 task），日志查询 `{task="gpu-inference"}` 并筛选角色/副本。空闲利用率为 0 不能判定失败，未暴露的服务指标会显示 No data；海光旧 dcu 指标需要完成适配后才能使用默认面板。
+Grafana 默认 `http://节点IP:33000`，Prometheus `http://节点IP:39090/targets`，按 ports 变化。任务选择 gpu-inference（或现场 task），日志查询 `{task="gpu-inference"}` 并筛选角色/副本。空闲利用率为 0 不能判定失败，未暴露的服务指标会显示 No data；海光默认面板已经对接 dcu_*；若仍使用 HCU 镜像或旧快照会不匹配。
 
 本次 bench run 的结果在 `generated/gpu-site/data/results/suites/<运行目录>/suite-results.json`，详细进度在 single/client.log，性能报告在 single/results/<时间目录>/performances/aisbench-target/synthetic.json。正式请求应为 8、成功 8、失败 0，只检查当前目录，不用历史成功报告证明本次通过。verify_simulation 仅用于模拟栈，不能验收真实 NVIDIA/DCU。
 
@@ -707,7 +707,7 @@ CLI 定位、单档/清单/SLO、日志诊断详见 [离线压测流程](offline
 | `could not select device driver` / `nvidia-smi` 失败 | 检查宿主机驱动、Toolkit 配置、Docker runtime；先检查第 9 节宿主机工具及设备运行时，再看本机 Exporter 启动/就绪错误 |
 | DCGM profiling 模块 watch 指标失败 | 默认 gpu.nvidia_metrics_profile=basic，只读挂载仓库中的 dcgm/basic.csv；同步当前源码及 CSV 后重建项目容器，无需重做镜像；full 模式须先现场验证兼容 |
 | 另一厂商镜像已导入却没有启动 | 正常：交付清单决定可用物料，site.gpu.vendor 决定实际容器；只应启动当前厂商，切换前 down |
-| 海光 HCU 启动或指标失败 | 检查 hy-smi、/dev、hyhal/vdev 路径、镜像版本和 hcu_* 契约；旧 dcu-exporter 不自动兼容 |
+| 海光 DCU 启动或指标失败 | 检查 hy-smi、实际挂载、DCU v2.4.1 镜像、实际端口及 dcu_* 契约；不再套用 HCU v3 面板/环境开关 |
 | DCGM Exporter 启动失败 | `docker logs llm-bench-gpu-gpu-exporter`；nerdctl 用对应 namespace 的 logs；核对镜像/驱动兼容性与设备权限 |
 | 采集或 API 就绪超时 | 确认容器内可达 IP、监听地址、端口、防火墙、DNS/代理；主机 curl 成功不代表容器成功 |
 | `model-tokenizer.tar.gz: Cannot open: No such file or directory` | 交付包缺少 tokenizer 归档；第 6.1 节下载目录不等于归档，须完成打包并补传；源码已解包时只补齐 tokenizer，不重复创建安装目录 |

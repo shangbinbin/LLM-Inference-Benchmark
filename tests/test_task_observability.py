@@ -76,7 +76,7 @@ class TaskObservabilityTests(unittest.TestCase):
                 dashboard=json.loads((directory/'grafana/dashboards/task-overview.json').read_text())
                 self.assertEqual(dashboard['uid'],'inference-task-overview')
                 text=json.dumps(dashboard)
-                self.assertIn('DCGM_FI_DEV_GPU_UTIL' if vendor=='nvidia' else 'hcu_memorycap_bytes',text)
+                self.assertIn('DCGM_FI_DEV_GPU_UTIL' if vendor=='nvidia' else 'dcu_memorycap_bytes',text)
                 self.assertNotIn('hcu_' if vendor=='nvidia' else 'DCGM_',text)
                 self.assertFalse((directory/'grafana/dashboards/sglang.json').exists())
                 self.assertFalse((directory/'grafana/dashboards/gpu.json').exists())
@@ -111,8 +111,10 @@ class TaskObservabilityTests(unittest.TestCase):
             if vendor=='hygon':
                 for panel in dashboard['panels']:
                     expressions=' '.join(t.get('expr','') for t in panel.get('targets',[]))
-                    if 'hcu_power_usage' in expressions or 'hcu_utilizationrate' in expressions:
-                        self.assertEqual(panel['fieldConfig']['defaults']['unit'],'short')
+                    if 'dcu_power_usage' in expressions:
+                        self.assertEqual(panel['fieldConfig']['defaults']['unit'],'watt')
+                    if 'dcu_utilizationrate' in expressions:
+                        self.assertEqual(panel['fieldConfig']['defaults']['unit'],'percent')
 
     def test_full_nvidia_profile_includes_profiling_only_when_selected(self):
         dashboard=build_dashboard('nvidia',{'gpu':{'nvidia_metrics_profile':'full'}})

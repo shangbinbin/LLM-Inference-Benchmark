@@ -41,4 +41,4 @@
 
 ## 海光官方资料补充
 
-`references/hygon-official/<核对日期>/upstream/` 保存官方配置原件；`downloads.json` 记录精确下载 URL 与校验值。`configs/gpu/hygon/hcu-exporter-v3/` 保存本项目的新版采集与面板配置，`model-agnostic-hcu-v3/` 暂不限定型号；操作说明见[官方监控接入指南](hygon-official-monitoring.md)。
+`references/hygon-official/<核对日期>/upstream/` 保存官方配置原件；`downloads.json` 记录精确下载 URL 与校验值。正式默认使用 `configs/gpu/hygon/dcu-exporter-v2.4.1/` 和 `model-agnostic-dcu-v2.4.1/`；`hcu-exporter-v3/` 与 `model-agnostic-hcu-v3/` 保留为独立版本参考；操作说明见[官方监控接入指南](hygon-official-monitoring.md)。

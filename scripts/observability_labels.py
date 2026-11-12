@@ -1,6 +1,7 @@
 """Canonical task/replica/device labels shared by scrapes, logs and dashboards."""
 import re
 from pathlib import PurePosixPath
+from gpu_metrics import exporter_port
 
 
 def label_value(value, field):
@@ -88,7 +89,7 @@ def configure_gpu_labels(job, cfg, vendor):
         targets = [('fixture:18000', nodes[0])]
         job['metrics_path'] = '/gpu-metrics'
     else:
-        port = 9400 if vendor == 'nvidia' else 16080
+        port = exporter_port(cfg, vendor)
         targets = [(n.get('target', 'gpu-exporter:' + str(port)), n) for n in nodes]
     job['static_configs'] = []
     for target, node in targets:
@@ -98,7 +99,7 @@ def configure_gpu_labels(job, cfg, vendor):
             'gpu_vendor': vendor, 'gpu_model': node.get('model', 'simulated' if cfg.get('simulation') else ''),
         }})
     rules = []
-    model_label = cfg['gpu'].get('model_label', 'modelName' if vendor == 'nvidia' else None)
+    model_label = cfg['gpu'].get('model_label', 'modelName' if vendor == 'nvidia' else 'name')
     if model_label:
         rules.append({'source_labels': ['gpu_model', model_label], 'separator': ';', 'regex': ';(.+)',
                       'target_label': 'gpu_model', 'replacement': '$1'})

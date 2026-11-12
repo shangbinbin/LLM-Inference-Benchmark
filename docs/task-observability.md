@@ -105,10 +105,10 @@
 
 型号与卡序号映射规则：
 
-| 字段 | NVIDIA | 海光 HCU |
+| 字段 | NVIDIA | 海光 DCU |
 | --- | --- | --- |
 | `gpu_node` | `gpu.nodes[].name` | `gpu.nodes[].name` |
-| `gpu_model` | 优先 `nodes[].model`，否则读取原生 `modelName` | 优先 `nodes[].model`；默认不猜测原生型号字段 |
+| `gpu_model` | 优先 `nodes[].model`，否则读取原生 `modelName` | 优先 `nodes[].model`，否则读取原生 `name` |
 | `gpu_index` | 原生 `gpu` | 原生 `minor_number` |
 
 Exporter 有其他字段名时，可在 `gpu` 中配置 `"model_label": "实际型号标签名"`、`"index_label": "实际卡序号标签名"`。它们填写指标标签名，不能填写卡序号值。型号仍无法确定时标为 `unspecified`；不把卡序号或设备 ID 当型号。海光建议明确填写每节点实际 `model`；一个节点有多种型号时应依赖 Exporter 每卡的型号标签，不填写统一 `nodes[].model`。缺少原生卡序号标签的指标不会出现在按卡筛选的图表中，应先核对 Exporter 契约。
@@ -120,7 +120,7 @@ Exporter 有其他字段名时，可在 `gpu` 中配置 `"model_label": "实际�
 - vLLM：请求完成速率、输入/输出 Token 吞吐、运行/排队请求、TTFT、端到端延迟、KV Cache、ITL/TPOT、排队时间、抢占速率。
 - SGLang：运行/排队请求、输出 Token 吞吐、缓存命中率、TTFT、端到端延迟和版本支持的 Token 间延迟。
 - NVIDIA：利用率、已用/空闲显存、显存比例、功率、温度、时钟、XID 及可见卡数。默认 basic 配置避免 profiling 不兼容；显式 full 时增加 profiling 面板，需现场确认支持。
-- 海光 HCU：计算利用率、显存已用/容量/比例、显存温度及功耗。指标遵循官方 HCU v3 名称；利用率和功耗的单位未确认时保持原始值，不假设缩放或功率单位。
+- 海光 DCU v2.4.1：dcu_utilizationrate（%）、显存已用/容量（bytes）、按已用/容量计算显存比例、dcu_temp（℃）、功耗（W）、PCIe 带宽（MiB/s）、核心时钟（MHz）、CE/UE 原始计数和卡数。名称/单位依据保存的官方 DCU Dashboard；真实版本可用性仍需现场验证。按任务/节点/型号/卡序号对物理卡指标取 max 去除 Pod 元数据副本，不将副本相加或混入 vdcu_*。
 - 日志：Logs Volume 按级别堆叠显示时间窗内条数，未识别级别归 unknown；日志列表和 Volume 共享任务、角色、副本、文件及“日志包含”筛选。
 
 Dashboard 默认最近 30 分钟、每 5 秒自动刷新。日志行可展开详情查看标签。需要真正的持续 Live 跟踪时，打开 Explore，选择 Benchmark Loki、切换 Code，输入：

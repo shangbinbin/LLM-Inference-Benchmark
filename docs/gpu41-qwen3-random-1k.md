@@ -52,7 +52,7 @@ API 从 base_url 派生为 `v1/chat/completions`、`v1/models` 与 `metrics`。G
 
 默认 benchmark 是 **随机 tokenid 输入 1024、输出请求上限 1024、1000 次请求、并发 16**；AISBench 本地生成，无需先准备数据集。warmups=0、retry=1、request_rate=0，generation_kwargs 为 temperature=0、ignore_eos=true。后端须支持流式 chat 与 ignore_eos；1024 是请求上限，实际完成长度以报告为准。
 
-若复用到海光节点，修改 gpu.vendor、节点和 Exporter 配置；已有 Exporter 可用 deployment=external、每个节点填写真实 target。旧 dcu-exporter 2.4.1 不应直接假定符合 HCU v3 的指标契约，须先核对其 `/metrics`，见 [海光指标适配](task-observability.md)。
+若复用到海光节点，修改 gpu.vendor、节点和 Exporter 配置；已有 Exporter 可用 deployment=external、每个节点填写真实 target。默认海光已切到 dcu-exporter:v2.4.1，检测和面板使用 dcu_*；更新旧现场 images.hygon_exporter 并核对实际端口，见 [DCU 迁移说明](dcu-exporter-v2.4.1.md)。
 
 ## 3. 导入镜像、鉴权与预检查
 

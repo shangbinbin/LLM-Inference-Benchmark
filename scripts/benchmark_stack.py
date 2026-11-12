@@ -24,10 +24,11 @@ from container_runtime import (runtime_kind, validate_runtime, adapt_command, se
                                runtime_scope, missing_resource, remove_container)
 from diagnostics import record_event
 from log_health import require_log_files, container_report, file_errors
+from gpu_metrics import DEVICE_METRICS, exporter_port
 from render_observability import config_dir, render, write_json, ROOT
 
 LABEL = 'io.llm-benchmark.project'
-ADAPTERS = {'nvidia': 'gpu/nvidia/model-agnostic', 'hygon': 'gpu/hygon/model-agnostic-hcu-v3'}
+ADAPTERS = {'nvidia': 'gpu/nvidia/model-agnostic', 'hygon': 'gpu/hygon/model-agnostic-dcu-v2.4.1'}
 CLIENT_THREAD_ENV = {
     'OPENBLAS_NUM_THREADS': '1',
     'OMP_NUM_THREADS': '1',
@@ -238,6 +239,14 @@ def validate_config(cfg, *, check_tokenizer=True):
         if not ports['node-exporter']:
             raise ValueError('host node-exporter needs a nonzero ports.node-exporter listener')
         cfg['node_exporter_target'] = node_metrics_target(cfg)
+    port = cfg['gpu'].get('hygon_exporter_port', 16080)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError('gpu.hygon_exporter_port must be an integer in 1..65535')
+    environment = cfg['gpu'].get('hygon_exporter_env', {})
+    if not isinstance(environment, dict) or any(not isinstance(key, str) or
+            not re.fullmatch('[A-Za-z_][A-Za-z0-9_]*', key) or not isinstance(value, str)
+            for key, value in environment.items()):
+        raise ValueError('gpu.hygon_exporter_env must map environment variable names to strings')
     metrics = metrics_settings(cfg)
     nodes = cfg['gpu']['nodes']
     if not nodes or len({n['name'] for n in nodes}) != len(nodes):
@@ -379,7 +388,7 @@ def prepare(cfg):
     vendor = detect_vendor(cfg)
     root = Path(cfg['storage']['root'])
     source_hash = hashlib.sha256(Path(__file__).read_bytes() + (ROOT/'scripts/render_observability.py').read_bytes())
-    for module in ('observability_labels.py', 'task_dashboard.py', 'container_runtime.py', 'log_health.py'):
+    for module in ('observability_labels.py', 'task_dashboard.py', 'container_runtime.py', 'log_health.py', 'gpu_metrics.py'):
         source_hash.update((ROOT/'scripts'/module).read_bytes())
     # Suite files and local corpora do not affect the rendered monitoring stack.
     asset_dirs = [ROOT/'configs/common', ROOT/'configs/gpu']
@@ -411,7 +420,7 @@ def prepare(cfg):
     # Legacy renderer supplies common assets; the new topology interface replaces scrape/log targets below.
     env = {'name': cfg['project'], 'status': 'reference', 'gpu_profile': ADAPTERS[vendor],
            'nodes': [{'name': n['name'], 'gpus': n['gpus'], 'gpu_target':
-                      n.get('target', 'gpu-exporter:9400' if vendor == 'nvidia' else 'gpu-exporter:16080')}
+                      n.get('target', 'gpu-exporter:' + str(exporter_port(cfg, vendor)))}
                      for n in gpu_nodes],
            'inference': {'engine': cfg['inference'].get('engine', 'auto'), 'deployment': cfg['project'], 'group': cfg['project'],
                          'model': cfg['inference']['model'], 'tp': cfg['topology'].get('tp', 1),
@@ -566,7 +575,7 @@ class Stack:
         user = ['--user', self.uid]
         specs = []
         if self.cfg.get('simulation'):
-            specs.append({'name': 'fixture', 'args': log_mount+['--entrypoint','python','-e','MOCK_GPU_VENDOR='+self.vendor],
+            specs.append({'name': 'fixture', 'args': log_mount+mount(ROOT/'containers/toolbox/mock_server.py','/opt/benchmark/mock_server.py',True)+['--entrypoint','python','-e','MOCK_GPU_VENDOR='+self.vendor],
                           'image': images['toolbox'], 'command': ['/opt/benchmark/mock_server.py'],
                           'ready': ('http://fixture:18000/v1/models', 'mock-model')})
             if self.cfg.get('simulation_latency'):
@@ -585,10 +594,13 @@ class Stack:
                     args += mount(ROOT/'configs/gpu/nvidia/dcgm/basic.csv', '/etc/dcgm-exporter/basic.csv', True)
                     exporter_command = ['--collectors', '/etc/dcgm-exporter/basic.csv']
             else:
-                args = ['--privileged','-e','CONNECT_K8S=false','-e','METRICS_LEVEL=low']
+                # Do not assume switches documented for HCU v3 also apply to DCU v2.4.1.
+                args = ['--privileged']
+                for key, value in self.cfg['gpu'].get('hygon_exporter_env', {}).items():
+                    args += ['-e', key + '=' + value]
                 for path in ('/dev','/opt/hyhal','/etc/hostname','/etc/vdev'):
                     args += mount(path,path,path!='/dev')
-                image = images['hygon_exporter']; port=16080; marker='hcu_memorycap_bytes'
+                image = images['hygon_exporter']; port=exporter_port(self.cfg, self.vendor); marker=DEVICE_METRICS['hygon']
             specs.append({'name':'gpu-exporter','args':args,'image':image,'command':exporter_command,
                           'ready':(f'http://gpu-exporter:{port}/metrics',marker)})
         host_args, host_cmd = [], []
@@ -615,7 +627,7 @@ class Stack:
                              [],('http://grafana:3000/api/health','ok')))
         internal_ports = {'grafana':3000, 'prometheus':9090, 'loki':3100, 'alloy':12345,
                           'node-exporter':9100, 'fixture':18000,
-                          'gpu-exporter':9400 if self.vendor == 'nvidia' else 16080}
+                          'gpu-exporter':exporter_port(self.cfg, self.vendor)}
         for spec in specs:
             port = published_ports(self.cfg).get(spec['name'])
             if self.cfg.get('publish_ports', True) and port and not spec.get('host_network'):
@@ -688,7 +700,7 @@ class Stack:
                       '--timeout', str(self.cfg.get('startup_timeout', 120)))
             for node in self.cfg['gpu']['nodes']:
                 if self.cfg['gpu']['deployment']=='external' and not self.cfg.get('simulation'):
-                    self.probe('http://'+node['target']+'/metrics', 'DCGM_FI_DEV_GPU_UTIL' if self.vendor=='nvidia' else 'hcu_memorycap_bytes')
+                    self.probe('http://'+node['target']+'/metrics', DEVICE_METRICS[self.vendor])
             self.probe(self.cfg['inference']['base_url'].rstrip('/')+'/v1/models', 'data', inference=True)
             self.save('ready')
             if run_benchmark:

@@ -56,15 +56,15 @@ GPU 厂商与容器引擎分别选择，可以组合为 Docker+NVIDIA、nerdctl+
 | --- | --- | --- |
 | `gpu.vendor` | `nvidia` | `hygon` |
 | 实际镜像字段 | `images.nvidia_exporter` | `images.hygon_exporter` |
-| 当前默认镜像 | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4` | `harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0` |
+| 当前默认镜像 | `swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4` | `harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1` |
 | 节点设备检查 | `nvidia-smi` | `hy-smi` |
-| Docker 本机采集参数 | 启动器使用已注册的 nvidia runtime、设备环境变量和 SYS_ADMIN | 启动器使用 privileged、海光设备/运行库挂载及 HCU 参数 |
+| Docker 本机采集参数 | 启动器使用已注册的 nvidia runtime、设备环境变量和 SYS_ADMIN | 启动器使用 privileged 和设备/运行库挂载；不默认注入 HCU v3 专属开关 |
 | nerdctl 本机采集参数 | 启动器使用 --gpus all，依赖可用的 nvidia-container-cli/Toolkit | 启动器使用海光设备/运行库挂载，不配置 NVIDIA runtime |
-| 本机设备依赖 | 匹配驱动和 NVIDIA Container Toolkit | 匹配驱动及 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 等 HCU v3 所需路径 |
-| 内部 metrics 端口 | 9400 | 16080 |
+| 本机设备依赖 | 匹配驱动和 NVIDIA Container Toolkit | 匹配驱动及 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 等项目已有挂载路径，按 v2.4.1 镜像/驱动实际要求确认 |
+| 内部 metrics 端口 | 9400 | 项目预设 16080，可用 gpu.hygon_exporter_port 覆盖，非已验证的镜像默认值 |
 | 默认发布到节点端口 | 39400，由 ports.gpu-exporter 控制 | 同样 39400，映射到海光内部端口 |
-| 代表指标 / job | DCGM_FI_DEV_GPU_UTIL / nvidia-dcgm-exporter | hcu_memorycap_bytes / hygon-hcu-exporter，容量单位 bytes |
-| 原生型号 / 卡序号标签 | 默认 modelName / gpu | 默认卡序号 minor_number；建议填写 nodes[].model 为实际型号 |
+| 代表指标 / job | DCGM_FI_DEV_GPU_UTIL / nvidia-dcgm-exporter | dcu_memorycap_bytes / hygon-dcu-exporter，容量单位 bytes |
+| 原生型号 / 卡序号标签 | 默认 modelName / gpu | 默认型号 name / 卡序号 minor_number；nodes[].model 可显式覆盖型号 |
 | Grafana | NVIDIA 任务总览 | 海光任务总览 |
 
 运行时配置示例：
@@ -78,7 +78,7 @@ GPU 厂商与容器引擎分别选择，可以组合为 Docker+NVIDIA、nerdctl+
 
 Docker 与 containerd 的镜像存储独立，nerdctl 不同 namespace 也不自动共享镜像名称。若要使用 k8s.io 中已有镜像，可以显式填写该 namespace，或将交付包导入独立 benchmark namespace；本项目仍只管理自己创建的独立容器。rootful 权限、CNI 及 1.7.7 要求见 [nerdctl 指南](nerdctl.md)。
 
-**海光默认是 HCU Exporter v3 的指标契约。** 如果现场已有旧版 dcu-exporter 2.4.1/2.4.2，不能仅替换 images.hygon_exporter 就认定兼容；先核对 /metrics、卡序号/型号标签、指标名与单位，再完成适配。external 模式同样不会自动把 dcu_* 转成 hcu_*。其他 GPU 的镜像交付入口不等于运行支持，见 [扩展入口](online-cpu-to-offline-gpu.md#51-其他-gpu-的扩展入口)。
+**海光正式链路默认是 DCU Exporter v2.4.1 的 dcu_* 指标契约。** 具体镜像为光合社区目录中的 `harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1`。从 HCU v3 升级/回退到该版本时，必须同步现场 images.hygon_exporter、当前源码及 Dashboard；不能把 hcu_* 当成 dcu_*。本次未验证真实镜像默认监听端口，按实际端口调整 gpu.hygon_exporter_port，已有 Exporter 推荐 external 直接填实际 target。详见 [DCU 迁移说明](dcu-exporter-v2.4.1.md)。其他 GPU 的镜像交付入口不等于运行支持。
 
 ## 3. site.json 各配置项的含义与修改要求
 
@@ -152,15 +152,17 @@ storage 的相对路径按**工程根目录**解析，不按 site.json 所在目
 | `gpu.vendor` | 当前栈的 GPU 厂商 | NVIDIA 填 nvidia，海光填 hygon；auto 仅在本机能唯一识别厂商时可用，离线建议显式选择 |
 | `gpu.deployment` | 设备 Exporter 的部署位置 | local 启动本机一个 Exporter；external 抓取已有逐节点 Exporter，不启动本机设备采集容器 |
 | `gpu.nodes[].name/gpus` | GPU 节点名和实际卡数 | 必须核对；local 只配置一个节点，多节点用 external |
-| `gpu.nodes[].model` | 可选实际设备型号标签 | 海光建议填写；无型号映射时面板显示 unspecified，不能编造型号 |
+| `gpu.nodes[].model` | 可选实际设备型号标签 | 海光可由原生 name 自动映射；无型号映射时面板显示 unspecified，不能编造型号 |
 | `gpu.nodes[].target` | external 的设备指标入口 | external 必填每节点独立的 host:port；如已发布到节点 39400，应填实际节点IP:39400，不能照抄内部端口 |
 | `gpu.model_label/index_label` | 可选 Exporter 原生型号/卡序号标签名 | 按 /metrics 实际标签设置；它们不能转换旧指标名或单位 |
+| `gpu.hygon_exporter_port` | 本机 DCU 的实际内部监听端口 | 项目兼容预设 16080；按镜像实际值修改，映射、抓取和探测同步变化；外部 target 仍显式填写 |
+| `gpu.hygon_exporter_env` | 本机 DCU 进程的可选环境变量对象 | 默认空；按 v2.4.1 实际支持项填写字符串键值，不自动套用 HCU v3 参数 |
 | `gpu.nvidia_metrics_profile` | NVIDIA basic/full collectors | NVIDIA 默认保留 basic；full 需确认 profiling 支持；海光不使用此字段 |
 | `host_metrics` | 主机指标采集视角 | container 为容器视角；host 通过主机 /proc、/sys、根目录及宿主网络采集 |
 | `node_exporter_target` | host 模式节点的可达地址 | host 必填实际 IP/主机名，端口随 ports.node-exporter；不能用容器 localhost；container 通常不填 |
 | `network` | 可选已适配的 IB 等网络采集对象 | 常规单机省略或 null；需要时按已有适配器配置，不由 GPU 厂商自动开启 |
 
-一个栈当前对应一个 GPU 厂商，不能在同一 gpu.nodes 列表混配 NVIDIA 与海光。external 仍要求对应指标契约，target 可达并不证明指标正确。使用本机海光 HCU v3 时，设备路径和权限由该 Exporter 需要；真实硬件部署与软件模拟是不同验收范围。
+一个栈当前对应一个 GPU 厂商，不能在同一 gpu.nodes 列表混配 NVIDIA 与海光。external 仍要求对应指标契约，target 可达并不证明指标正确。使用本机海光 DCU v2.4.1 时，设备路径和权限由该 Exporter 需要；真实硬件部署与软件模拟是不同验收范围。
 
 ### 3.5 镜像、访问端口
 
@@ -219,7 +221,9 @@ CONTAINER_ENGINE = 'docker' # 使用 nerdctl 改为 'nerdctl'
 NAMESPACE = 'benchmark'
 NODE_NAME = 'gpu41'         # 改实际节点名；海光例如 dcu-node
 GPU_COUNT = 1              # 改实际卡数
-GPU_MODEL = ''             # 可填实际型号；尤其建议海光填写，不知道时留空
+GPU_MODEL = ''             # 可填实际型号；为空时海光由 name 标签映射
+HYGON_EXPORTER_PORT = 16080 # 改 DCU 实际内部监听端口，非已验证的镜像默认
+HYGON_EXPORTER_ENV = {}    # 只填已确认支持的环境变量，不自动设置二进制监听
 SERVICE_BASE_URL = 'http://10.142.118.41:38000/publishaddress/inference/qwen306b/'
 MODEL_ID = 'Qwen3-0.6B'
 API = 'chat'               # 或 completions，按服务接口
@@ -248,7 +252,8 @@ node = {'name':NODE_NAME, 'gpus':GPU_COUNT}
 if GPU_MODEL:
     node['model'] = GPU_MODEL
 cfg['gpu'] = {'vendor':GPU_VENDOR, 'deployment':'local', 'nodes':[node],
-              'nvidia_metrics_profile':'basic'}
+              'nvidia_metrics_profile':'basic', 'hygon_exporter_port':HYGON_EXPORTER_PORT,
+              'hygon_exporter_env':HYGON_EXPORTER_ENV}
 cfg['inference'] = {'base_url':SERVICE_BASE_URL, 'model':MODEL_ID, 'api':API, 'engine':INFERENCE_ENGINE}
 if AUTH_ENV:
     cfg['inference']['api_key_env'] = AUTH_ENV
@@ -449,7 +454,7 @@ down 只清理当前项目登记且 ownership 匹配的容器和网络，保留 
 | 401/403 或就绪失败 | 检查 base_url、models/metrics 转发、当前 Token 和指标鉴权，主机可达还要容器可达 |
 | Bad Request / 全请求失败 | 看本次 client.log 和 failed.json 的真实响应，核对 model、API、上下文、流式参数和 generation_kwargs |
 | 只有 START 没有逐请求进度 | 查看本次用例的 client.log；up --no-benchmark 本身没有 AISBench 请求 |
-| 海光面板没有型号/卡序号 | 校对 nodes[].model 与原生 minor_number 等标签；旧 dcu_* 需先适配，不能只靠面板改名 |
+| 海光面板没有型号/卡序号 | 核对 dcu_memorycap_bytes 是否可见，以及原生 name/minor_number 或显式 nodes[].model；确认已同步 DCU 版 Dashboard |
 | Grafana 看不到实时日志 | 检查真实日志是否更新、storage.logs/path、权限和 Alloy；在 Explore/日志面板查看，非 Data sources |
 
 现场验证应记录操作系统、设备与驱动、运行时/namespace、镜像、模型/tokenizer 和实际 site/cases 的版本。本手册的配置/计划校验不等同于真实 NVIDIA/海光硬件性能验收。

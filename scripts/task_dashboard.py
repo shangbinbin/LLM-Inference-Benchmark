@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from gpu_metrics import DEVICE_METRICS, GPU_JOBS
 
 PROM = {'type': 'prometheus', 'uid': '$datasource'}
 LOKI = {'type': 'loki', 'uid': '$loki_datasource'}
@@ -80,7 +81,7 @@ def build_dashboard(vendor, cfg=None):
     row('推理任务采集状态')
     chart('推理实例健康', [('{{replica}} / {{instance_role}}', 'up{' + TASK + ',job="inference"}')], description='1 为采集正常，0 为失败；任务内各实例独立显示。', kind='stat')
     chart('运行实例数', [('UP', 'sum(up{' + TASK + ',job="inference"})')], kind='stat')
-    chart('GPU Exporter 健康', [('{{gpu_node}}', 'up{' + TASK + ',gpu_vendor="' + vendor + '",job="' + ('nvidia-dcgm-exporter' if vendor == 'nvidia' else 'hygon-hcu-exporter') + '"}')], kind='stat')
+    chart('GPU Exporter 健康', [('{{gpu_node}}', 'up{' + TASK + ',gpu_vendor="' + vendor + '",job="' + GPU_JOBS[vendor] + '"}')], kind='stat')
 
     row('vLLM 核心性能（只按任务筛选）')
     chart('vLLM 成功请求完成速率', [('请求/s', rate('vllm:request_success_total'))], 'reqps', '不包含被网关提前拒绝的请求；不是压测发送 QPS。')
@@ -101,7 +102,7 @@ def build_dashboard(vendor, cfg=None):
     chart('SGLang 端到端延迟', quantiles('sglang:e2e_request_latency_seconds'), 's')
     chart('SGLang 每 Token 延迟（版本相关）', quantiles('sglang:inter_token_latency_seconds'), 's', '旧版本未暴露此指标时无数据；不会伪造为 0。')
 
-    row(('NVIDIA GPU' if vendor == 'nvidia' else '海光 HCU') + ' · 任务 → 节点 → 型号 → 卡序号')
+    row(('NVIDIA GPU' if vendor == 'nvidia' else '海光 DCU v2.4.1') + ' · 任务 → 节点 → 型号 → 卡序号')
     legend = '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
     def gpu(name):
         return name + '{' + GPU + '}'
@@ -120,12 +121,20 @@ def build_dashboard(vendor, cfg=None):
             chart('GPU 空闲显存', [(legend, gpu('DCGM_FI_DEV_FB_FREE')+' * 1048576')], 'bytes')
             chart('可见 GPU 卡数', [('卡数', 'count('+gpu('DCGM_FI_DEV_GPU_UTIL')+')')], kind='stat')
     else:
-        chart('海光计算利用率（原始值）', [(legend, gpu('hcu_utilizationrate'))], description='官方 HCU v3 文档未明确量纲；不预设百分比或缩放，需现场核对。')
-        chart('海光已用显存', [(legend, gpu('hcu_usedmemory_bytes'))], 'bytes')
-        chart('海光显存容量', [(legend, gpu('hcu_memorycap_bytes'))], 'bytes')
-        chart('海光显存使用率', [(legend, gpu('hcu_vram_percent'))], 'percent')
-        chart('海光显存温度', [(legend, gpu('hcu_temp_mem'))], 'celsius')
-        chart('海光当前功耗（原始值）', [(legend, gpu('hcu_power_usage'))], description='文档未明确功率单位；不标为 W、不预设缩放。尚需真实硬件验证。')
+        # Physical-card charts collapse copies carrying Kubernetes/pod metadata.
+        # Never sum duplicate copies of the same card, and never mix vdcu_* into dcu_*.
+        def card(name):
+            return 'max by (task,gpu_node,gpu_model,gpu_index) (' + gpu(name) + ')'
+        chart('海光 DCU 利用率', [(legend, card('dcu_utilizationrate'))], 'percent')
+        chart('海光已用显存', [(legend, card('dcu_usedmemory_bytes'))], 'bytes')
+        chart('海光显存容量', [(legend, card('dcu_memorycap_bytes'))], 'bytes')
+        chart('海光显存使用率', [(legend, '100 * '+card('dcu_usedmemory_bytes')+' / ('+card('dcu_memorycap_bytes')+' > 0)')], 'percent')
+        chart('海光 DCU 温度', [(legend, card('dcu_temp'))], 'celsius')
+        chart('海光 DCU 功率', [(legend, card('dcu_power_usage'))], 'watt')
+        chart('海光 PCIe 带宽', [(legend, card('dcu_pciebw_mb'))], 'MiBs')
+        chart('海光核心时钟', [(legend, card('dcu_sclk'))], 'suffix:MHz')
+        chart('海光错误计数（原值）', [('CE '+legend, card('dcu_ce_count')), ('UE '+legend, card('dcu_ue_count'))], description='按官方 DCU 面板显示原始计数，不把未知计数类型当作速率。')
+        chart('可见 DCU 卡数', [('卡数', 'count('+card('dcu_memorycap_bytes')+')')], kind='stat')
 
     row('推理实例日志 · 任务 → 角色 → 副本')
     volume = chart('Logs Volume', [('{{log_level}}', 'sum by (log_level) (count_over_time('+LOG+' | label_format log_level=`{{if .detected_level}}{{.detected_level}}{{else}}unknown{{end}}` [$__interval]))')], width=24, height=6, description='每个时间窗的日志条数；无级别信息归 unknown，图例求和不代替精确全时段日志计数。')
@@ -144,7 +153,7 @@ def build_dashboard(vendor, cfg=None):
         {'name':'loki_datasource','label':'日志数据源','type':'datasource','query':'loki','current':{'text':'Benchmark Loki','value':'benchmark-loki'}},
         prom_variable('task','推理任务','up{task!=""}','task',{'text':task,'value':task} if task else None,False),
     ]
-    device_metric = 'DCGM_FI_DEV_GPU_UTIL' if vendor == 'nvidia' else 'hcu_memorycap_bytes'
+    device_metric = DEVICE_METRICS[vendor]
     variables += [
         prom_variable('gpu_node','GPU 节点', device_metric+'{'+TASK+'}', 'gpu_node'),
         prom_variable('gpu_model','GPU 型号', device_metric+'{'+TASK+',gpu_node=~`${gpu_node:regex}`}', 'gpu_model'),

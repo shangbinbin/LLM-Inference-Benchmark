@@ -137,7 +137,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "up{task=~`${task:regex}`,gpu_vendor=\"hygon\",job=\"hygon-hcu-exporter\"}",
+          "expr": "up{task=~`${task:regex}`,gpu_vendor=\"hygon\",job=\"hygon-dcu-exporter\"}",
           "legendFormat": "{{gpu_node}}",
           "editorMode": "code",
           "range": true,
@@ -1067,7 +1067,7 @@
     {
       "id": 22,
       "type": "row",
-      "title": "海光 HCU · 任务 → 节点 → 型号 → 卡序号",
+      "title": "海光 DCU v2.4.1 · 任务 → 节点 → 型号 → 卡序号",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -1079,8 +1079,8 @@
     },
     {
       "id": 23,
-      "title": "海光计算利用率（原始值）",
-      "description": "官方 HCU v3 文档未明确量纲；不预设百分比或缩放，需现场核对。",
+      "title": "海光 DCU 利用率",
+      "description": "",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1089,7 +1089,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_utilizationrate{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_utilizationrate{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1107,7 +1107,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percent",
           "min": 0
         },
         "overrides": []
@@ -1135,7 +1135,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_usedmemory_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_usedmemory_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1181,7 +1181,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1227,7 +1227,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_vram_percent{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "100 * max by (task,gpu_node,gpu_model,gpu_index) (dcu_usedmemory_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}) / (max by (task,gpu_node,gpu_model,gpu_index) (dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}) > 0)",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1263,7 +1263,7 @@
     },
     {
       "id": 27,
-      "title": "海光显存温度",
+      "title": "海光 DCU 温度",
       "description": "",
       "type": "timeseries",
       "datasource": {
@@ -1273,7 +1273,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_temp_mem{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_temp{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1309,8 +1309,8 @@
     },
     {
       "id": 28,
-      "title": "海光当前功耗（原始值）",
-      "description": "文档未明确功率单位；不标为 W、不预设缩放。尚需真实硬件验证。",
+      "title": "海光 DCU 功率",
+      "description": "",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -1319,7 +1319,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "hcu_power_usage{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_power_usage{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
           "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
           "editorMode": "code",
           "range": true,
@@ -1332,6 +1332,155 @@
       "gridPos": {
         "x": 16,
         "y": 53,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "title": "海光 PCIe 带宽",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_pciebw_mb{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
+          "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
+          "editorMode": "code",
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "MiBs",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "title": "海光核心时钟",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_sclk{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
+          "legendFormat": "{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
+          "editorMode": "code",
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 8,
+        "y": 60,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix:MHz",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "海光错误计数（原值）",
+      "description": "按官方 DCU 面板显示原始计数，不把未知计数类型当作速率。",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_ce_count{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
+          "legendFormat": "CE {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
+          "editorMode": "code",
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "max by (task,gpu_node,gpu_model,gpu_index) (dcu_ue_count{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})",
+          "legendFormat": "UE {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}",
+          "editorMode": "code",
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 60,
         "w": 8,
         "h": 7
       },
@@ -1354,20 +1503,67 @@
       }
     },
     {
-      "id": 29,
+      "id": 32,
+      "title": "可见 DCU 卡数",
+      "description": "",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(max by (task,gpu_node,gpu_model,gpu_index) (dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}))",
+          "legendFormat": "卡数",
+          "editorMode": "code",
+          "range": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 33,
       "type": "row",
       "title": "推理实例日志 · 任务 → 角色 → 副本",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 74,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 30,
+      "id": 34,
       "title": "Logs Volume",
       "description": "每个时间窗的日志条数；无级别信息归 unknown，图例求和不代替精确全时段日志计数。",
       "type": "timeseries",
@@ -1391,7 +1587,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 75,
         "w": 24,
         "h": 6
       },
@@ -1515,7 +1711,7 @@
       "interval": "5s"
     },
     {
-      "id": 31,
+      "id": 35,
       "title": "推理日志（每 5 秒自动刷新）",
       "description": "Dashboard 是轮询刷新；需要真正的 Live 流式跟踪时，在 Explore 选 Benchmark Loki 使用同一查询并点击 Live。",
       "type": "logs",
@@ -1540,7 +1736,7 @@
       ],
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 81,
         "w": 24,
         "h": 12
       },
@@ -1619,9 +1815,9 @@
           "type": "prometheus",
           "uid": "$datasource"
         },
-        "definition": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`}, gpu_node)",
+        "definition": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`}, gpu_node)",
         "query": {
-          "query": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`}, gpu_node)",
+          "query": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`}, gpu_node)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -1642,9 +1838,9 @@
           "type": "prometheus",
           "uid": "$datasource"
         },
-        "definition": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`}, gpu_model)",
+        "definition": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`}, gpu_model)",
         "query": {
-          "query": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`}, gpu_model)",
+          "query": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`}, gpu_model)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -1665,9 +1861,9 @@
           "type": "prometheus",
           "uid": "$datasource"
         },
-        "definition": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`}, gpu_index)",
+        "definition": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`}, gpu_index)",
         "query": {
-          "query": "label_values(hcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`}, gpu_index)",
+          "query": "label_values(dcu_memorycap_bytes{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`}, gpu_index)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

@@ -36,10 +36,10 @@ class Handler(BaseHTTPRequestHandler):
                           'POWER_USAGE': 80, 'SM_CLOCK': 1200, 'MEM_CLOCK': 1500, 'XID_ERRORS': 0}
                 body = ''.join(f'DCGM_FI_DEV_{k}{{{labels}}} {v}\n' for k, v in values.items())
             else:
-                values = {'hcu_utilizationrate': 25, 'hcu_usedmemory_bytes': 1073741824,
-                          'hcu_memorycap_bytes': 8589934592, 'hcu_vram_percent': 12.5,
-                          'hcu_temp_mem': 42, 'hcu_power_usage': 80}
-                body = ''.join(f'{k}{{device_id="MOCK-ONLY",minor_number="0"}} {v}\n' for k, v in values.items())
+                values = {'dcu_utilizationrate': 25, 'dcu_usedmemory_bytes': 1073741824,
+                          'dcu_memorycap_bytes': 8589934592, 'dcu_temp': 42, 'dcu_power_usage': 80,
+                          'dcu_pciebw_mb': 1024, 'dcu_sclk': 1200, 'dcu_ce_count': 0, 'dcu_ue_count': 0}
+                body = ''.join(f'{k}{{device_id="MOCK-ONLY",minor_number="0",name="SIMULATED-DCU"}} {v}\n' for k, v in values.items())
             self.reply(body, 'text/plain')
         else:
             self.send_error(404)

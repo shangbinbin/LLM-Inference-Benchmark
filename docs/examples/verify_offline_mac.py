@@ -169,7 +169,7 @@ def main():
                     info = stack.inspect(name_in_state)
                     require(set(info['NetworkSettings']['Networks']) == {stack.network},
                             'Container attached to an unexpected network')
-                metric = 'DCGM_FI_DEV_GPU_UTIL' if vendor == 'nvidia' else 'hcu_utilizationrate'
+                metric = 'DCGM_FI_DEV_GPU_UTIL' if vendor == 'nvidia' else 'dcu_utilizationrate'
                 result = stack.call('run', '--rm', '--platform', 'linux/arm64', '--network', stack.network,
                                     '--entrypoint', 'python', cfg['images']['toolbox'], '-c',
                                     PROBE.replace('metric = METRIC', 'metric = ' + repr(metric)), capture=True)

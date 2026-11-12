@@ -1,0 +1,12 @@
+{
+  "vendor": "hygon",
+  "status": "reference",
+  "job_name": "hygon-dcu-exporter",
+  "scheme": "http",
+  "metrics_path": "/metrics",
+  "dashboard": "grafana/gpu.json",
+  "exporter_version": "v2.4.1",
+  "source_catalog": "references/hygon-official/2026-11-06/sources.json",
+  "source_dashboard": "references/hygon-official/2026-11-06/upstream/grafana/dcu-exporter-dashboard.json",
+  "validation": "official-catalog-and-dashboard; hardware unverified"
+}

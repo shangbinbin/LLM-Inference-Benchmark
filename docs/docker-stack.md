@@ -130,7 +130,7 @@ llm-bench up --config /path/to/site.json
 
 主机需已装 NVIDIA 驱动及 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)。`gpu.vendor: auto` 通过本机可用的设备工具识别厂商；不能唯一识别时会停止，绝不默认当成 NVIDIA。远程指标端点或两厂商工具同时可用时显式指定 `nvidia` / `hygon`。GPU Exporter 的镜像版本在 `images` 中固定，可按目标驱动兼容性更换。
 
-NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商后 job、查询、默认 Exporter 端口与容器参数同时切换。HCU v3 使用官方清单中的 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 挂载，需准备宿主机路径与匹配驱动，仍需实机验证。旧 `dcu_*` 不能冒充 `hcu_*`。设备采集不挂 Docker socket，不依赖 Docker 的容器日志接口。
+NVIDIA 使用 DCGM；海光正式默认使用光合社区 DCU Exporter v2.4.1，检测 dcu_memorycap_bytes，面板查询 dcu_* 并映射 name/minor_number。项目已有 /dev、/opt/hyhal、/etc/hostname、/etc/vdev 挂载需在实际驱动环境确认。HCU v3 独立参考继续保留，但其专属环境开关不再默认传给 DCU。内部端口可用 gpu.hygon_exporter_port 覆盖；迁移步骤见 [DCU 说明](dcu-exporter-v2.4.1.md)。设备采集不挂容器运行时 socket。
 
 ## 配置字段
 
@@ -151,10 +151,11 @@ NVIDIA 使用 DCGM 采集/面板，海光使用 HCU v3 采集/面板；选厂商
 | `allow_missing_logs` | 可选布尔值，真实模式默认 false；true 允许活跃文件延迟创建，日志目录仍须存在；simulation 自动允许 fixture 创建文件 |
 | `log_files` | 兼容旧活跃文件列表；设置 log_sources 时忽略此项；不允许 glob 或路径越界 |
 | `gpu.vendor` | auto/nvidia/hygon，当前每个观测栈一个厂商 |
+| `gpu.hygon_exporter_port` / `gpu.hygon_exporter_env` | 本机 DCU 实际内部端口（项目预设 16080，非已验证镜像默认）及可选环境变量字符串对象；external 使用实际 nodes[].target |
 | `gpu.nvidia_metrics_profile` | basic（默认）：只读挂载 8 项基础指标列表，避开 profiling；full：使用镜像默认集合，仅在现场已验证兼容时开启 |
 | `gpu.deployment` | local：启动本机一个 Exporter；external：只采集已部署的逐节点 Exporter |
 | `gpu.nodes` | 节点 name、gpus、可选实际 model；external 还需独立 target: host:port |
-| `gpu.model_label` / `gpu.index_label` | 可选 Exporter 型号/卡序号原生标签名；NVIDIA 默认 modelName/gpu，海光默认只映射 minor_number，型号建议填 nodes[].model |
+| `gpu.model_label` / `gpu.index_label` | 可选 Exporter 型号/卡序号原生标签名；NVIDIA 默认 modelName/gpu，海光默认 name/minor_number；nodes[].model 可显式覆盖型号 |
 | `host_metrics` | host：Linux 主机 /proc、/sys、根文件系统只读采集；container：容器/VM 视角（Mac 示例） |
 | `node_exporter_target` | host 模式必填宿主机可达 IP；端口由 ports.node-exporter 同步，默认 39100；该 exporter 使用 host 网络/PID，以采集真实主机网络指标，其余组件使用隔离网络 |
 | `inference` | base_url、model、api（completions/chat）；engine 支持 auto/vllm/sglang，服务由外部管理 |

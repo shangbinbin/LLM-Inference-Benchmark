@@ -20,7 +20,7 @@
     "alloy": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3",
     "node-exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1",
     "nvidia_exporter": "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4",
-    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/hcu-exporter:v3.0.0"
+    "hygon_exporter": "harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1"
   },
   "gpu": {
     "vendor": "auto",
