@@ -14,7 +14,7 @@
 
 Mac 可运行 `python3 docs/examples/verify_offline_mac.py`，验证入口使用正式离线策略，只额外注入内部网络隔离，不再替正式代码补充禁止拉取参数。需提前备齐 Mac 模板的七个 arm64 镜像；不修改 Docker Desktop 全局网络，不删除镜像或已有模拟栈。见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。Mac 模拟不等同于真实 Linux/GPU 或整机断网验收。
 
-> **离线机先跑软件全链路冒烟测试：** 按 [生成配置 → 启动 → 验收 → 停止](online-cpu-to-offline-nvidia.md#offline-smoke) 使用已交付 tokenizer 和内置模拟服务。`generated/offline-smoke.json` 需要按步骤生成，仓库不会预置；同一节说明了日志/报告持久化位置和 down 前的诊断采集。
+> **离线现场操作顺序：** [解压、导入镜像和 tokenizer](#offline-unpack) → [生成 site.json](#offline-site) → [自带 tokenizer 全链路冒烟与停止](#offline-smoke) → [修改真实服务配置](#real-service) → [单档压测全流程](#real-benchmark) 或 [多测试例](#multiple-cases)。`site.json` 与 `offline-smoke.json` 都需要按步骤准备，仓库不会预置 generated 下的文件；以下第 4 节包含可复制命令及持久化位置。
 
 ## 1. 必须准备的内容
 
@@ -193,52 +193,510 @@ for path in sorted(bundle.rglob('*')):
 (bundle / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
 ```
 
-## 4. 离线侧：导入、预检查与运行
+## 4. 离线侧：从解压到真实服务压测
 
-先安装已准备的系统运行时、驱动及设备运行时，在交付包目录执行：
+<a id="offline-unpack"></a>
+
+### 4.1 解压源码、导入镜像和 tokenizer
+
+先安装所选运行时及依赖。以下约定交付包已经解压到 `/home/llm-bench-delivery/offline-bundle`，源码解到 `/home/llm-bench-runtime`；若现场不同，统一替换路径。已经完成解压、导入的步骤可跳过，**不要重复解压覆盖已经修改的源码、配置或 tokenizer**。
+
+在交付包目录核对并解压源码：
 
 ```bash
+cd /home/llm-bench-delivery/offline-bundle
 sha256sum -c SHA256SUMS
-# 按 site.json 运行时选择一条导入命令
-nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
-# Docker 则使用：docker image load -i images/images-linux-amd64.tar
-tar -xzf repository.tar.gz -C /path/to/workspace
-mkdir -p /srv/model-tokenizer
-tar -xzf tokenizer/model-tokenizer.tar.gz -C /srv/model-tokenizer
+mkdir -p /home/llm-bench-runtime
+tar -xzf repository.tar.gz -C /home/llm-bench-runtime
 ```
 
-导入恢复镜像和标签；Docker 与 containerd 的存储独立，nerdctl load 的 namespace 必须与现场配置一致。镜像只读层不包含主机 bind mount 数据。[Docker load 文档](https://docs.docker.com/reference/cli/docker/image/load/)。建议在 **新建空 tokenizer 目录**解包，避免与旧模型词表混合。将 site.json 的 storage.tokenizer 指向该目录。
-
-离线运行前逐项确认：
-
-1. 所选运行时的 `docker info` 或 `nerdctl --namespace benchmark info` 成功；主机 Python 版本满足要求；容器运行账户具有实际所需权限。
-2. site.json 的所有选用镜像标签存在、架构为 linux/amd64，并与 metadata/images.json 的 image ID 对照。导入后如重命名标签，需同步修改 site.json；不要只修改镜像名字而忽略内容。
-3. storage.root、storage.logs、tokenizer 和 log_sources[].path 路径真实有效；log_sources 优先于旧 log_files。目标机可创建数据目录，容器 UID/GID 有读写权限。
-4. 被测服务、逐节点 Exporter、host 模式 node_exporter_target 地址在容器内可达；不能把容器 localhost 当成宿主机。NVIDIA 驱动/容器设备注入可用，或海光 `/dev`、`/opt/hyhal`、`/etc/hostname`、`/etc/vdev` 已准备。
-5. 内网 DNS、时间同步、HTTPS CA/证书链可用；允许所选运行时的容器网络与推理服务/Exporter/日志接收端通信，nerdctl 需完整 CNI。项目 HTTP 服务默认映射到 0.0.0.0 的高位端口，可通过节点 IP 访问；使用 port_bind_address 指定网卡或仅回环，按现场规则放行可信客户端。
-6. 若要求严格禁止公网请求，按下一节关闭相关功能并由现场网络策略控制出站访问；不要用 `--network none` 启动整栈，因为这会同时切断压测与观测必需通信。
-
-从解包后的仓库根目录执行。`generated/site/site.json` 是现场输入文件，需要从交付包的 site/site.json 复制到该路径（存在时先保留自己的修改），或在本机生成：
+按运行时选择一种镜像导入方式，两个代码块不需要都执行：
 
 ```bash
-# 仅在尚无现场配置时生成；Docker 改为 --runtime docker，省略 --namespace
+# Docker
+cd /home/llm-bench-delivery/offline-bundle
+docker info
+docker image load -i images/images-linux-amd64.tar
+```
+
+```bash
+# nerdctl / containerd；后续配置也必须使用 benchmark namespace
+cd /home/llm-bench-delivery/offline-bundle
+nerdctl --namespace benchmark info
+nerdctl --namespace benchmark load -i images/images-linux-amd64.tar
+```
+
+Docker 与 containerd 的镜像存储独立，nerdctl 的不同 namespace 也不自动共享镜像名称；在 Docker 中导入成功不能替代 nerdctl 导入。镜像归档不包含宿主机 bind mount 数据，tokenizer 和日志需单独准备。详见 [nerdctl 部署](nerdctl.md)。
+
+以下回到**源码根目录**，把已交付的 tokenizer 解到一个新建空目录。这里的“自带 tokenizer”指随交付包提供的模型 tokenizer，不是仓库中的 mock-tokenizer，也不是自动从镜像内寻找词表：
+
+```bash
+cd /home/llm-bench-runtime/LLM-Inference-Benchmark
+mkdir -p assets/tokenizer
+tar -xzf /home/llm-bench-delivery/offline-bundle/tokenizer/model-tokenizer.tar.gz \
+  -C assets/tokenizer
+test -f assets/tokenizer/tokenizer_config.json
+./bin/llm-bench --help
+```
+
+若 assets/tokenizer 已有其他模型文件，请另选空目录解压并相应修改 storage.tokenizer，避免混合词表。至少应有 tokenizer_config.json 以及该模型所需的 tokenizer.json、词表等完整文件；不要拿模拟词表解释真实服务性能。若源码已位于其他目录，从实际源码根目录继续以下步骤。
+
+<a id="offline-site"></a>
+
+### 4.2 解压后先生成 generated/site/site.json
+
+**`generated/site/site.json` 是现场输入文件，不随 Git 仓库预置，也不会由 up 自动生成。** 生成步骤只依赖已交付源码和主机 Python，不联网、不构建镜像、不启动容器，也不访问模板里的推理服务地址。
+
+在源码根目录执行以下命令之一，从 GPU41 完整示例生成配置：
+
+```bash
+# 使用 Docker
+python3 scripts/create_site_config.py --runtime docker
+```
+
+```bash
+# 或使用 nerdctl，namespace 与镜像导入保持一致
 python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
-# 编辑 generated/site/site.json：实际地址、模型、路径、GPU、端口与 runtime
-# GPU41 示例需要鉴权；在同一 Bash 终端输入实际 Token
+```
+
+两条命令仅选择运行时，默认源文件均为 `configs/sites/gpu41-qwen3-0.6b-random-1k.json`，默认输出均为 `generated/site/site.json`。需要显式指定路径时，例如：
+
+```bash
+python3 scripts/create_site_config.py \
+  --source configs/sites/gpu41-qwen3-0.6b-random-1k.json \
+  --output generated/site/another-site.json --runtime docker
+```
+
+**已存在输出文件时会拒绝覆盖。** 若已从交付包复制了 site.json，直接编辑已有文件；若要在离线机复制交付配置，可执行下面的独立替代步骤，不再运行上述生成命令：
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+source = Path('/home/llm-bench-delivery/offline-bundle/site/site.json')
+target = Path('generated/site/site.json')
+content = source.read_text()
+target.parent.mkdir(parents=True, exist_ok=True)
+with target.open('x') as stream:
+    stream.write(content)
+print('已复制：', target.resolve())
+PY
+```
+
+生成器保留模板中的接口、模型、日志和负载参数；**GPU41 的地址与 NFS 路径不会自动变成当前节点的路径**。生成时允许 tokenizer 尚未就位；plan/up 才会检查其文件存在。先把 storage.tokenizer 指向刚解压的目录，并检查镜像标签及 runtime；其余真实服务字段在 4.4 节填写。使用上节默认解包位置时，可执行：
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+path = Path('generated/site/site.json')
+cfg = json.loads(path.read_text())
+cfg['storage']['tokenizer'] = 'assets/tokenizer'
+path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+print('Tokenizer：', Path(cfg['storage']['tokenizer']).resolve())
+print('Runtime：', cfg['runtime'])
+PY
+```
+
+相对 storage 路径按**源码根目录**解析，不按 JSON 文件所在目录解析。`runtime` 为 `["docker"]` 或 `["nerdctl","--namespace","benchmark"]`；自定义 socket/snapshotter 等全局参数也写在该数组中。运行时 CLI 覆盖及迁移规则见 [CLI 指南](cli.md)。后续统一通过 `./bin/llm-bench` 执行，无需额外设置 PATH。
+
+<a id="offline-smoke"></a>
+
+### 4.3 使用自带 tokenizer 做离线连通性和全链路冒烟测试
+
+**先使用独立的模拟配置验证软件链路，再对真实服务发压。** 本节不需要真实推理服务、GPU 或 Bearer Token。AISBench 使用交付的真实 tokenizer 生成随机输入并汇总结果；内置 fixture 返回模拟流式响应，同时提供模拟应用/GPU 指标与日志。成功说明 tokenizer、客户端、容器网络、Prometheus、Grafana、Alloy、Loki 和报告链路可工作；模拟吞吐和 GPU 指标不能作为真实设备性能结论。
+
+#### 4.3.1 生成独立的 offline-smoke.json
+
+确认 4.2 节的 site.json 已存在、镜像名和 runtime 正确、tokenizer 已解压。下面只从 site.json 继承运行时、镜像名称和 tokenizer 路径，**不会继承真实服务地址、Token 配置或真实日志目录**，也不会修改 site.json：
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+output = Path('generated/offline-smoke.json')
+if output.exists():
+    raise SystemExit('配置已存在，请直接复用或检查后手动编辑：' + str(output))
+site = json.loads(Path('generated/site/site.json').read_text())
+tokenizer = Path(site['storage']['tokenizer']).expanduser()
+if not (tokenizer / 'tokenizer_config.json').is_file():
+    raise SystemExit('Tokenizer 不完整，请先修改 site.json 的 storage.tokenizer：' + str(tokenizer))
+cfg = json.loads(Path('configs/stacks/nerdctl-offline-smoke.json').read_text())
+cfg.update(project='llm-bench-offline-smoke', task='offline-smoke',
+           runtime=site['runtime'], images=site['images'],
+           offline=True, legacy_seccomp_unconfined=True, simulation=True,
+           platform='linux/amd64', startup_timeout=180)
+if 'runtime_kind' in site:
+    cfg['runtime_kind'] = site['runtime_kind']
+cfg['storage'] = {
+    'root': 'generated/offline-smoke',
+    'logs': 'generated/offline-smoke-logs',
+    'tokenizer': site['storage']['tokenizer'],
+}
+cfg['benchmark'].update(dataset_type='tokenid', input_length=64, output_length=16,
+                        prefix_length=0, request_count=8, concurrency=2,
+                        warmups=0, retry=1, request_rate=0, mode='perf')
+cfg['ports'].update(grafana=33003, prometheus=39093, loki=33103,
+                    alloy=32348, **{'node-exporter':39103, 'gpu-exporter':39403},
+                    fixture=38083)
+output.parent.mkdir(parents=True, exist_ok=True)
+with output.open('x') as stream:
+    stream.write(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+print('已生成：', output.resolve())
+PY
+```
+
+它采用 Linux amd64 模拟模板；源文件名含 nerdctl，但最终 runtime 按 site.json 选择，可为 Docker。冒烟任务为 offline-smoke，日志由 fixture 写入 `generated/offline-smoke-logs/server.log`；本节中的角色是 master、replica-0。端口与生产示例不同，若仍被占用，先修改 offline-smoke.json 的 ports。不要为了避开名称冲突接管其他项目网络或删除不明容器。
+
+#### 4.3.2 用 llm-bench 预检查并启动冒烟
+
+```bash
+./bin/llm-bench plan --config generated/offline-smoke.json
+./bin/llm-bench images check --config generated/offline-smoke.json
+set -o pipefail
+./bin/llm-bench up --config generated/offline-smoke.json \
+  2>&1 | tee generated/offline-smoke-up.log
+./bin/llm-bench status --config generated/offline-smoke.json
+```
+
+plan 校验 tokenizer_config.json 存在并渲染配置，**不能单独证明 tokenizer 能完整加载或服务可达**。images check 检查同一 runtime/namespace 中的本地镜像。up 才会实际启动 fixture、node_exporter、Loki、logrotate、Alloy、Prometheus、Grafana，等待目标就绪并执行 8 次请求、并发 2 的随机 tokenid 压测。不要给 up 添加 --no-benchmark，否则不会执行本节 AISBench 验证。客户端离线加载挂载到 `/tokenizer` 的词表；不下载权重或 tokenizer。
+
+本节显式开启 `legacy_seccomp_unconfined=true`，为本项目全部新建容器取消 seccomp 系统调用过滤，兼容旧运行时拒绝创建线程的环境；保留线程数限制，并不改变请求并发。不重启 Docker/containerd，也不影响其他项目。若现场要求保留过滤，在启动前显式改为 false 并验证运行时支持，影响详见 [兼容说明](legacy-docker-threads.md)。
+
+#### 4.3.3 验收、查看实时日志与再次冒烟
+
+up 返回 0 后，执行完整的软件链路验收：
+
+```bash
+python3 scripts/verify_simulation.py --config generated/offline-smoke.json
+```
+
+该工具仅用于 simulation，检查容器、Prometheus targets、模拟 GPU 指标及标签、Grafana 数据源/任务面板、Loki 请求日志和**最新一次默认 up**的 AISBench 报告，结果写入 `generated/offline-smoke/verification.json`。它需要本机能访问映射端口，Grafana 使用默认 admin/admin；自定义密码时在同一终端设置 BENCH_GRAFANA_PASSWORD。
+
+| 验收项 | 查看位置与成功标准 |
+| --- | --- |
+| 运行状态 | status 显示长期观测组件 running；默认 up 的 AISBench 容器退出码为 0 属于正常完成 |
+| AISBench | up 日志和最新 synthetic.json 中 Total/Success 为 8、Failed 为 0；无 tokenizer 加载错误 |
+| Prometheus | `http://节点IP:39093/targets` 中采集目标 UP；GPU 数据来自 fixture，是模拟值 |
+| Grafana | `http://节点IP:33003` → Inference Benchmark → 任务总览，task 选择 offline-smoke |
+| 日志 | Grafana Explore 选择 Benchmark Loki，查询 `{task="offline-smoke"}`，或在任务总览查看日志与 Logs Volume |
+
+Grafana Explore 可打开 Live 查看实时日志；任务总览通过自动刷新更新日志和 Logs Volume。不要把 Data sources 配置页当成日志页面。节点 IP 为运行观测栈的机器 IP；端口以实际 JSON 为准。
+
+已有冒烟栈再次发压使用 bench，不要再次 up：
+
+```bash
+./bin/llm-bench bench run --config generated/offline-smoke.json
+```
+
+bench run 在控制台输出 START/PASS/FAIL，详细 AISBench 进度写入本次 `single/client.log`。重复 bench run 的结果在 suites/ 下，需查看本次 suite-results.json；verify_simulation 不读取这类 suite 结果来替代默认 up 报告。
+
+#### 4.3.4 保存诊断并关闭冒烟
+
+```bash
+# 排障或需要回传证据时，先打包再关闭
+./bin/llm-bench logs collect --config generated/offline-smoke.json
+./bin/llm-bench down --config generated/offline-smoke.json
+```
+
+| 数据 | 路径 |
+| --- | --- |
+| 冒烟配置 / up 控制台记录 | `generated/offline-smoke.json` / `generated/offline-smoke-up.log` |
+| 原始模拟日志 | `generated/offline-smoke-logs/server.log` |
+| 默认 up 报告 | `generated/offline-smoke/data/results/<AISBench时间目录>/performances/` |
+| 再次 bench run | `generated/offline-smoke/data/results/suites/<运行目录>/suite-results.json` 及 `single/client.log`、`single/results/` |
+| 指标、Loki、Grafana 等持久数据 | `generated/offline-smoke/data/` 下各组件目录 |
+| 诊断包 | `generated/offline-smoke/diagnostics/` |
+
+down 删除本项目拥有的容器和网络，保留以上文件以及真实 tokenizer。下次可复用同一冒烟配置重新 up。冒烟失败会保留容器与日志用于诊断；先 status/logs collect，确认原因后 down，再修改配置重新 up，避免 Name collision。
+
+<a id="real-service"></a>
+
+### 4.4 生成并修改对接真实推理服务的 site.json
+
+**4.2 节生成的 site.json 就是真实服务配置底稿，本节继续编辑它，不再生成或覆盖。** 若跳过前文，请先按 4.2 节从 GPU41 示例生成；不要把 offline-smoke.json 改成生产文件，以免遗留 fixture 地址、模拟日志和模拟指标。
+
+以下以单实例 Qwen3-0.6B、压测与推理在同一台 GPU41 为例。模型和服务由现场另行部署；本工程只启动压测和观测链路，不重启推理 Pod。修改前逐项核对：
+
+| 配置项 | 作用与现场修改要求 |
+| --- | --- |
+| `project` | 容器、网络和 ownership 前缀，示例 llm-bench-qwen-real；节点上已有同名栈时复用 bench 或先 down，不能重复 up |
+| `task` | 推理业务任务标签，示例 qwen3-0.6b；应用/GPU/日志共用，Grafana 用它筛选 |
+| `runtime` | Docker 或 nerdctl；nerdctl namespace 与导入镜像一致，普通容器运行时与 GPU 设备注入是不同配置 |
+| `platform/offline/simulation` | 真实场景保持 linux/amd64 / true / false；simulation=false 才会访问真实服务并按配置采集真实设备 |
+| `legacy_seccomp_unconfined` | 示例 true，作用于本项目所有新容器；false 可恢复过滤，需要重新创建项目容器生效 |
+| `storage.root` | 示例 generated/qwen-real；状态、监控数据、配置快照及结果都保存在这里，不能与日志目录相同 |
+| `storage.tokenizer` | 交付的 assets/tokenizer 或真实模型目录；必须匹配被测模型，不需要包含模型权重 |
+| `storage.logs` | 节点本地可访问、真实服务持续写入的日志目录，如 /srv/inference-logs；容器不会自动到 Pod 内寻找或拉取日志 |
+| `log_sources` | 活跃日志相对路径、角色、副本与可选节点，例如 server_log.log/master/replica-0/gpu41；必须与真实文件相符，优先于旧 log_files |
+| `inference.base_url` | 服务根 URL，示例含网关前缀 /publishaddress/inference/qwen306b/；不带 v1/chat/completions 或 metrics 后缀 |
+| `inference.model/api/engine` | 服务接受的模型 ID / chat 或 completions / vllm、sglang 或 auto；engine 是描述标签，不启动对应引擎 |
+| `inference.api_key_env` | Bearer Token 环境变量名，如 INFERENCE_API_KEY；只写变量名，不写 Token；无鉴权服务删除该字段 |
+| `topology` | 单实例 kind=single，tp/pp 填实际部署值，作为观测标签；不据此启动或调整服务并行 |
+| `gpu.vendor/deployment/nodes` | 明确 nvidia 或 hygon；本机启动 Exporter 用 local、一个节点及实际卡数，已有 Exporter 用 external、逐节点填写 target |
+| `gpu.nvidia_metrics_profile` | NVIDIA 推荐先 basic；本机 DCGM 默认 profiling 字段失败时不必先启用 full |
+| `host_metrics` | GPU41 示例 container，只采容器视角主机指标；需要宿主机指标用 host 并填写容器可达的 node_exporter_target |
+| `images` | 所选 runtime 中已经导入的完整标签与 amd64 架构；不要只改标签忽略镜像内容 |
+| `ports/port_bind_address` | Grafana 33000、Prometheus 39090、Loki 33100、Alloy 32345、node_exporter 39100、GPU Exporter 39400；默认绑定 0.0.0.0，按占用和访问范围修改 |
+| `benchmark` | 默认单档负载。多测试例由独立 cases.json 覆盖，见 4.6 节 |
+
+#### 4.4.1 按实际文件位置修改服务、日志与负载
+
+下面脚本更新 4.2 节的已有文件，**执行前先把脚本中的地址、模型、日志目录和节点改成现场值**。它保留已选择的 runtime、镜像标签和端口；本例仍使用示例的 container 主机指标模式。若使用原 NFS 模型目录日志，storage.logs 填该 NFS 绝对路径，不要照抄 /srv/inference-logs。
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('generated/site/site.json')
+cfg = json.loads(path.read_text())
+cfg.update(project='llm-bench-qwen-real', task='qwen3-0.6b',
+           simulation=False, platform='linux/amd64', offline=True,
+           legacy_seccomp_unconfined=True, host_metrics='container')
+cfg['storage'].update(root='generated/qwen-real', logs='/srv/inference-logs',
+                      tokenizer='assets/tokenizer')
+cfg['inference'] = {
+    'base_url': 'http://10.142.118.41:38000/publishaddress/inference/qwen306b/',
+    'model': 'Qwen3-0.6B', 'api': 'chat', 'engine': 'vllm',
+    'api_key_env': 'INFERENCE_API_KEY',
+}
+cfg['topology'] = {'kind':'single', 'tp':1, 'pp':1}
+cfg['gpu'].update(vendor='nvidia', deployment='local',
+                  nodes=[{'name':'gpu41', 'gpus':1}], nvidia_metrics_profile='basic')
+cfg['log_sources'] = [
+    {'path':'server_log.log', 'role':'master', 'replica':'replica-0', 'node':'gpu41'}
+]
+cfg['benchmark'] = {
+    'dataset_type':'tokenid', 'input_length':1024, 'output_length':1024,
+    'prefix_length':0, 'request_count':1000, 'concurrency':16,
+    'request_rate':0, 'warmups':0, 'retry':1, 'mode':'perf',
+    'generation_kwargs':{'temperature':0, 'ignore_eos':True},
+}
+path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+print('已更新：', path.resolve())
+PY
+```
+
+`storage.logs=/srv/inference-logs` 配合上述 log_sources 时，Alloy 和 logrotate 读取宿主机的 `/srv/inference-logs/server_log.log`。启动器会挂载该目录，不要求手写 docker/nerdctl -v；但文件必须已经是推理服务真实输出，不要创建空文件来冒充。日志目录、轮转目录需有写权限，避免本工程 logrotate 与节点已有轮转任务同时管理同一文件。tokenizer 会只读挂载为客户端的 `/tokenizer`。
+
+本例 benchmark 表示随机输入请求长度 1024、输出请求上限 1024、正式请求 1000、并发 16；warmups=0 无额外预热，retry=1 表示总尝试次数为 1，request_rate=0 表示不额外限 QPS。AISBench 本地生成随机数据，无需先运行独立数据集生成命令。聊天模板可能增加服务实际 prompt token 数，ignore_eos 需要后端支持，实际输出长度和成功数以报告为准。服务最大上下文需容纳输入、模板及输出，详见 [长度口径](aisbench.md)。
+
+#### 4.4.2 基础 URL、metrics 和鉴权
+
+使用本例 base_url 时，自动派生：
+
+| 用途 | 实际 URL |
+| --- | --- |
+| chat 压测 | `http://10.142.118.41:38000/publishaddress/inference/qwen306b/v1/chat/completions` |
+| 模型就绪探测 | `http://10.142.118.41:38000/publishaddress/inference/qwen306b/v1/models` |
+| 应用指标 | `http://10.142.118.41:38000/publishaddress/inference/qwen306b/metrics` |
+
+更换模型服务时改 base_url、model、tokenizer、日志和 task，三个派生地址跟随 base_url。网关需要转发流式推理、v1/models 和 metrics。若现场指标独立提供，配置 topology.metrics_endpoints、metrics_path、metrics_scheme 等覆盖值；希望自动派生时删除旧覆盖字段，不能保留通用模板中的 REPLACE_ 占位符。上面的脚本用单实例 topology 替换旧值，因此不会残留旧指标覆盖。
+
+压测、models 探测和应用指标默认共用 api_key_env；在执行 up/bench 的同一 Bash 终端输入纯 Token，不带 Bearer 前缀：
+
+```bash
 read -r -s -p 'Inference Token: ' INFERENCE_API_KEY
 export INFERENCE_API_KEY
+```
+
+重新登录或换终端时重新导出；Token 不写入 JSON、命令参数值或 Git。Prometheus 按启动时 Token 生成凭据文件。更换基础服务配置或 metrics Token 时，先 down 原栈，再导出新值并 up，避免旧监控配置继续使用。无鉴权服务删除 inference.api_key_env，且不要遗留独立 metrics 鉴权覆盖。详见 [鉴权说明](inference-auth.md)。
+
+#### 4.4.3 设备与网络补充
+
+NVIDIA 本机 Exporter：Docker 需已注册 nvidia runtime；nerdctl 使用 --gpus all，需可用的 NVIDIA Container Toolkit/nvidia-container-cli，不把 Docker runtime 别名直接当 containerd shim。真实设备/驱动需在现场确认。海光改 gpu.vendor=hygon 并核对对应设备和运行库；如果已有 dcu-exporter，先检查它真实暴露的指标，不假定旧 dcu-exporter 2.4.1 符合 HCU v3 指标契约。
+
+使用已有设备 Exporter 时，例如将 GPU 部分改为以下片段，`target` 换成真实可达地址：
+
+```json
+{
+  "gpu": {
+    "vendor": "nvidia",
+    "deployment": "external",
+    "nodes": [{"name": "gpu41", "gpus": 1, "target": "10.142.118.41:9400"}]
+  }
+}
+```
+
+这是合并到完整 site.json 的片段，不是可独立运行的配置。external 模式不再启动本项目本机 GPU Exporter。host_metrics=host 时另填 node_exporter_target 为容器可达的节点地址；端口随 ports.node-exporter，不要把容器 localhost 当宿主机。
+
+离线仍需容器互通及访问真实服务、Exporter；不要给整个栈设置 --network none。确认容器账户有数据目录和日志权限，内网路由、时间和 CA 正确；Docker bridge 或 nerdctl CNI 与网关可达。node_exporter 的采集视角取决于 host_metrics，选择 container 不代表已经监控宿主机全部资源。
+
+<a id="real-benchmark"></a>
+
+### 4.5 用 llm-bench 完成真实服务压测全流程
+
+以下命令在源码根目录执行，使用**修改后的同一份** generated/site/site.json。若此前已启动该真实栈，先按本节末尾说明决定复用或 down；不要重复 up。
+
+#### 4.5.1 预检查并只启动观测栈
+
+先确保 4.4 节 Token 已在当前终端导出，并且真实服务已经启动：
+
+```bash
 ./bin/llm-bench plan --config generated/site/site.json
 ./bin/llm-bench images check --config generated/site/site.json
-./bin/llm-bench up --config generated/site/site.json --no-benchmark
-./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
-# 小规模验证通过后，按示例执行 1000 次、并发 16、随机 1k/1k
-./bin/llm-bench bench run --config generated/site/site.json
+set -o pipefail
+./bin/llm-bench up --config generated/site/site.json --no-benchmark \
+  2>&1 | tee generated/site/real-up.log
 ./bin/llm-bench status --config generated/site/site.json
+```
+
+plan 展示生效 runtime、路径、厂商、接口与 workload，并渲染配置快照；它不访问服务、不检查镜像，也不读取 Token。images check 检查全部选用的本地镜像。up --no-benchmark 启动所选 GPU/主机采集、Loki、logrotate、Alloy、Prometheus、Grafana，等待采集目标 UP 和真实 v1/models 就绪，**此时尚未执行 AISBench 请求**。Prometheus 指标抓取的鉴权也在这里验证；只确认模型接口正常不能替代 metrics 连通。
+
+`--no-benchmark` 会省略 up 对 AISBench 镜像的要求；因此本流程的 images check 不加此参数，以便提前发现客户端镜像缺失。出现 `bind: address already in use` 时修改 ports；部分组件已启动的失败场景先保留诊断、down，再以新端口 up，不要直接重试造成资源重名。
+
+#### 4.5.2 小规模确认后再正式发压
+
+```bash
+# 仍使用配置的 1024 输入/1024 输出，先验证 8 次、并发 2
+./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
+# 上一步通过后，执行 site.json 默认的 1000 次、并发 16
+./bin/llm-bench bench run --config generated/site/site.json
+```
+
+小规模参数只覆盖这次用例，不会修改 site.json 或后续默认值。成功应看到 PASS single 和 Suite report 路径，suite-results.json 中 passed=true；perf 报告 Success Requests 等于指定正式请求数、Failed Requests 为 0。AISBench 错误、报告缺失或完成数不符都会返回非零；HTTP 200 的单次手工请求并不证明后端接受随机输入、流式参数、ignore_eos 和长度上限。
+
+bench run 的控制台仅显示 START/PASS/FAIL 等状态，逐请求进度与错误在本次 client.log。可在另一终端定位文件后实时查看：
+
+```bash
+find generated/qwen-real/data/results/suites -name client.log
+# 将“本次运行目录”换为刚才新建的目录，不要查看旧成功记录
+tail -f generated/qwen-real/data/results/suites/本次运行目录/single/client.log
+```
+
+如希望首次启动后直接执行正式单档压测，也可在尚未启动该栈时执行 `./bin/llm-bench up --config generated/site/site.json`，省略 --no-benchmark；它在控制台输出 AISBench 进度，结果在默认 up 的目录中。已有观测栈继续使用 bench run，不需要 down/up。
+
+#### 4.5.3 查看指标、实时日志和结果
+
+以默认端口、观测栈部署于 GPU41 为例，Grafana 为 `http://10.142.118.41:33000`，Prometheus 为 `http://10.142.118.41:39090`；改过节点或 ports 时替换。Grafana 登录后打开 Inference Benchmark → 任务总览，选择 task=qwen3-0.6b；GPU 指标按节点、型号、卡序号筛选；日志按 instance_role=master、replica=replica-0 筛选。
+
+Loki 查询 `{task="qwen3-0.6b", instance_role="master", replica="replica-0"}`。在 Explore 打开 Live，或通过任务总览的日志面板自动刷新，同时查看 Logs Volume。Alloy 读取实际本地日志文件；若没有新请求日志，先确认服务确实持续写入该文件、文件权限及配置路径，而不是只修改 Grafana 数据源地址。NVIDIA/海光面板按所选厂商生成；服务未暴露的 vLLM/SGLang 指标会显示 No data。
+
+| 运行方式 / 数据 | 默认路径，相对源码根目录 |
+| --- | --- |
+| site 输入 | `generated/site/site.json`，由用户维护 |
+| 生效配置快照 | `generated/qwen-real/config/<哈希>/manifest.json`，启动器生成，勿手改 |
+| 当前运行状态 | `generated/qwen-real/state.json` |
+| bench run 的本次汇总 | `generated/qwen-real/data/results/suites/<运行目录>/suite-results.json` |
+| bench run 的进度 / 请求错误 | 同一运行目录下 `single/client.log` |
+| bench run 的 AISBench 性能报告 | 同一运行目录下 `single/results/<AISBench时间目录>/performances/aisbench-target/synthetic.json` |
+| 默认 up 的 AISBench 报告 | `generated/qwen-real/data/results/<AISBench时间目录>/performances/aisbench-target/synthetic.json` |
+| 监控/轮转持久数据 | `generated/qwen-real/data/` 下 prometheus、loki、grafana、alloy、logrotate |
+| 推理服务原始日志 | 本节示例为 `/srv/inference-logs/server_log.log`；原 GPU41 模板则是其 NFS storage.logs 下同名文件 |
+
+改变 storage.root 后以上输出随之改变。查看**当前运行目录**，不要用历史成功报告判断本次结果。失败时先检查本次 client.log 和 AISBench 的 failed.json/调试文件；Bad Request 需查看网关/后端实际返回内容，再核对模型、随机输入长度和请求参数。
+
+#### 4.5.4 保存诊断、停止及修改后重启
+
+```bash
 ./bin/llm-bench logs collect --config generated/site/site.json
 ./bin/llm-bench down --config generated/site/site.json
 ```
 
-site.json 必须包含顶层 `"offline": true`。`images check` 检查全部选用镜像，`up` 自动复查；`plan` 校验本地 tokenizer 并渲染计划，不检查镜像或服务。要启动并直接运行单档 AISBench，可 up 不带 --no-benchmark；已有栈再次压测用 bench run。down 保留监控数据、原始日志和报告，路径见 [GPU41 数据与停止说明](gpu41-qwen3-random-1k.md#5-数据停止与切换引擎)。SLO 搜索需另行准备 search.json，按 [搜索指南](aisbench-auto-slo.md)操作。
+down 只删除本项目拥有的容器和网络，保留指标、Loki 数据、原始服务日志、结果和 tokenizer，也不停止真实推理服务。仅修改本次 workload 可用 bench 参数或 4.6 节用例覆盖；修改服务地址、日志、基础 benchmark 默认值、GPU、端口、runtime 等基础配置，需要先 down，再修改 site.json、重新导出 Token、plan/images check/up。
+
+**bench/status/down 使用启动时保存的 manifest；修改 site.json 不会热更新运行栈。** 用 --config 仍需能通过 project/storage.root 定位原栈，先 down 后再修改这两个定位字段。切换 Docker/nerdctl 时先按原栈 down，将镜像导入目标引擎/namespace，再按新配置 up；无需为本次文档流程重建兼容镜像或重启 Docker/containerd。正在发压持有锁时，等当前用例结束再 down。
+
+<a id="multiple-cases"></a>
+
+### 4.6 多个测试例：一份 site.json + 一份 cases.json
+
+**不同输入/输出长度、请求数、并发的多个测试例，不需要复制多份 site.json，也不要把 cases 数组塞进 site.json。** 当前 CLI 的职责为：
+
+| 文件 | 保存的内容 |
+| --- | --- |
+| site.json | 共用服务/鉴权、tokenizer、日志/GPU/端口等环境；benchmark 是每个用例的默认值 |
+| cases.json | 有序测试例；每个 case.benchmark 覆盖该用例的输入长度、输出长度、请求数、并发等 |
+
+#### 4.6.1 site.json 如何修改
+
+保持 4.4 节的完整服务配置，benchmark 使用单档默认对象即可，例如：
+
+```json
+{
+  "benchmark": {
+    "dataset_type": "tokenid",
+    "input_length": 1024,
+    "output_length": 1024,
+    "prefix_length": 0,
+    "request_count": 1000,
+    "concurrency": 16,
+    "request_rate": 0,
+    "warmups": 0,
+    "retry": 1,
+    "mode": "perf",
+    "generation_kwargs": {"temperature": 0, "ignore_eos": true}
+  }
+}
+```
+
+以上是字段片段，不能替换整个 site.json。已按 4.4 节脚本修改的文件无需再改：它已有这些默认值。若旧文件使用 concurrency_levels/requests_per_level 原生并发扫描，建议删除它们，改用下方 cases 清单统一管理；suite 会为各例移除原生扫描设置。不要将 input_length、output_length、request_count 或 concurrency 改成数组；这些默认字段仍是正整数。
+
+每个测试例单独从 site.benchmark 继承，再用自己的 benchmark 覆盖；不会继承上一例的修改。generation_kwargs 整体替换，不递归合并。示例统一使用 tokenid、perf、无预热、一次总尝试；每例都显式写出所关心的四个参数，便于复查。
+
+#### 4.6.2 创建不同长度、请求数和并发的测试例
+
+在源码根目录执行，写入新文件；已有文件时拒绝覆盖，可直接编辑它：
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+suite = {
+    'cooldown_seconds': 5,
+    'stop_on_failure': True,
+    'cases': [
+        {'name':'in512-out128-r100-c4', 'benchmark':{
+            'input_length':512, 'output_length':128, 'request_count':100, 'concurrency':4}},
+        {'name':'in1024-out1024-r1000-c16', 'benchmark':{
+            'input_length':1024, 'output_length':1024, 'request_count':1000, 'concurrency':16}},
+        {'name':'in4096-out256-r300-c8', 'benchmark':{
+            'input_length':4096, 'output_length':256, 'request_count':300, 'concurrency':8}},
+    ],
+}
+path = Path('generated/site/cases.json')
+path.parent.mkdir(parents=True, exist_ok=True)
+with path.open('x') as stream:
+    stream.write(json.dumps(suite, ensure_ascii=False, indent=2) + '\n')
+print('已生成：', path.resolve())
+PY
+```
+
+这三例按顺序运行，正式请求总数为 1400，**不是每例 1400，也不是同时启动三份压测**。warmups=0、retry=1 且无失败时，发压请求数按表执行；如增加预热或重试，服务收到的 HTTP 调用数可能更多。每例 concurrency 只控制该例内部的并发上限。根据真实模型上下文容量调整 4096 等长度。
+
+用例 name 必须唯一，使用小写字母、数字和短横线，最长 40 字符。cooldown_seconds 控制例间冷却；stop_on_failure=true 默认失败即停止，false 会在已完成但报告未通过时继续后续例，整套最终仍返回非零；运行时基础设施异常可能直接终止。
+
+#### 4.6.3 验证并执行整套用例
+
+先渲染并核对每例生效参数，plan 不会发请求：
+
+```bash
+./bin/llm-bench plan --config generated/site/site.json --cases generated/site/cases.json
+```
+
+如果 4.5 节已经启动观测栈，直接复用：
+
+```bash
+# 在当前终端保持所需 Token 环境变量
+./bin/llm-bench bench suite --config generated/site/site.json \
+  --cases generated/site/cases.json
+```
+
+若尚未启动真实栈，可选择一次启动并执行清单：
+
+```bash
+./bin/llm-bench images check --config generated/site/site.json
+./bin/llm-bench up --config generated/site/site.json \
+  --cases generated/site/cases.json
+```
+
+上述两种执行方式按栈是否已启动选择，不能对同一运行栈再次 up。`up --cases` 只执行清单，不会先额外执行 site.benchmark 的 1000 次默认单档；--cases 与 --no-benchmark 互斥。也可先 up --no-benchmark，再 bench suite。
+
+每次 suite 在 `generated/qwen-real/data/results/suites/<运行目录>/` 新建结果，各例按自己的 name 建子目录，分别含 stack.json、aisbench.py、client.log 和 results/；suite-results.json 列出每例生效参数、passed、退出码和报告路径。控制台 START/PASS/FAIL 对应当前用例，实时进度查看该用例的 client.log。多例共用同一监控数据和 task 标签，可按运行时间范围关联性能和日志。完成后仍按 4.5.4 节 logs collect/down，观测栈不会因清单结束自动删除。
+
+JSONL/ShareGPT 等文件型用例还需在 case 的 dataset 指定 type/path 并交付数据文件，路径相对 cases.json 所在目录解析；输入长度由文件内容决定，不能用合成 input_length 将其强行截成指定长度，完整格式见 [混合数据集说明](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)。SLO 自适应搜索另需准备策略 JSON，见 [搜索指南](aisbench-auto-slo.md)。
 
 ## 5. 正式离线策略与错误处理
 
