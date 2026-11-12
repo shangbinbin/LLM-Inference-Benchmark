@@ -75,3 +75,17 @@ def missing_resource(result, resource='container'):
     if resource == 'network':
         return 'no network found matching' in message.lower() or 'no such network' in message.lower()
     return bool(re.search(r'no such (?:object|container)\b', message, re.I))
+
+
+def remove_container(cfg, name, info, call, inspect):
+    """Remove an already ownership-checked container without trusting nerdctl rm -f."""
+    if runtime_kind(cfg) == 'nerdctl':
+        # nerdctl 1.7.7 deliberately logs force-removal errors but returns success.
+        # Stop first, use non-force rm (which propagates failures), then verify absence.
+        if info.get('State', {}).get('Running'):
+            call('stop', '--time', '10', name)
+        call('rm', name)
+        if inspect(name) is not None:
+            raise RuntimeError('Container removal incomplete; state/lock retained: ' + name)
+    else:
+        call('rm', '-f', name)

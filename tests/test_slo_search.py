@@ -340,6 +340,16 @@ class ReportTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_nerdctl_trial_cleanup_detects_zero_exit_with_residual_container(self):
+        session = TrialSession.__new__(TrialSession)
+        session.cfg = {'project': 'mine', 'runtime': ['nerdctl', '--namespace', 'bench']}
+        session.inspect = Mock(return_value={'Config': {'Labels': {'io.llm-benchmark.project': 'mine',
+                               'io.llm-benchmark.project.trial': 'expected'}}, 'State': {'Running': False}})
+        session.call = Mock(return_value=subprocess.CompletedProcess([], 0))
+        with self.assertRaisesRegex(RuntimeError, 'removal incomplete'):
+            session.remove_owned('some-client', 'expected')
+        session.call.assert_called_once_with('rm', 'some-client', cleanup=True, capture_output=True, check=True)
+
     def test_cleanup_refuses_another_trials_container(self):
         session = TrialSession.__new__(TrialSession)
         session.cfg = {'project': 'mine'}

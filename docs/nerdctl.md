@@ -4,7 +4,7 @@
 
 ## 运行环境与 namespace
 
-推荐 Linux amd64、nerdctl 2.1.3 或兼容版本、匹配的 containerd/runc、完整 CNI 插件和 iptables 等网络依赖。正式本机 GPU / host 指标采集使用 rootful 权限；先确认当前用户有权操作 containerd、CNI、设备和 bind mount 路径。服务启动不依赖 BuildKit；只有在线构建项目镜像时需要另行配置 BuildKit，当前 build 使用 host 网络，还需相应的 network.host entitlement。
+推荐 Linux amd64，已验证 nerdctl 1.7.7 / containerd 1.7.22 和 nerdctl 2.1.3 / containerd 2.1.3 两组软件链路；还需匹配的 OCI 后端、完整 CNI 插件和 iptables 等网络依赖。正式本机 GPU / host 指标采集使用 rootful 权限；先确认当前用户有权操作 containerd、CNI、设备和 bind mount 路径。服务启动不依赖 BuildKit；只有在线构建项目镜像时需要另行配置 BuildKit，当前 build 使用 host 网络，还需相应的 network.host entitlement。
 
 ```json
 "runtime": ["nerdctl", "--namespace", "benchmark"]
@@ -91,8 +91,10 @@ NVIDIA 本机 Exporter 的参数按引擎区分：
 ## 适配行为与常见排障
 
 - **组件名称解析**：nerdctl 2.1.3 没有 `--network-alias`，启动器改用短 hostname（loki、prometheus 等）。nerdctl 的 hosts store 根据同一 CNI 网络中的 hostname 更新各容器 `/etc/hosts`，保留现有内部 URL；不需要新 DNS 镜像。host 网络的 node_exporter 使用节点地址。
-- **检查格式**：容器、网络和镜像 inspect 明确指定 `--mode=dockercompat`，镜像检查同时指定平台，避免多架构默认选择错误。nerdctl 的 native 输出不能直接替代此格式。
+- **1.7.7 网络作用域**：CNI 网络名可跨 containerd namespace 可见，project 名称应在节点上唯一；不能仅靠换 namespace 复用同名网络。启动器仍拒绝接管已存在网络。
+- **检查格式**：容器、网络和镜像 inspect 明确指定 `--mode=dockercompat`，镜像检查同时指定平台，避免多架构默认选择错误。nerdctl 的 native 输出不能直接替代此格式。1.7.7 的部分 Config 字段可能为空；查看启动参数使用 `--format 'Path={{.Path}} Args={{json .Args}}'`，PID 使用 `{{.State.Pid}}`。
 - **容器日志**：nerdctl run/create 显式使用 `--log-driver=json-file`，使 `nerdctl logs` 和离线诊断可用。日志文件位置由 nerdctl data-root/namespace 管理，推理服务的原始日志仍由 storage.logs 和 log_sources 指定。
+- **1.7.7 删除返回码**：`rm -f` 可能记录删除失败却返回 0；已改为先 stop、再普通 rm，并通过 inspect 确认不存在，down 和 SLO 临时容器共用此逻辑。使用旧 `8099c15` 时需同步本次源码修复，无需重建镜像。
 - **故障保留**：containerd/socket/权限错误不会当作容器不存在；清理失败时保留状态用于重试。state.json 记录 runtime 和 namespace，禁止在清理时切到另一个 namespace 后误删状态。
 - **CNI 报错**：检查 bridge、host-local、loopback、portmap、firewall、tuning 插件、iptables、IP 转发及节点已有网络规则；启动器不自动安装依赖、清空规则或修改 containerd 系统配置。
 - **离线兼容开关**：`offline=true` 仍默认启用 `legacy_seccomp_unconfined`，作用于该项目全部新容器。安全范围与显式关闭方法见 [兼容说明](legacy-docker-threads.md)。
@@ -103,4 +105,4 @@ NVIDIA 本机 Exporter 的参数按引擎区分：
 
 不用重建已有镜像，不用重启已有 Docker 或 containerd。切换运行时不能用 restart 原容器代替；数据目录可保留，但新运行身份需有读写权限。原 namespace 和原 Docker 中已有 Kubernetes/第三方容器由其管理者维护。
 
-集成验证使用真实 nerdctl 2.1.3/containerd 2.1.3、缓存镜像及 CPU fixture；云环境因 cgroup 限制使用 runsc OCI 后端并为测试 CNI 加入 loopback 插件。它验证软件链路，不等同于生产节点 runc/cgroup/GPU 验收，详见 [验证记录](reports/nerdctl-2026-11-12.md)。
+集成验证使用真实 nerdctl 1.7.7/containerd 1.7.22、nerdctl 2.1.3/containerd 2.1.3、缓存镜像及 CPU fixture；云环境因 cgroup 限制使用 runsc OCI 后端并为测试 CNI 加入 loopback 插件。它验证软件链路，不等同于生产节点 runc/cgroup/GPU 验收，详见 [1.7.7 验证记录](reports/nerdctl-1.7.7-2026-11-12.md)及 [2.1.3 验证记录](reports/nerdctl-2026-11-12.md)。

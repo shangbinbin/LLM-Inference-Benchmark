@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 from observability_labels import (task_name, log_sources, validate_labels, application_labels, log_labels, configure_gpu_labels)
 from task_dashboard import build_dashboard
 from container_runtime import (runtime_kind, validate_runtime, adapt_command, service_network,
-                               runtime_scope, missing_resource)
+                               runtime_scope, missing_resource, remove_container)
 from diagnostics import record_event
 from render_observability import config_dir, render, write_json, ROOT
 
@@ -749,7 +749,7 @@ class Stack:
             if info:
                 if info.get('Config',{}).get('Labels',{}).get(LABEL)!=self.project:
                     raise ValueError(f'Refuse to remove unowned container: {name}')
-                self.call('rm','-f',name)
+                remove_container(self.cfg, name, info, self.call, self.inspect)
         r=self.call('network','inspect',state['network'],capture=True,check=False)
         if r.returncode==0:
             if json.loads(r.stdout)[0].get('Labels',{}).get(LABEL)!=self.project:

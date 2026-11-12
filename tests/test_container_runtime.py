@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import benchmark_stack as stack
 from container_runtime import (adapt_command, namespace, runtime_kind, runtime_scope,
-                               service_network, validate_runtime)
+                               service_network, validate_runtime, remove_container)
 
 
 class ContainerRuntimeTests(unittest.TestCase):
@@ -114,4 +114,37 @@ class ContainerRuntimeTests(unittest.TestCase):
             instance.save('ready')
             with patch.object(instance,'call',return_value=error),self.assertRaisesRegex(RuntimeError,'state retained'):
                 instance.down()
+            self.assertTrue(instance.statefile.exists())
+
+    def test_nerdctl_cleanup_stops_before_nonforce_removal_and_verifies_absence(self):
+        from unittest.mock import Mock, call
+        cfg={'runtime':['nerdctl','--namespace','bench']}
+        invoke=Mock();inspect=Mock(return_value=None)
+        remove_container(cfg,'owned',{'State':{'Running':True}},invoke,inspect)
+        self.assertEqual(invoke.call_args_list,[call('stop','--time','10','owned'),call('rm','owned')])
+        inspect.assert_called_once_with('owned')
+        invoke.reset_mock();inspect.reset_mock()
+        remove_container({'runtime':['docker']},'owned',{},invoke,inspect)
+        invoke.assert_called_once_with('rm','-f','owned')
+        inspect.assert_not_called()
+
+    def test_zero_exit_code_cannot_hide_residual_nerdctl_container(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);directory,vendor=stack.prepare(cfg);instance=stack.Stack(cfg,directory,vendor)
+            name=cfg['project']+'-alloy';instance.created=[name];instance.save('ready')
+            info={'Config':{'Labels':{stack.LABEL:cfg['project']}},'State':{'Running':False}}
+            with patch.object(instance,'inspect',return_value=info), patch.object(instance,'call',return_value=subprocess.CompletedProcess([],0)) as call:
+                with self.assertRaisesRegex(RuntimeError,'removal incomplete'):
+                    instance.down()
+                call.assert_called_once_with('rm',name)
+            self.assertTrue(instance.statefile.exists())
+
+    def test_nonforce_removal_failure_preserves_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg=self.config(tmp);directory,vendor=stack.prepare(cfg);instance=stack.Stack(cfg,directory,vendor)
+            name=cfg['project']+'-alloy';instance.created=[name];instance.save('ready')
+            info={'Config':{'Labels':{stack.LABEL:cfg['project']}},'State':{'Running':False}}
+            with patch.object(instance,'inspect',return_value=info), patch.object(instance,'call',side_effect=subprocess.CalledProcessError(1,['nerdctl','rm',name])):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    instance.down()
             self.assertTrue(instance.statefile.exists())

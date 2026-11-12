@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import time
 
+from container_runtime import remove_container
+
 from benchmark_stack import (LABEL, ais_config, write_json,
                              runtime_command, aisbench_environment, inference_environment, check_local_images, metrics_settings)
 
@@ -116,7 +118,9 @@ class TrialSession:
             labels = info['Config'].get('Labels', {})
             if labels.get(LABEL) != self.cfg['project'] or labels.get(LABEL+'.trial') != token:
                 raise RuntimeError('Refuse to remove a container with different trial ownership')
-            self.call('rm', '-f', name, cleanup=True, capture_output=True, check=True)
+            remove_container(self.cfg, name, info,
+                             lambda *args: self.call(*args, cleanup=True, capture_output=True, check=True),
+                             lambda item: self.inspect(item, cleanup=True))
 
     def run_trial(self, case, concurrency, folder, timeout):
         self.ready()
