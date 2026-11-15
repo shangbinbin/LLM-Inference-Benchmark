@@ -1,5 +1,6 @@
 import copy
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -32,7 +33,7 @@ class ContainerRuntimeTests(unittest.TestCase):
             select_runtime(cfg,'docker','new')
 
     def config(self, root):
-        cfg = stack.load_config(ROOT/'configs/stacks/mac-offline.json')
+        cfg = stack.load_config(ROOT/'configs/stacks/mac-offline.yaml')
         cfg.update(runtime=['nerdctl','--namespace','benchmark'], platform='linux/amd64')
         cfg['storage'].update(root=str(Path(root)/'state'), logs=str(Path(root)/'logs'))
         cfg['images']['toolbox']='llm-benchmark-toolbox:local-amd64'
@@ -108,7 +109,7 @@ class ContainerRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cfg=self.config(tmp);directory,vendor=stack.prepare(cfg);instance=stack.Stack(cfg,directory,vendor)
             instance.save('ready')
-            original=json.loads(instance.statefile.read_text())
+            original=yaml.safe_load(instance.statefile.read_text())
             instance.check_state_runtime(original)
             legacy=copy.deepcopy(original);legacy.pop('runtime_scope')
             instance.check_state_runtime(legacy)

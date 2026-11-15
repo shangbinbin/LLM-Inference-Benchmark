@@ -4,15 +4,14 @@
 
 ## 配置与运行
 
-在现场 stack JSON 的 inference 中加入 api_key_env：
+在现场 stack YAML 的 inference 中加入 api_key_env：
 
-```json
-"inference": {
-  "base_url": "http://inference-host:30000/",
-  "model": "your-model",
-  "api": "completions",
-  "api_key_env": "INFERENCE_API_KEY"
-}
+```yaml
+inference:
+  base_url: http://inference-host:30000/
+  model: your-model
+  api: completions
+  api_key_env: INFERENCE_API_KEY
 ```
 
 api_key_env 是变量名，不是 Token。无需鉴权时省略该字段；不支持把明文 api_key 写入 JSON。变量名应使用字母、数字、下划线，首字符不能为数字。
@@ -24,11 +23,11 @@ read -r -s -p 'Inference token: ' INFERENCE_API_KEY
 printf '\n'
 export INFERENCE_API_KEY
 
-python3 scripts/benchmark_stack.py up --config /absolute/path/site.json --no-benchmark
+python3 scripts/benchmark_stack.py up --config /absolute/path/site.yaml --no-benchmark
 # 选择一种压测方式，均继承上述环境变量：
-python3 scripts/run_aisbench_suite.py --config /absolute/path/site.json --suite /absolute/path/suite.json
-# 或：python3 scripts/slo_search.py --config /absolute/path/site.json --search /absolute/path/search.json
-# 单次压测：首次启动时使用 up --config /absolute/path/site.json（不加 --no-benchmark）
+python3 scripts/run_aisbench_suite.py --config /absolute/path/site.yaml --suite /absolute/path/suite.yaml
+# 或：python3 scripts/slo_search.py --config /absolute/path/site.yaml --search /absolute/path/search.yaml
+# 单次压测：首次启动时使用 up --config /absolute/path/site.yaml（不加 --no-benchmark）
 
 unset INFERENCE_API_KEY
 ```
@@ -58,14 +57,16 @@ docker build --network=host --platform linux/amd64 \
 
 切换模型服务时，填写服务根地址（包含网关前缀）。末尾斜杠可省略，启动器会补齐；不要填写完整的 v1/chat/completions 接口地址。
 
-```json
-"inference": {
-  "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",
-  "model": "Qwen3-0.6B",
-  "api": "chat",
-  "api_key_env": "INFERENCE_API_KEY"
-},
-"topology": {"kind": "single", "tp": 1, "pp": 1}
+```yaml
+inference:
+  base_url: http://10.142.118.41:38000/publishaddress/inference/qwen306b/
+  model: Qwen3-0.6B
+  api: chat
+  api_key_env: INFERENCE_API_KEY
+topology:
+  kind: single
+  tp: 1
+  pp: 1
 ```
 
 默认自动生成：
@@ -83,20 +84,21 @@ docker build --network=host --platform linux/amd64 \
 
 不同指标服务器或不同路径仍可显式覆盖：
 
-```json
-"topology": {
-  "kind": "single",
-  "tp": 1,
-  "pp": 1,
-  "metrics_endpoints": [{"target": "metrics.internal:9099", "role": "master"}],
-  "metrics_path": "/custom/metrics",
-  "metrics_scheme": "http",
-  "metrics_api_key_env": null
-}
+```yaml
+topology:
+  kind: single
+  tp: 1
+  pp: 1
+  metrics_endpoints:
+  - target: metrics.internal:9099
+    role: master
+  metrics_path: /custom/metrics
+  metrics_scheme: http
+  metrics_api_key_env: null
 ```
 
 各字段独立覆盖默认值。metrics_endpoints.target 仅写主机:端口，不拼路径；metrics_api_key_env=null 表示应用指标无需鉴权，也可填写另一个变量名。未设置时使用推理鉴权变量；GPU/node Exporter 不继承推理 Token。
 
 启动时将指标 Token 写入 storage.root/.credentials/metrics.token（文件权限 0600、目录 0700），仅只读挂载到 Prometheus。生成的 Prometheus 配置只引用 credentials_file，不写 Token 值；plan 不读取 Token，也不生成凭据文件。启动需要对应环境变量存在且有效；正常 down 在移除容器后删除该文件，其他压测产物仍保留。启动失败时文件可能留存于受限目录，需保护现场磁盘，不能将整个 storage.root 原样分享。更换 Token 后需正常 down/up 重新生成凭据。
 
-配置生成、Docker/nerdctl 选择及完整启动步骤见 [GPU41 操作指南](gpu41-qwen3-random-1k.md)。站点示例见 [GPU41 Qwen3-0.6B 随机 1k/1k、1000 请求、并发 16 配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json)。示例采用统一 base_url，不重复填写指标路径或地址。它使用 GPU41 本机单卡 NVIDIA Exporter、容器模式 node_exporter；网关须支持流式 chat、v1/models 和 metrics。日志/tokenizer 使用现场 NFS 模型目录，logrotate 管理 server_log.log，需有权限且不与其他轮转机制冲突。实际 Token 长度以报告为准，ignore_eos 需后端支持。
+配置生成、Docker/nerdctl 选择及完整启动步骤见 [GPU41 操作指南](gpu41-qwen3-random-1k.md)。站点示例见 [GPU41 Qwen3-0.6B 随机 1k/1k、1000 请求、并发 16 配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.yaml)。示例采用统一 base_url，不重复填写指标路径或地址。它使用 GPU41 本机单卡 NVIDIA Exporter、容器模式 node_exporter；网关须支持流式 chat、v1/models 和 metrics。日志/tokenizer 使用现场 NFS 模型目录，logrotate 管理 server_log.log，需有权限且不与其他轮转机制冲突。实际 Token 长度以报告为准，ignore_eos 需后端支持。

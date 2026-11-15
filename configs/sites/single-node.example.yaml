@@ -1,0 +1,84 @@
+# 单机共节点：推理服务已在此机运行，本工具部署观测链路并由 AISBench 发起压测。
+# 【必改】项必须按现场核对；192.0.2.10 为文档示例 IP，替换为此机真实内网 IP。
+# 容器使用桥接网络，服务必须监听 0.0.0.0 或此机 IP；不能填容器内的 localhost/127.0.0.1。
+# NVIDIA 示例；海光修改 gpu.vendor: hygon，并预装对应驱动/设备运行时。
+schema_version: 1
+project: llm-bench-single  # 【按需改】同机多套观测栈时名称和 storage.root 必须独立
+simulation: false
+host_metrics: host  # 采集本机主机指标；Linux 使用 host 网络运行 node-exporter
+runtime:
+- docker
+storage:
+  root: /data/llm-bench  # 【必改】可写结果/监控数据目录，预留磁盘空间
+  logs: /var/log/inference  # 【必改】推理服务实际日志目录，log_sources.path 相对此目录
+  tokenizer: /data/models/Qwen3-0.6B  # 【必改】模型匹配的本地 tokenizer 目录（不是 mock）
+images:
+  toolbox: llm-benchmark-toolbox:local-amd64
+  aisbench: llm-benchmark-aisbench:e330dc1-amd64
+  prometheus: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:v3.5.0
+  grafana: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:12.0.2
+  loki: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:3.5.0
+  alloy: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/alloy:v1.8.3
+  node-exporter: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/node-exporter:v1.9.1
+  nvidia_exporter: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nvidia/dcgm-exporter:4.8.4
+  hygon_exporter: harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1
+gpu:
+  vendor: nvidia  # 【必改】nvidia 或 hygon，与实际设备及交付的 Exporter 保持一致
+  deployment: local  # 同节点启动 GPU Exporter；已有 Exporter 可改 external 并给 nodes[].target
+  nodes:
+  - name: gpu-node-1  # 【必改】节点名，须与下方 log_sources.node 一致
+    gpus: 1  # 【必改】实际 GPU/DCU 卡数
+  nvidia_metrics_profile: basic
+inference:
+  # 有鉴权时取消下一行注释，并在 shell export INFERENCE_API_KEY（不把密钥写入 YAML）。
+  # api_key_env: INFERENCE_API_KEY
+  base_url: http://192.0.2.10:8000/  # 【必改】同机可从容器访问的服务根地址，不带 /v1/chat/completions
+  model: Qwen3-0.6B  # 【必改】与 /v1/models 返回的模型 ID 一致
+  api: chat  # 【按需改】chat 或 completions，匹配服务接口
+  engine: vllm  # 【按需改】vllm / sglang / auto；SGLang 需开启 metrics
+topology:
+  # 默认从 inference.base_url 推导 /metrics。独立指标端口时取消并修改下列三行：
+  # metrics_endpoints:
+  # - target: 192.0.2.10:8001
+  #   role: master
+  # metrics_path: /metrics
+  # metrics_api_key_env: null  # 指标不鉴权而推理鉴权时设为 null
+  kind: single
+  tp: 1  # 【必改】推理服务实际 tensor parallel 度数，仅作观测标签
+  pp: 1  # 【必改】推理服务实际 pipeline parallel 度数
+# 【按需改】下列本机端口须空闲，且不与推理服务端口冲突。
+ports:
+  grafana: 33000
+  prometheus: 39090
+  loki: 33100
+  alloy: 32345
+  node-exporter: 39100
+  gpu-exporter: 39400
+  fixture: 38080
+startup_timeout: 180
+# 【必改】正式 workload，先按操作文档通过 bench run 覆盖参数做冒烟与小规模测试。
+benchmark:
+  dataset_type: tokenid
+  input_length: 1024  # 正式测试输入 token 数，受模型上下文窗口限制
+  output_length: 1024  # 正式测试输出 token 数
+  prefix_length: 0
+  request_count: 1000  # 正式请求总数
+  concurrency: 16  # 同机压测需同时观察客户端 CPU/内存，逐步提高并发
+  request_rate: 0
+  warmups: 0
+  retry: 1
+  mode: perf
+  generation_kwargs:
+    temperature: 0
+    ignore_eos: true
+platform: linux/amd64
+offline: true  # 离线部署保持 true：禁止构建/拉取镜像
+legacy_seccomp_unconfined: true  # 旧 Docker 兼容设置，支持时可改 false
+port_bind_address: 0.0.0.0  # 【按需改】监控端口绑定地址及现场访问控制
+task: single-node
+log_sources:
+- path: server.log  # 【必改】日志文件相对 storage.logs 的真实路径，必须已存在且可读
+  role: master
+  replica: replica-0
+  node: gpu-node-1  # 【必改】与 gpu.nodes[].name 一致
+node_exporter_target: 192.0.2.10:39100  # 【必改】此机真实 IP，端口跟随 ports.node-exporter

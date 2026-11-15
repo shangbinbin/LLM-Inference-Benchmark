@@ -2,6 +2,7 @@ from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
+import yaml
 import os
 from pathlib import Path
 import sys
@@ -20,7 +21,7 @@ spec.loader.exec_module(toolbox)
 
 class AuthTests(unittest.TestCase):
     def config(self):
-        cfg = stack.load_config(ROOT / 'configs/stacks/mac-simulation.json')
+        cfg = stack.load_config(ROOT / 'configs/stacks/mac-simulation.yaml')
         cfg['inference']['api_key_env'] = 'BENCH_TEST_TOKEN'
         return cfg
 

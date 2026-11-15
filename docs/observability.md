@@ -10,7 +10,7 @@
 
 ```bash
 python3 scripts/render_observability.py \
-  --environment configs/environments/nvidia-h200-3node-8gpu/environment.json \
+  --environment configs/environments/nvidia-h200-3node-8gpu/environment.yaml \
   --output generated/nvidia-h200-3node-8gpu
 ```
 

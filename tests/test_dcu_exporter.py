@@ -1,4 +1,5 @@
 import json
+import yaml
 from pathlib import Path
 import sys
 import tempfile
@@ -13,15 +14,15 @@ from task_dashboard import build_dashboard
 
 class DCUExporterTests(unittest.TestCase):
     def config(self, base):
-        cfg=stack.load_config(ROOT/'configs/stacks/mac-offline.json')
+        cfg=stack.load_config(ROOT/'configs/stacks/mac-offline.yaml')
         cfg.update(simulation=False,platform='linux/amd64')
         cfg['storage'].update(root=str(base/'state'),logs=str(base/'logs'))
         cfg['gpu'].update(vendor='hygon',deployment='local',nodes=[{'name':'dcu-node','gpus':8}])
         return cfg
 
     def test_every_current_template_uses_official_v241_image(self):
-        for path in [*ROOT.glob('configs/stacks/*.json'),*ROOT.glob('configs/sites/*.json')]:
-            cfg=json.loads(path.read_text())
+        for path in [*ROOT.glob('configs/stacks/*.yaml'),*ROOT.glob('configs/sites/*.yaml')]:
+            cfg=yaml.safe_load(path.read_text())
             self.assertEqual(cfg['images']['hygon_exporter'],
                 'harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1',str(path))
 
@@ -41,7 +42,7 @@ class DCUExporterTests(unittest.TestCase):
                 self.assertNotIn('CONNECT_K8S=false',spec['args'])
                 self.assertNotIn('--gpus',spec['args'])
                 self.assertNotIn('--runtime=nvidia',spec['args'])
-                gpu=json.loads((folder/'prometheus/prometheus.yml').read_text())['scrape_configs'][1]
+                gpu=yaml.safe_load((folder/'prometheus/prometheus.yml').read_text())['scrape_configs'][1]
                 self.assertEqual(gpu['job_name'],'hygon-dcu-exporter')
                 self.assertEqual(gpu['static_configs'][0]['targets'],['gpu-exporter:8000'])
                 relabel=gpu['metric_relabel_configs']
@@ -54,13 +55,13 @@ class DCUExporterTests(unittest.TestCase):
             cfg['gpu']['nodes'][0]['target']='192.0.2.10:8000'
             folder,vendor=stack.prepare(cfg);instance=stack.Stack(cfg,folder,vendor)
             self.assertNotIn('gpu-exporter',[s['name'] for s in instance.specs()])
-            gpu=json.loads((folder/'prometheus/prometheus.yml').read_text())['scrape_configs'][1]
+            gpu=yaml.safe_load((folder/'prometheus/prometheus.yml').read_text())['scrape_configs'][1]
             self.assertEqual(gpu['static_configs'][0]['targets'],['192.0.2.10:8000'])
             self.assertEqual(DEVICE_METRICS['hygon'],'dcu_memorycap_bytes')
 
     def test_contract_and_dashboard_match_official_metric_names(self):
         base=ROOT/'configs/gpu/hygon/dcu-exporter-v2.4.1'
-        contract=json.loads((base/'metric-contract.json').read_text())
+        contract=yaml.safe_load((base/'metric-contract.yaml').read_text())
         dashboard=build_dashboard('hygon')
         expressions=[t['expr'] for p in dashboard['panels'] for t in p.get('targets',[])]
         text='\n'.join(expressions)
@@ -71,7 +72,7 @@ class DCUExporterTests(unittest.TestCase):
         self.assertIn('100 * max by',text)
         self.assertIn('max by (task,gpu_node,gpu_model,gpu_index)',text)
         self.assertNotIn('sum(dcu_',text)
-        standalone=(base/'grafana/gpu.json').read_text()
+        standalone=(base/'grafana/gpu.yaml').read_text()
         self.assertNotIn('hcu_',standalone)
         self.assertIn('minor_number',standalone)
 

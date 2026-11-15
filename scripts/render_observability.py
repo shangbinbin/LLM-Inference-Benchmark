@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Compose common, hardware, network and environment settings (Python stdlib only)."""
+"""Compose YAML common, hardware, network and environment settings."""
 import argparse
 import json
 from pathlib import Path
 import re
 import shutil
 
+from config_io import read_data, write_yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ROOT / 'configs'
 
 
 def read(path):
-    return json.loads(path.read_text())
+    return read_data(path)
 
 
 def write_json(path, data):
@@ -55,9 +57,9 @@ def validate(env, profile, adapter, allow_template):
 
 def render(environment, output, allow_template=False):
     env = read(environment)
-    profile = read(config_dir(env['gpu_profile']) / 'profile.json')
+    profile = read(config_dir(env['gpu_profile']) / 'profile.yaml')
     gpu = config_dir(profile['adapter'])
-    adapter = read(gpu / 'adapter.json')
+    adapter = read(gpu / 'adapter.yaml')
     validate(env, profile, adapter, allow_template)
     # Output must be fresh: never mix dashboards from two different GPU adapters.
     if output.exists():
@@ -69,7 +71,7 @@ def render(environment, output, allow_template=False):
               'topology': f"{len(nodes)}node-tp{inf['tp']}-pp{inf['pp']}",
               'environment': env['name'], 'gpu_vendor': profile['vendor'],
               'gpu_model': profile['model'], 'replica_id': '0'}
-    prom = read(CONFIGS / 'common/prometheus/base.json')
+    prom = read(CONFIGS / 'common/prometheus/base.yaml')
     prom['scrape_configs'] = [
         {'job_name': 'sglang-distributed-master', 'scheme': 'http', 'metrics_path': '/metrics',
          'scrape_interval': '2s', 'scrape_timeout': '1s',
@@ -86,7 +88,7 @@ def render(environment, output, allow_template=False):
     if env.get('network'):
         net = env['network']
         network = config_dir(net['adapter'])
-        job = read(network / 'scrape-job.json')
+        job = read(network / 'scrape-job.yaml')
         if net.get('dns_names'):
             job['dns_sd_configs'] = [{'names': net['dns_names'], 'type': 'A',
                                       'port': net['port'], 'refresh_interval': '30s'}]
@@ -96,11 +98,11 @@ def render(environment, output, allow_template=False):
             raise ValueError('Network requires dns_names + port or targets')
         prom['scrape_configs'].append(job)
         prom['rule_files'].append('/etc/prometheus/rules/network.yml')
-    dashboards = [(CONFIGS / 'common/grafana/dashboards/sglang.json', 'sglang.json'),
+    dashboards = [(CONFIGS / 'common/grafana/dashboards/sglang.yaml', 'sglang.json'),
                   (gpu / adapter['dashboard'], 'gpu.json')]
     if network:
-        dashboards.append((network / 'grafana/network.json', 'network.json'))
-    # Read all JSON inputs before creating the output directory.
+        dashboards.append((network / 'grafana/network.yaml', 'network.json'))
+    # Read all YAML inputs before creating the output directory.
     dashboard_data = [(read(path), name) for path, name in dashboards]
     common = CONFIGS / 'common'
     alloy = (common / 'alloy/config.alloy.tmpl').read_text()
@@ -119,12 +121,12 @@ def render(environment, output, allow_template=False):
     rotate = (common / 'logrotate/inference.conf.tmpl').read_text().replace(
         '@@LOG_FILES@@', ' '.join(inf['log_files']))
     output.mkdir(parents=True)
-    write_json(output / 'prometheus/prometheus.yml', prom)  # JSON is valid YAML.
+    write_yaml(output / 'prometheus/prometheus.yml', prom)
     for data, name in dashboard_data:
         write_json(output / 'grafana/dashboards' / name, data)
-    write_json(output / 'grafana/provisioning/dashboards/benchmark.yml',
-               read(common / 'grafana/dashboard-provider.json'))
-    write_json(output / 'grafana/provisioning/datasources/benchmark.yml', {'apiVersion': 1,
+    write_yaml(output / 'grafana/provisioning/dashboards/benchmark.yml',
+               read(common / 'grafana/dashboard-provider.yaml'))
+    write_yaml(output / 'grafana/provisioning/datasources/benchmark.yml', {'apiVersion': 1,
                'datasources': [
                    {'name': 'Benchmark Prometheus', 'uid': 'benchmark-prometheus', 'type': 'prometheus',
                     'access': 'proxy', 'url': env['services']['prometheus_url'], 'isDefault': True},
@@ -143,7 +145,7 @@ def render(environment, output, allow_template=False):
         dest = output / 'prometheus/rules/network.yml'
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(network / 'prometheus/alerts.yml', dest)
-    write_json(output / 'environment.json', env)
+    write_yaml(output / 'environment.yaml', env)
     (output / 'README.txt').write_text(
         ('TEMPLATE PREVIEW ONLY — NOT READY FOR DEPLOYMENT\n' if allow_template else '') +
         'Generated configuration only; no services deployed. See docs/observability.md.\n')

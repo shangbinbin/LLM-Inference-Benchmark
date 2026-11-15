@@ -5,8 +5,12 @@ import csv
 import json
 import math
 from pathlib import Path
+import sys
 import re
 
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from config_io import read_object
 
 def number(text, unit):
     match = re.fullmatch(r'\s*([0-9.eE+\-]+)\s*' + re.escape(unit) + r'\s*', str(text))
@@ -111,7 +115,7 @@ def main():
     parser.add_argument('--results', type=Path, required=True, help='Exact suite-results.json from one run')
     args = parser.parse_args()
     try:
-        result = select(json.loads(args.suite.read_text()), json.loads(args.policy.read_text()), args.results)
+        result = select(read_object(args.suite), read_object(args.policy), args.results)
     except (ValueError, KeyError, TypeError, OSError) as exc:
         parser.exit(2, str(exc) + '\n')
     output = args.results.parent / 'slo-selection.json'

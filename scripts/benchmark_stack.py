@@ -24,6 +24,7 @@ from container_runtime import (runtime_kind, validate_runtime, adapt_command, se
                                runtime_scope, missing_resource, remove_container)
 from diagnostics import record_event
 from log_health import require_log_files, container_report, file_errors
+from config_io import read_object, write_yaml
 from gpu_metrics import DEVICE_METRICS, exporter_port
 from render_observability import config_dir, render, write_json, ROOT
 
@@ -128,7 +129,7 @@ def container_security_options(cfg):
     """Resolve project compatibility defaults without changing daemon-wide policy."""
     enabled = cfg.get('legacy_seccomp_unconfined', cfg.get('offline', False))
     if type(enabled) is not bool:
-        raise ValueError('legacy_seccomp_unconfined must be a JSON boolean (true/false)')
+        raise ValueError('legacy_seccomp_unconfined must be a boolean (true/false)')
     return ['--security-opt', 'seccomp=unconfined'] if enabled else []
 
 
@@ -174,7 +175,7 @@ def check_local_images(cfg, images, call):
 
 
 def load_config(path):
-    return validate_config(json.loads(path.read_text()))
+    return validate_config(read_object(path))
 
 
 def validate_config(cfg, *, check_tokenizer=True):
@@ -182,13 +183,13 @@ def validate_config(cfg, *, check_tokenizer=True):
     if cfg.get('schema_version') != 1:
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
-        raise ValueError('offline must be a JSON boolean (true/false)')
+        raise ValueError('offline must be a boolean (true/false)')
     if type(cfg.get('allow_missing_logs', False)) is not bool:
-        raise ValueError('allow_missing_logs must be a JSON boolean (true/false)')
+        raise ValueError('allow_missing_logs must be a boolean (true/false)')
     cfg.setdefault('legacy_seccomp_unconfined', cfg.get('offline', False))
     container_security_options(cfg)  # Materialize offline defaults in plans and manifests.
     if type(cfg.get('publish_ports', True)) is not bool:
-        raise ValueError('publish_ports must be a JSON boolean')
+        raise ValueError('publish_ports must be a boolean')
     if not isinstance(cfg.get('port_bind_address', '0.0.0.0'), str):
         raise ValueError('port_bind_address must be an IP address')
     bind_address(cfg)
@@ -266,7 +267,7 @@ def validate_config(cfg, *, check_tokenizer=True):
     if auth_name is not None and (not isinstance(auth_name, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', auth_name)):
         raise ValueError('inference.api_key_env must be an environment variable name')
     if 'api_key' in cfg['inference']:
-        raise ValueError('Use inference.api_key_env instead of storing api_key in JSON')
+        raise ValueError('Use inference.api_key_env instead of storing api_key in configuration')
     validate_labels(cfg)
     bench = cfg['benchmark']
     if cfg['inference'].get('api', 'completions') not in ('completions', 'chat'):
@@ -428,11 +429,11 @@ def prepare(cfg):
                          'log_files': [f'/logs/node-{i}.log' for i in range(len(gpu_nodes))]},
            'network': cfg.get('network'),
            'services': {'prometheus_url': 'http://prometheus:9090', 'loki_url': 'http://loki:3100'}}
-    envfile = root / f'.environment-{config_hash[:12]}.json'
-    write_json(envfile, env)
+    envfile = root / f'.environment-{config_hash[:12]}.yaml'
+    write_yaml(envfile, env)
     render(envfile, run_dir)
     envfile.unlink()
-    prom = json.loads((run_dir / 'prometheus/prometheus.yml').read_text())
+    prom = read_object(run_dir / 'prometheus/prometheus.yml')
     application = prom['scrape_configs'][0]
     application['metrics_path'] = metrics['path']
     application['scheme'] = metrics['scheme']
@@ -452,7 +453,7 @@ def prepare(cfg):
         'labels': {'task': task_name(cfg), 'deployment': cfg['project'], 'environment': cfg['project']}}]})
     for job in prom['scrape_configs']:
         job.setdefault('relabel_configs', []).append({'target_label': 'task', 'replacement': task_name(cfg).replace('$', '$$')})
-    write_json(run_dir / 'prometheus/prometheus.yml', prom)
+    write_yaml(run_dir / 'prometheus/prometheus.yml', prom)
     # Logs are independent of TP/PP and node count: allow per-role/subdirectory paths for future PD deployments.
     entries = [log_labels(cfg, source) for source in sources]
     target_text = '[\n'+',\n'.join('{' + ', '.join(json.dumps(k)+' = '+json.dumps(v) for k,v in t.items()) + '}' for t in entries)+',\n]'

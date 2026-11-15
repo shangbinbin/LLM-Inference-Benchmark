@@ -12,7 +12,7 @@
 
 | 需求 | 使用方式 |
 | --- | --- |
-| 同一个输入输出配置，依次扫描并发 1/8/16/32 | 原生多档扫描，栈 JSON 的 concurrency_levels / requests_per_level |
+| 同一个输入输出配置，依次扫描并发 1/8/16/32 | 原生多档扫描，栈 YAML 的 concurrency_levels / requests_per_level |
 | 依次执行不同长度、不同 QPS、string/tokenid、perf/pressure | `llm-bench up --cases` + suite JSON |
 | 已熟悉 AISBench，组合多个模型和数据集 | 原生 Python models/datasets + model_dataset_combinations；显式 max_num_workers=1 |
 
@@ -20,25 +20,33 @@
 
 ## 方式一：原生并发档扫描，一键启动
 
-1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)用 `scripts/create_site_config.py` 选择 Docker/nerdctl 并生成现场配置，填写实际服务地址、真实 tokenizer、日志/数据路径；通用场景也可复制 `configs/stacks/nvidia-single.json`。后续清单覆盖各例 workload，不要求沿用 GPU41 的 1000 次/并发 16。
+1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)用 `scripts/create_site_config.py` 选择 Docker/nerdctl 并生成现场配置，填写实际服务地址、真实 tokenizer、日志/数据路径；通用场景也可复制 `configs/stacks/nvidia-single.yaml`。后续清单覆盖各例 workload，不要求沿用 GPU41 的 1000 次/并发 16。
 2. 在 benchmark 中增加两个配对数组：
 
-```json
-{
-  "dataset_type": "tokenid",
-  "input_length": 1024,
-  "output_length": 256,
-  "prefix_length": 0,
-  "request_count": 512,
-  "concurrency": 1,
-  "concurrency_levels": [1, 8, 16, 32],
-  "requests_per_level": [64, 128, 256, 512],
-  "request_rate": 0,
-  "warmups": 8,
-  "retry": 1,
-  "mode": "perf",
-  "generation_kwargs": {"temperature": 0, "ignore_eos": true}
-}
+```yaml
+dataset_type: tokenid
+input_length: 1024
+output_length: 256
+prefix_length: 0
+request_count: 512
+concurrency: 1
+concurrency_levels:
+- 1
+- 8
+- 16
+- 32
+requests_per_level:
+- 64
+- 128
+- 256
+- 512
+request_rate: 0
+warmups: 8
+retry: 1
+mode: perf
+generation_kwargs:
+  temperature: 0
+  ignore_eos: true
 ```
 
 3. 启动：
@@ -77,53 +85,62 @@ ais_bench /config/aisbench.py --mode perf --max-num-workers 1 \
 ### Mac 可直接运行的示例
 
 ```bash
-llm-bench up --profile mac-simulation --cases configs/suites/mac-smoke.json
+llm-bench up --profile mac-simulation --cases configs/suites/mac-smoke.yaml
 
 # 同一套观测栈上再次执行清单
-llm-bench bench suite --cases configs/suites/mac-smoke.json
+llm-bench bench suite --cases configs/suites/mac-smoke.yaml
 ```
 
 示例依次运行 string 32/16、tokenid 64/8、3 秒持续压力三个用例。所有客户端和观测组件为实际容器，仅推理响应/GPU 指标由 fixture 提供。
 
-### 在同一份 cases.json 混用三种数据集
+### 在同一份 cases.yaml 混用三种数据集
 
 下面的命令从仓库根目录启动观测栈，再依次运行业务 JSONL、ShareGPT 多轮对话和固定长度合成数据。仓库自带完整清单和小样本，首次演练可以直接使用。生产环境把 profile 换成填好的 x86 环境配置。
 
 ```bash
 # Mac，已备齐离线镜像
-llm-bench up --profile mac-offline --cases configs/suites/mixed-datasets.json
+llm-bench up --profile mac-offline --cases configs/suites/mixed-datasets.yaml
 
 # Linux x86，使用已有推理服务
-llm-bench up --config /srv/bench/site.json --cases /srv/bench/cases.json
+llm-bench up --config /srv/bench/site.yaml --cases /srv/bench/cases.yaml
 
 # 观测栈已经启动时，单独执行另一份清单
-llm-bench bench suite --data-dir /srv/llm-benchmark --cases /srv/bench/cases.json
+llm-bench bench suite --data-dir /srv/llm-benchmark --cases /srv/bench/cases.yaml
 ```
 
-每例的 `dataset` 与 `benchmark` 同级。前者选数据来源，后者设置请求量、并发和输出长度等负载参数。以下是仓库中可执行的完整配置。[示例清单](../configs/suites/mixed-datasets.json)
+每例的 `dataset` 与 `benchmark` 同级。前者选数据来源，后者设置请求量、并发和输出长度等负载参数。以下是仓库中可执行的完整配置。[示例清单](../configs/suites/mixed-datasets.yaml)
 
-```json
-{
-  "cooldown_seconds": 1,
-  "stop_on_failure": true,
-  "cases": [
-    {
-      "name": "support-tickets",
-      "dataset": {"type": "jsonl", "path": "../fixtures/datasets/support.jsonl", "prompt_field": "ticket"},
-      "benchmark": {"output_length": 12, "concurrency": 1, "warmups": 0}
-    },
-    {
-      "name": "support-dialogues",
-      "dataset": {"type": "sharegpt", "path": "../fixtures/datasets/support-chat.json"},
-      "benchmark": {"output_length": 8, "concurrency": 1, "warmups": 0}
-    },
-    {
-      "name": "fixed-64-in-16-out",
-      "dataset": {"type": "synthetic"},
-      "benchmark": {"dataset_type": "tokenid", "input_length": 64, "output_length": 16, "request_count": 4, "concurrency": 2, "warmups": 0}
-    }
-  ]
-}
+```yaml
+cooldown_seconds: 1
+stop_on_failure: true
+cases:
+- name: support-tickets
+  dataset:
+    type: jsonl
+    path: ../fixtures/datasets/support.jsonl
+    prompt_field: ticket
+  benchmark:
+    output_length: 12
+    concurrency: 1
+    warmups: 0
+- name: support-dialogues
+  dataset:
+    type: sharegpt
+    path: ../fixtures/datasets/support-chat.json
+  benchmark:
+    output_length: 8
+    concurrency: 1
+    warmups: 0
+- name: fixed-64-in-16-out
+  dataset:
+    type: synthetic
+  benchmark:
+    dataset_type: tokenid
+    input_length: 64
+    output_length: 16
+    request_count: 4
+    concurrency: 2
+    warmups: 0
 ```
 
 **业务 JSONL** 使用 UTF-8 编码，每行一个 JSON 对象。默认读取顶层字符串字段 `prompt`。例如下列文件每行发送一次单轮请求。若字段名是 `ticket`，就在 `dataset` 中写 `"prompt_field": "ticket"`。选中的文本原样进入 AISBench，保留标点、换行和花括号。其余字段可存放业务元数据，不参与构造请求。网关接口由站点的 `inference.api` 选择。[业务数据示例](../configs/fixtures/datasets/support.jsonl)
@@ -148,7 +165,7 @@ llm-bench bench suite --data-dir /srv/llm-benchmark --cases /srv/bench/cases.jso
 
 #### 文件路径与容器挂载
 
-- `dataset.path` 可以是本地绝对路径，也可以相对 **cases.json 所在目录**。复制清单到新目录后，可以连同语料保留相对布局，或将两个 path 换成现场绝对路径。
+- `dataset.path` 可以是本地绝对路径，也可以相对 **cases.yaml 所在目录**。复制清单到新目录后，可以连同语料保留相对布局，或将两个 path 换成现场绝对路径。
 - 每个客户端只读挂载本例的语料。JSONL 的容器路径为 `/datasets/input.jsonl`，ShareGPT 为 `/datasets/input.json`。JSONL 客户端还会只读挂载仓库内的读取模块 `containers/aisbench/llm_bench_jsonl.py`。合成用例只需已有的 tokenizer。使用 Docker Desktop 时，语料所在目录应允许文件共享。使用远程 Docker 或 nerdctl 时，解析后的源路径须在运行时主机上可读。
 - CLI 在启动第一例前读取并校验整份清单及文件格式。运行期间请保持语料内容稳定。离线交付时带上本地语料、完整工程、模型 tokenizer 和对应平台镜像。业务原文及模型回复会进入 AISBench 的逐请求明细，归档结果时按语料的访问权限处理。
 
@@ -167,32 +184,44 @@ llm-bench bench suite --data-dir /srv/llm-benchmark --cases /srv/bench/cases.jso
 
 ### Linux x86 生产用例
 
-先准备完整 site.json（platform 为 linux/amd64、镜像标签为 amd64），再创建 suite.json：
+先准备完整 site.yaml（platform 为 linux/amd64、镜像标签为 amd64），再创建 suite.yaml：
 
-```json
-{
-  "cooldown_seconds": 15,
-  "stop_on_failure": true,
-  "cases": [
-    {
-      "name": "short-c8",
-      "benchmark": {"dataset_type": "tokenid", "input_length": 1024, "output_length": 256, "concurrency": 8, "request_count": 200, "mode": "perf"}
-    },
-    {
-      "name": "long-c16-qps4",
-      "benchmark": {"dataset_type": "tokenid", "input_length": 8192, "output_length": 512, "concurrency": 16, "request_count": 200, "request_rate": 4, "mode": "perf"}
-    },
-    {
-      "name": "sustained-c32",
-      "benchmark": {"dataset_type": "tokenid", "input_length": 2048, "output_length": 256, "concurrency": 32, "request_count": 200, "request_rate": 0, "mode": "pressure", "pressure_seconds": 300}
-    }
-  ]
-}
+```yaml
+cooldown_seconds: 15
+stop_on_failure: true
+cases:
+- name: short-c8
+  benchmark:
+    dataset_type: tokenid
+    input_length: 1024
+    output_length: 256
+    concurrency: 8
+    request_count: 200
+    mode: perf
+- name: long-c16-qps4
+  benchmark:
+    dataset_type: tokenid
+    input_length: 8192
+    output_length: 512
+    concurrency: 16
+    request_count: 200
+    request_rate: 4
+    mode: perf
+- name: sustained-c32
+  benchmark:
+    dataset_type: tokenid
+    input_length: 2048
+    output_length: 256
+    concurrency: 32
+    request_count: 200
+    request_rate: 0
+    mode: pressure
+    pressure_seconds: 300
 ```
 
 ```bash
-llm-bench up --config /absolute/path/site.json --cases /absolute/path/suite.json
-llm-bench down --config /absolute/path/site.json
+llm-bench up --config /absolute/path/site.yaml --cases /absolute/path/suite.yaml
+llm-bench down --config /absolute/path/site.yaml
 ```
 
 覆盖规则与运行语义：
@@ -209,7 +238,7 @@ llm-bench down --config /absolute/path/site.json
 
 输出位于 `storage.root/data/results/suites/<UTC时间戳>/<name>/`，包含 `stack.json`、`aisbench.py`、`client.log`、`results/`。根目录 `suite-results.json` 记录实际参数、顺序、起止时间、退出码、passed 和报告路径。这里的 passed 仅表示功能/请求完整性，尚未增加业务 TTFT/吞吐 SLO 门槛。
 
-同一份清单可以直接传给 `llm-bench bench slo --cases cases.json --policy slo.json`，逐例根据 TTFT、TPOT 自动调整并发。[多数据集 SLO 操作手册](aisbench-auto-slo.md#用同一份-casesjson-逐数据集搜索)
+同一份清单可以直接传给 `llm-bench bench slo --cases cases.yaml --policy slo.yaml`，逐例根据 TTFT、TPOT 自动调整并发。[多数据集 SLO 操作手册](aisbench-auto-slo.md#用同一份-casesyaml-逐数据集搜索)
 
 需要按时延 SLO 自动筛选达标档位时，使用 [SLO 容量搜索手册](aisbench-slo-capacity.md)的策略与报告筛选示例；它不会改变本入口 passed 的含义。
 

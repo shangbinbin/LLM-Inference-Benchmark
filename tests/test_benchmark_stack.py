@@ -1,6 +1,7 @@
 import importlib.util
 import configparser
 import json
+import yaml
 import os
 from pathlib import Path
 import sys
@@ -16,7 +17,7 @@ import benchmark_stack as stack
 
 class StackTests(unittest.TestCase):
     def config(self, tmp):
-        cfg=stack.load_config(ROOT/'configs/stacks/mac-simulation.json')
+        cfg=stack.load_config(ROOT/'configs/stacks/mac-simulation.yaml')
         cfg['storage']={'root':str(Path(tmp)/'state'),'logs':str(Path(tmp)/'logs')}
         return cfg
 
@@ -28,7 +29,7 @@ class StackTests(unittest.TestCase):
                 cfg['topology']['metrics_endpoints']=[{'target':'router:30000','role':'router'}, {'target':'prefill:30000','role':'prefill'}, {'target':'decode:30000','role':'decode'}]
                 cfg['log_files']=['prefill/rank-0.log','decode/rank-0.log']
                 folder,chosen=stack.prepare(cfg)
-                prom=json.loads((folder/'prometheus/prometheus.yml').read_text())
+                prom=yaml.safe_load((folder/'prometheus/prometheus.yml').read_text())
                 self.assertEqual(chosen,vendor)
                 self.assertEqual(len(prom['scrape_configs'][0]['static_configs']),3)
                 self.assertEqual(prom['scrape_configs'][1]['job_name'],job)
@@ -160,9 +161,9 @@ class StackTests(unittest.TestCase):
             for value in ('true', 'false', 1, 0, None, []):
                 cfg = self.config(tmp)
                 cfg['legacy_seccomp_unconfined'] = value
-                with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'JSON boolean'):
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'boolean'):
                     stack.validate_config(cfg)
-                with self.assertRaisesRegex(ValueError, 'JSON boolean'):
+                with self.assertRaisesRegex(ValueError, 'boolean'):
                     stack.runtime_command(cfg, ['run', 'image'])
 
     def test_gateway_metrics_path_and_bearer_file_are_scoped_to_application(self):
@@ -171,7 +172,7 @@ class StackTests(unittest.TestCase):
             cfg['topology']['metrics_path'] = '/publishaddress/inference/qwen306b/metrics'
             cfg['topology']['metrics_api_key_env'] = 'TEST_METRICS_TOKEN'
             directory, vendor = stack.prepare(cfg)
-            prom = json.loads((directory/'prometheus/prometheus.yml').read_text())
+            prom = yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())
             application = prom['scrape_configs'][0]
             self.assertEqual(application['metrics_path'], cfg['topology']['metrics_path'])
             self.assertEqual(application['authorization'], {'type': 'Bearer', 'credentials_file': '/run/benchmark-metrics.token'})
@@ -235,7 +236,7 @@ class StackTests(unittest.TestCase):
                 self.assertEqual(settings['api_key_env'], 'GATEWAY_TOKEN')
                 self.assertEqual(settings['targets'][0]['target'], base.split('/')[2])
                 directory, vendor = stack.prepare(checked)
-                application = json.loads((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
+                application = yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
                 self.assertEqual(application['metrics_path'], expected_path)
                 self.assertEqual(application['scheme'], base.split(':')[0])
                 self.assertEqual(application['static_configs'][0]['targets'], [base.split('/')[2]])
@@ -256,7 +257,7 @@ class StackTests(unittest.TestCase):
             self.assertEqual(settings, {'targets':[{'target':'other:9100','role':'worker'}],
                                         'path':'/custom/metrics','scheme':'http','api_key_env':None})
             directory, vendor = stack.prepare(cfg)
-            application = json.loads((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
+            application = yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())['scrape_configs'][0]
             self.assertNotIn('authorization', application)
             self.assertEqual(application['metrics_path'], '/custom/metrics')
             self.assertEqual(application['scheme'], 'http')
@@ -278,7 +279,7 @@ class StackTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'not ready'):
                     s.up()
                 bench.assert_not_called()
-                self.assertEqual(json.loads(s.statefile.read_text())['status'],'failed')
+                self.assertEqual(yaml.safe_load(s.statefile.read_text())['status'],'failed')
 
     def test_down_refuses_unowned_containers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -306,7 +307,7 @@ class StackTests(unittest.TestCase):
             node=next(s for s in specs if s['name']=='node-exporter')
             self.assertTrue(node['host_network'])
             self.assertIn('--pid',node['args'])
-            prom=json.loads((folder/'prometheus/prometheus.yml').read_text())
+            prom=yaml.safe_load((folder/'prometheus/prometheus.yml').read_text())
             self.assertEqual(prom['scrape_configs'][-1]['static_configs'][0]['targets'],['192.0.2.10:39100'])
 
     def test_service_ports_are_published_on_all_interfaces_by_default(self):
@@ -355,7 +356,7 @@ class StackTests(unittest.TestCase):
             self.assertIn('--web.listen-address=0.0.0.0:45010', node['command'])
             self.assertNotIn('-p', node['args'])
             self.assertIn('http://192.0.2.10:45010/metrics', node['ready'])
-            prom=json.loads((folder/'prometheus/prometheus.yml').read_text())
+            prom=yaml.safe_load((folder/'prometheus/prometheus.yml').read_text())
             self.assertEqual(prom['scrape_configs'][-1]['static_configs'][0]['targets'], ['192.0.2.10:45010'])
 
     def test_port_validation(self):
@@ -371,7 +372,7 @@ class StackTests(unittest.TestCase):
 
     def test_sweep_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg=stack.load_config(ROOT/'configs/stacks/mac-simulation.json')
+            cfg=stack.load_config(ROOT/'configs/stacks/mac-simulation.yaml')
             cfg['benchmark'].update(concurrency_levels=[1,2],requests_per_level=[4])
             path=Path(tmp)/'config.json';path.write_text(json.dumps(cfg))
             with self.assertRaisesRegex(ValueError,'paired'):
@@ -472,9 +473,9 @@ class StackTests(unittest.TestCase):
 
     def test_offline_requires_boolean(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg=json.loads((ROOT/'configs/stacks/mac-simulation.json').read_text());cfg['offline']='true'
+            cfg=yaml.safe_load((ROOT/'configs/stacks/mac-simulation.yaml').read_text());cfg['offline']='true'
             path=Path(tmp)/'cfg.json';path.write_text(json.dumps(cfg))
-            with self.assertRaisesRegex(ValueError,'JSON boolean'):
+            with self.assertRaisesRegex(ValueError,'boolean'):
                 stack.load_config(path)
 
 

@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 import subprocess
 
+from config_io import read_object
+
 ROOT = Path(__file__).resolve().parents[1]
 COMMON_IMAGES = ('toolbox', 'aisbench', 'prometheus', 'grafana', 'loki', 'alloy', 'node-exporter')
 BUILT_IMAGES = {'toolbox', 'aisbench'}
-DEFAULT_CONFIG = ROOT / 'configs/delivery/offline-images.json'
-DEFAULT_SITE = ROOT / 'configs/sites/gpu41-qwen3-0.6b-random-1k.json'
+DEFAULT_CONFIG = ROOT / 'configs/delivery/offline-images.yaml'
+DEFAULT_SITE = ROOT / 'configs/sites/gpu41-qwen3-0.6b-random-1k.yaml'
 
 
 def image_plan(site, delivery, exporters=None):
@@ -71,13 +73,13 @@ def prepare_images(plan, bundle):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--site', type=Path, default=DEFAULT_SITE, help='read image names only; no GPU/tokenizer/service validation')
-    parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG, help='delivery image selection JSON')
+    parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG, help='delivery image selection YAML')
     parser.add_argument('--exporters', nargs='+', help='override selected_gpu_exporters, e.g. nvidia hygon')
     parser.add_argument('--output', type=Path, default=Path('generated/offline-bundle'))
     parser.add_argument('--plan', action='store_true', help='print image selection without contacting Docker or pulling images')
     args = parser.parse_args()
     try:
-        plan = image_plan(json.loads(args.site.read_text()), json.loads(args.config.read_text()), args.exporters)
+        plan = image_plan(read_object(args.site), read_object(args.config), args.exporters)
         if args.plan:
             print(json.dumps(plan, ensure_ascii=False, indent=2))
         else:

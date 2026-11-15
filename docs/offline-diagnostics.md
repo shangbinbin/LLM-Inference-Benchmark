@@ -3,7 +3,7 @@
 推理服务异常、监控断点或压测结果异常时，在运行 llm-bench 的主机上执行。优先在 `down` 前采集，以保留运行时中的组件日志。只需本地 Python、配置好的 Docker 或 nerdctl，以及站点日志和数据目录的读取权限。
 
 ```bash
-llm-bench logs collect --config /srv/bench/site.json
+llm-bench logs collect --config /srv/bench/site.yaml
 ```
 
 终端会打印 `Diagnostic bundle` 和文件绝对路径。默认文件为 `storage.root/diagnostics/llm-bench-<UTC时间戳>.tar.gz`。采集期间可以继续压测。命令只读取已配置的运行时、本地文件和本机发布的 Prometheus 接口，使用主机标准库打包，不需要拉镜像或安装依赖。
@@ -24,7 +24,7 @@ tar -xOzf /path/to/bundle.tar.gz manifest.json
 
 | 参数 | 用法 |
 | --- | --- |
-| `--config FILE` / `--data-dir DIR` | 二选一。当前目录只有一个活动栈时可以省略。新版本启动过的栈在 `down` 后可用 `--data-dir` 找回上次启动配置。旧栈优先使用完整的原始 `site.json`。 |
+| `--config FILE` / `--data-dir DIR` | 二选一。当前目录只有一个活动栈时可以省略。新版本启动过的栈在 `down` 后可用 `--data-dir` 找回上次启动配置。旧栈优先使用完整的原始 `site.yaml`。 |
 | `--output FILE` | 指定新压缩包的路径，保留已有同名文件。默认文件在该栈的数据目录内。 |
 | `--tail N` | 每个容器、客户端及推理日志的最近 N 行，默认 500，可选 1–10000。 |
 | `--run ID` | 只选指定运行的压测产物。ID 相对 `storage.root/data/results`，如 `suites/<UTC时间戳>`、`slo-search/<UTC时间戳>` 或 AISBench 单次运行目录。组件和推理日志仍采集当前尾部。 |
@@ -43,8 +43,8 @@ llm-bench logs collect --data-dir /srv/llm-benchmark \
 
 ```bash
 set -o pipefail
-llm-bench up --config /srv/bench/site.json 2>&1 | tee /tmp/llm-bench-start.log
-llm-bench logs collect --config /srv/bench/site.json --extra-log /tmp/llm-bench-start.log
+llm-bench up --config /srv/bench/site.yaml 2>&1 | tee /tmp/llm-bench-start.log
+llm-bench logs collect --config /srv/bench/site.yaml --extra-log /tmp/llm-bench-start.log
 ```
 
 ## 采集范围

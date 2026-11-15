@@ -1,4 +1,5 @@
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import tempfile
@@ -53,7 +54,7 @@ class CommandLineTests(unittest.TestCase):
                 'topology': {'metrics_endpoints': [{'target': 'metrics:9000', 'role': 'worker'}]}}))
             result = self.cli(tmp, 'plan', '--profile', 'mac-offline', '--config', site, '--concurrency', '4',
                               '--endpoint', 'http://fixture:18000', '--data-dir', 'state', '--log-dir', 'logs',
-                              '--cases', ROOT/'configs/suites/mac-smoke.json')
+                              '--cases', ROOT/'configs/suites/mac-smoke.yaml')
             self.assertEqual(result.returncode, 0, result.stderr)
             plan = json.loads(result.stdout)
             cfg = plan['config']

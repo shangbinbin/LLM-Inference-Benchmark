@@ -1,6 +1,7 @@
 from contextlib import redirect_stdout
 import io
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,7 @@ from llm_bench import execute, parser_for_cli
 
 class LogHealthTests(unittest.TestCase):
     def config(self, base):
-        cfg = stack.load_config(ROOT/'configs/stacks/mac-offline.json')
+        cfg = stack.load_config(ROOT/'configs/stacks/mac-offline.yaml')
         cfg.update(simulation=False, platform='linux/amd64', runtime=['docker'])
         cfg['storage'].update(root=str(base/'state'), logs=str(base/'logs'))
         cfg['log_sources'] = [{'path':'server.log', 'role':'master', 'replica':'replica-0'}]

@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from diagnostics import failure_detail
 from aisbench_timing import measured_peak_concurrency
 from aisbench_trial import TrialSession, utc_now
+from config_io import read_object
+
 from benchmark_stack import load_config, validate_config, write_json
 from run_aisbench_suite import Case
 
@@ -370,7 +372,7 @@ def main():
     parser.add_argument('--search', type=Path, required=True, help='SLO search policy JSON')
     args = parser.parse_args()
     try:
-        return run_search(load_config(args.config), json.loads(args.search.read_text()))
+        return run_search(load_config(args.config), read_object(args.search))
     except (ValueError, KeyError, TypeError, OSError) as exc:
         parser.exit(2, f'ERROR: {exc}\n')
 

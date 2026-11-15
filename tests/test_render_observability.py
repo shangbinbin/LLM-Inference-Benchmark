@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import yaml
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,13 +13,13 @@ spec.loader.exec_module(module)
 
 class RenderTests(unittest.TestCase):
     def render(self, name, out, preview=False):
-        module.render(ROOT / f'configs/environments/{name}/environment.json', out, preview)
+        module.render(ROOT / f'configs/environments/{name}/environment.yaml', out, preview)
 
     def test_h200_complete_chain(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / 'out'
             self.render('nvidia-h200-3node-8gpu', out)
-            prom = json.loads((out / 'prometheus/prometheus.yml').read_text())
+            prom = yaml.safe_load((out / 'prometheus/prometheus.yml').read_text())
             jobs = prom['scrape_configs']
             self.assertEqual(len(jobs), 3)
             self.assertEqual(len(jobs[0]['static_configs'][0]['targets']), 1)
@@ -56,12 +57,12 @@ class RenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / 'out'
             self.render('hygon-hcu-v3-template', out, True)
-            prom = json.loads((out / 'prometheus/prometheus.yml').read_text())
+            prom = yaml.safe_load((out / 'prometheus/prometheus.yml').read_text())
             self.assertEqual(prom['scrape_configs'][1]['job_name'], 'hygon-hcu-exporter')
             self.assertEqual(prom['scrape_configs'][1]['static_configs'][0]['targets'],
                              ['REPLACE_HOST:16080'])
-            dashboard = json.loads((out / 'grafana/dashboards/gpu.json').read_text())
-            contract = json.loads((ROOT / 'configs/gpu/hygon/hcu-exporter-v3/metric-contract.json').read_text())
+            dashboard = yaml.safe_load((out / 'grafana/dashboards/gpu.json').read_text())
+            contract = yaml.safe_load((ROOT / 'configs/gpu/hygon/hcu-exporter-v3/metric-contract.yaml').read_text())
             expressions = [p['targets'][0]['expr'] for p in dashboard['panels']]
             self.assertEqual({e.split('{')[0] for e in expressions}, {'up', *contract['metrics']})
             for panel in dashboard['panels']:
@@ -73,7 +74,7 @@ class RenderTests(unittest.TestCase):
             self.assertFalse((out / 'grafana/dashboards/network.json').exists())
 
     def test_log_validation_and_vendor_boundary(self):
-        env = json.loads((ROOT / 'configs/environments/nvidia-h200-3node-8gpu/environment.json').read_text())
+        env = yaml.safe_load((ROOT / 'configs/environments/nvidia-h200-3node-8gpu/environment.yaml').read_text())
         profile = {'vendor': 'nvidia', 'status': 'reference'}
         adapter = {'vendor': 'hygon', 'status': 'reference'}
         with self.assertRaisesRegex(ValueError, 'vendors differ'):

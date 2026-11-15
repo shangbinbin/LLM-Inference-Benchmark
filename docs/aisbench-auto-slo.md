@@ -19,14 +19,14 @@ docker build --network=host --platform linux/arm64 -t llm-benchmark-toolbox:slo-
 
 # 独立于原 mac-simulation 栈的名称、数据目录与端口
 llm-bench up \
-  --config configs/stacks/mac-slo-search.json --no-benchmark
+  --config configs/stacks/mac-slo-search.yaml --no-benchmark
 
 llm-bench bench slo \
-  --config configs/stacks/mac-slo-search.json \
-  --policy configs/search/mac-slo.json
+  --config configs/stacks/mac-slo-search.yaml \
+  --policy configs/search/mac-slo.yaml
 ```
 
-`up --no-benchmark` 不构建 AISBench 镜像。首次没有该镜像时，先执行 `llm-bench images build --config configs/stacks/mac-slo-search.json`。搜索器会检查镜像存在及架构，不在搜索预算中下载/构建镜像。
+`up --no-benchmark` 不构建 AISBench 镜像。首次没有该镜像时，先执行 `llm-bench images build --config configs/stacks/mac-slo-search.yaml`。搜索器会检查镜像存在及架构，不在搜索预算中下载/构建镜像。
 
 模拟服务在同时处理请求数超过 2 时，增加 400 ms 响应延迟。搜索范围 1–6，每个候选实际运行两次 AISBench，TTFT P99 阈值为 200 ms。预期最大达标并发为 2；结果必须来自实际压测报告，模拟服务不会给搜索器提供答案。Mac 调度若异常拥塞，也可能触发停止/不达标，不能硬编码期望结果或跳过校验。
 
@@ -35,44 +35,44 @@ llm-bench bench slo \
 查看 Grafana：`http://localhost:33002`。完成后可执行：
 
 ```bash
-llm-bench down --config configs/stacks/mac-slo-search.json
+llm-bench down --config configs/stacks/mac-slo-search.yaml
 ```
 
 保留 data/results/slo-search 的原始结果。模拟服务只验证控制流程，不代表真实 GPU 的容量或曲线。
 
 ## Linux x86 生产运行
 
-1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)选择 Docker/nerdctl 并生成 site.json，核对服务 URL、model、真实 tokenizer、指标/日志地址与存储目录。通用场景也可复制 `configs/stacks/nvidia-single.json`；海光按既有 GPU 适配配置切换。搜索策略会另行覆盖 workload，不固定使用 GPU41 的并发 16。
+1. 按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)选择 Docker/nerdctl 并生成 site.yaml，核对服务 URL、model、真实 tokenizer、指标/日志地址与存储目录。通用场景也可复制 `configs/stacks/nvidia-single.yaml`；海光按既有 GPU 适配配置切换。搜索策略会另行覆盖 workload，不固定使用 GPU41 的并发 16。
 2. 保持 `platform: linux/amd64` 与 `*-amd64` 镜像标签。生产镜像应在 x86 Linux 构建并完成常规单次 AISBench 验证。
 3. benchmark 使用 `mode: perf`、`request_rate: 0`、`retry: 1`；移除 concurrency_levels/requests_per_level。输入输出长度、样本数、tokenizer、生成参数、预热数在整个搜索中保持不变，只有 concurrency 被搜索器覆盖。
 4. request_count 至少达到搜索 max_concurrency 和 min_requests；output_length 至少为 2。准备固定输出长度负载，并确认后端支持相应生成参数。
-5. 复制并修改 `configs/search/slo-capacity.json` 中的业务阈值及预算，然后执行：
+5. 复制并修改 `configs/search/slo-capacity.yaml` 中的业务阈值及预算，然后执行：
 
 ```bash
-llm-bench up --config /absolute/path/site.json --no-benchmark
-llm-bench bench slo --config /absolute/path/site.json --policy /absolute/path/search.json
+llm-bench up --config /absolute/path/site.yaml --no-benchmark
+llm-bench bench slo --config /absolute/path/site.yaml --policy /absolute/path/search.yaml
 ```
 
 如果栈已以相同配置启动且为 ready/complete，直接执行搜索即可。不要并行运行其他客户端；搜索与本工程 suite 共用 `storage.root/suite.lock`，down 在锁存在时会拒绝清理组件。直接从外部启动的压测客户端无法由此锁隔离，需要实验环境保证独占测试窗口。
 
-## 用同一份 cases.json 逐数据集搜索
+## 用同一份 cases.yaml 逐数据集搜索
 
-`up --cases`、`bench suite --cases` 和 `bench slo --cases` 读取同一种用例格式。SLO 搜索按数组顺序为每个用例重新建立并发网格。业务 JSONL、ShareGPT 多轮对话、固定长度合成数据可共用一份清单。[完整 cases.json](../configs/suites/mixed-datasets.json) · [语料格式与只读挂载](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
+`up --cases`、`bench suite --cases` 和 `bench slo --cases` 读取同一种用例格式。SLO 搜索按数组顺序为每个用例重新建立并发网格。业务 JSONL、ShareGPT 多轮对话、固定长度合成数据可共用一份清单。[完整 cases.yaml](../configs/suites/mixed-datasets.yaml) · [语料格式与只读挂载](aisbench-sequential.md#在同一份-casesyaml-混用三种数据集)
 
-**Mac 快速验证**。从仓库根目录执行。已有 `mac-slo-search` 栈可直接执行第二条命令。示例策略用很小的样本池验证功能，生产测试请按业务样本量设置 `min_requests` 和重复次数。[Mac 混合搜索策略](../configs/search/mac-mixed-datasets.json)
+**Mac 快速验证**。从仓库根目录执行。已有 `mac-slo-search` 栈可直接执行第二条命令。示例策略用很小的样本池验证功能，生产测试请按业务样本量设置 `min_requests` 和重复次数。[Mac 混合搜索策略](../configs/search/mac-mixed-datasets.yaml)
 
 ```bash
-llm-bench up --config configs/stacks/mac-slo-search.json --no-benchmark
-llm-bench bench slo --config configs/stacks/mac-slo-search.json \
-  --cases configs/suites/mixed-datasets.json --policy configs/search/mac-mixed-datasets.json
-llm-bench down --config configs/stacks/mac-slo-search.json
+llm-bench up --config configs/stacks/mac-slo-search.yaml --no-benchmark
+llm-bench bench slo --config configs/stacks/mac-slo-search.yaml \
+  --cases configs/suites/mixed-datasets.yaml --policy configs/search/mac-mixed-datasets.yaml
+llm-bench down --config configs/stacks/mac-slo-search.yaml
 ```
 
 **Linux x86**。先按上一节准备并启动站点，然后对已有栈运行：
 
 ```bash
-llm-bench bench slo --config /srv/bench/site.json \
-  --cases /srv/bench/cases.json --policy /srv/bench/slo-policy.json
+llm-bench bench slo --config /srv/bench/site.yaml \
+  --cases /srv/bench/cases.yaml --policy /srv/bench/slo-policy.yaml
 ```
 
 ### 负载、阈值和预算
@@ -92,7 +92,7 @@ storage.root/data/results/slo-search/<UTC时间戳>/
 ├── suite-results.json
 ├── stack.json
 └── cases/<用例名>/
-    ├── policy.json
+    ├── policy.yaml
     ├── stack.json
     ├── search-results.json
     └── round-001-c1-r1/
@@ -124,21 +124,22 @@ GitHub 最新正式 Release 为 **v3.1-20261013-master**（10 月 16 日发布�
 
 ## 搜索策略文件
 
-```json
-{
-  "min_concurrency": 1,
-  "max_concurrency": 64,
-  "step": 1,
-  "repeats": 3,
-  "strategy": "verified_max",
-  "statistic": "P99",
-  "thresholds_ms": {"TTFT": 1000, "TPOT": 50, "E2EL": 30000},
-  "min_requests": 1000,
-  "max_rounds": 64,
-  "max_duration_seconds": 7200,
-  "trial_timeout_seconds": 300,
-  "cooldown_seconds": 15
-}
+```yaml
+min_concurrency: 1
+max_concurrency: 64
+step: 1
+repeats: 3
+strategy: verified_max
+statistic: P99
+thresholds_ms:
+  TTFT: 1000
+  TPOT: 50
+  E2EL: 30000
+min_requests: 1000
+max_rounds: 64
+max_duration_seconds: 7200
+trial_timeout_seconds: 300
+cooldown_seconds: 15
 ```
 
 以上阈值为示例，不能代替业务 SLO。
@@ -218,7 +219,7 @@ GitHub 最新正式 Release 为 **v3.1-20261013-master**（10 月 16 日发布�
 ```text
 storage.root/data/results/slo-search/<UTC时间戳>/
 ├── stack.json                    # 固定服务/workload/镜像/架构快照
-├── policy.json                   # 生效搜索策略（含默认值）
+├── policy.yaml                   # 生效搜索策略（含默认值）
 ├── search-results.json           # 原子更新的搜索进度、停止原因与最终结论
 └── round-001-c1-r1/              # 每个候选的每次重复均独立保存
     ├── stack.json

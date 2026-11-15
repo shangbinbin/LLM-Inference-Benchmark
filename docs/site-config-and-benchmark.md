@@ -1,8 +1,8 @@
-# 修改 site.json 后启动压测：NVIDIA / 海光，Docker / nerdctl
+# 修改 site.yaml 后启动压测：NVIDIA / 海光，Docker / nerdctl
 
-本手册适用于已经交付源码、加载 amd64 镜像、解压真实 tokenizer，并且推理服务已经部署的离线 Linux 节点。目标是修改一份完整 `site.json`，依次完成观测启动、小规模验证、正式压测、结果查询和停止。推理服务可以是同机 Pod、独立容器或远端服务；本工程不会启动、停止或修改真实推理服务。
+本手册适用于已经交付源码、加载 amd64 镜像、解压真实 tokenizer，并且推理服务已经部署的离线 Linux 节点。目标是修改一份完整 `site.yaml`，依次完成观测启动、小规模验证、正式压测、结果查询和停止。推理服务可以是同机 Pod、独立容器或远端服务；本工程不会启动、停止或修改真实推理服务。
 
-尚未准备交付物时见 [在线 CPU → 离线 GPU](online-cpu-to-offline-gpu.md)；尚未验证软件链路时先完成 [自带 tokenizer 冒烟](offline-deployment.md#offline-smoke)。模拟冒烟使用 `generated/offline-smoke.json`，真实服务使用 `generated/site/site.json`，两者的状态与网络独立。
+尚未准备交付物时见 [在线 CPU → 离线 GPU](online-cpu-to-offline-gpu.md)；尚未验证软件链路时先完成 [自带 tokenizer 冒烟](offline-deployment.md#offline-smoke)。模拟冒烟使用 `generated/offline-smoke.yaml`，真实服务使用 `generated/site/site.yaml`，两者的状态与网络独立。
 
 现场阅读顺序：[NVIDIA/海光改动](#2-nvidia-与海光需要改什么) → [字段含义](#3-sitejson-各配置项的含义与修改要求) → [修改示例](#4-一次性修改单实例配置的示例) → [启动压测](#6-鉴权预检查启动和单档压测) → [多测试例](#7-多个不同输入输出请求数和并发的测试例)。
 
@@ -18,13 +18,13 @@ test -f scripts/benchmark_stack.py
 
 | 文件 | 作用 | 是否手动修改 |
 | --- | --- | --- |
-| `generated/site/site.json` | 完整现场输入，包含服务、运行时、设备、日志及默认 workload | 是，本手册修改对象 |
-| `generated/offline-smoke.json` | 使用模拟服务的独立冒烟输入 | 仅模拟验证时修改 |
+| `generated/site/site.yaml` | 完整现场输入，包含服务、运行时、设备、日志及默认 workload | 是，本手册修改对象 |
+| `generated/offline-smoke.yaml` | 使用模拟服务的独立冒烟输入 | 仅模拟验证时修改 |
 | `storage.root/config/<哈希>/manifest.json` | up 保存的生效配置快照 | 否，交给启动器生成 |
 | `storage.root/state.json` | 本项目容器、网络和状态 | 否，不靠删除它绕过启动检查 |
-| `generated/site/cases.json` | 可选多测试例清单 | 是，每例覆盖 workload |
+| `generated/site/cases.yaml` | 可选多测试例清单 | 是，每例覆盖 workload |
 
-如果已有 `generated/site/site.json`，直接编辑。没有时选一条生成命令，默认从 GPU41 完整示例复制，已有输出会拒绝覆盖：
+如果已有 `generated/site/site.yaml`，直接编辑。没有时选一条生成命令，默认从 GPU41 完整示例复制，已有输出会拒绝覆盖：
 
 ```bash
 # Docker
@@ -36,14 +36,14 @@ python3 scripts/create_site_config.py --runtime docker
 python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 ```
 
-该生成器不联网、不访问模板里的真实地址，也不会启动容器；GPU41 的接口和 NFS 路径只是示例，不会自动转换成当前节点路径。省略 --runtime 时沿用源文件设置。自定义底稿可加 `--source 完整配置.json --output 另一现场配置.json`。
+该生成器不联网、不访问模板里的真实地址，也不会启动容器；GPU41 的接口和 NFS 路径只是示例，不会自动转换成当前节点路径。省略 --runtime 时沿用源文件设置。自定义底稿可加 `--source 完整配置.yaml --output 另一现场配置.yaml`。
 
 **已有栈时先处理旧状态，再修改。** 如果此前已经成功 up 或失败后保留了部分容器，先检查并停止原栈：
 
 ```bash
-./bin/llm-bench status --config generated/site/site.json
+./bin/llm-bench status --config generated/site/site.yaml
 # 确认没有正在执行的压测后，再停止原观测栈
-./bin/llm-bench down --config generated/site/site.json
+./bin/llm-bench down --config generated/site/site.yaml
 ```
 
 首次部署、提示 No active stack 时无需 down。project/storage.root 在 down 前应保持原值，便于定位旧栈；down 读取原 manifest 中的 runtime/namespace，不会停止真实推理服务。不要为了切换厂商或引擎直接删除 state.json、网络或整个 namespace。
@@ -80,7 +80,7 @@ Docker 与 containerd 的镜像存储独立，nerdctl 不同 namespace 也不自
 
 **海光正式链路默认是 DCU Exporter v2.4.1 的 dcu_* 指标契约。** 具体镜像为光合社区目录中的 `harbor.sourcefind.cn:5443/hcu/admin/base/dcu-exporter:v2.4.1`。从 HCU v3 升级/回退到该版本时，必须同步现场 images.hygon_exporter、当前源码及 Dashboard；不能把 hcu_* 当成 dcu_*。本次未验证真实镜像默认监听端口，按实际端口调整 gpu.hygon_exporter_port，已有 Exporter 推荐 external 直接填实际 target。详见 [DCU 迁移说明](dcu-exporter-v2.4.1.md)。其他 GPU 的镜像交付入口不等于运行支持。
 
-## 3. site.json 各配置项的含义与修改要求
+## 3. site.yaml 各配置项的含义与修改要求
 
 下面的“必须核对”表示要与实际环境一致，不一定每次都要改值。普通单实例优先保留模板的结构，不加入未被程序读取的自定义字段。
 
@@ -100,7 +100,7 @@ Docker 与 containerd 的镜像存储独立，nerdctl 不同 namespace 也不自
 | `startup_timeout` | 每项就绪探测超时，单位秒 | 示例 180；不是整场 benchmark 的最长时间 |
 | `metrics_retention` | Prometheus 数据保留时长 | 可省略，默认 7d；不控制 Loki、原始文件日志或 AISBench 报告保留 |
 
-布尔值使用 JSON 的 true/false，不写成字符串。标签值应稳定且简短，不能含控制字符、双引号、反斜杠、反引号；不要把请求 ID 或时间戳作为 task。
+布尔值使用 YAML 的 true/false，不写成字符串。标签值应稳定且简短，不能含控制字符、双引号、反斜杠、反引号；不要把请求 ID 或时间戳作为 task。
 
 ### 3.2 存储与日志
 
@@ -116,7 +116,7 @@ Docker 与 containerd 的镜像存储独立，nerdctl 不同 namespace 也不自
 | `allow_missing_logs` | 可选允许延迟创建活跃日志文件 | 真实模式默认 false，目录必须存在；已存在空文件仍可启动；仅明确延迟创建时设 true |
 | `log_files` | 旧版活跃文件清单 | 新配置推荐 log_sources；设置 log_sources 后该旧字段被忽略 |
 
-storage 的相对路径按**工程根目录**解析，不按 site.json 所在目录。bind mount 的源目录必须对运行容器的节点可见。logrotate 会写入/轮转指定日志，目录应有适当权限，避免与现场已有轮转机制同时操作同一文件；不要创建空文件冒充真实服务日志。多节点日志需先通过共享目录或另行部署采集器汇集，节点名标签本身不会传输文件。
+storage 的相对路径按**工程根目录**解析，不按 site.yaml 所在目录。bind mount 的源目录必须对运行容器的节点可见。logrotate 会写入/轮转指定日志，目录应有适当权限，避免与现场已有轮转机制同时操作同一文件；不要创建空文件冒充真实服务日志。多节点日志需先通过共享目录或另行部署采集器汇集，节点名标签本身不会传输文件。
 
 ### 3.3 推理服务、指标地址与鉴权
 
@@ -205,7 +205,7 @@ AISBench、logrotate 和探测容器没有对外 HTTP 服务。不要用修改 G
 | `generation_kwargs` | 传给模型后端的生成参数 | 如 temperature=0、ignore_eos=true；只填写服务支持项，不能保证服务一定生成满输出上限 |
 | `concurrency_levels/requests_per_level` | 可选原生多档扫描数组 | 普通单档/独立 suite 建议删除；扫描须在 perf 模式成对配置，详见 AISBench 指南 |
 
-普通随机 1k/1k、1000 次、并发 16 可用 1024/1024/1000/16。服务上下文容量应容纳输入、chat 模板与输出。tokenid 在本地生成随机输入，不需要预先生成数据集；JSONL/ShareGPT 用单独 cases.json 的 dataset 入口。simulation_latency 是仅供模拟测试的容量/过载延迟对象，真实服务配置省略。长度口径与报告解释见 [AISBench 指南](aisbench.md)。
+普通随机 1k/1k、1000 次、并发 16 可用 1024/1024/1000/16。服务上下文容量应容纳输入、chat 模板与输出。tokenid 在本地生成随机输入，不需要预先生成数据集；JSONL/ShareGPT 用单独 cases.yaml 的 dataset 入口。simulation_latency 是仅供模拟测试的容量/过载延迟对象，真实服务配置省略。长度口径与报告解释见 [AISBench 指南](aisbench.md)。
 
 ## 4. 一次性修改单实例配置的示例
 
@@ -213,7 +213,7 @@ AISBench、logrotate 和探测容器没有对外 HTTP 服务。不要用修改 G
 
 ```bash
 python3 - <<'PY'
-import json
+import yaml
 from pathlib import Path
 
 GPU_VENDOR = 'nvidia'       # 海光 DCU 改为 'hygon'
@@ -239,8 +239,8 @@ DATA_DIR = 'generated/qwen-real'
 
 if GPU_VENDOR not in ('nvidia', 'hygon') or CONTAINER_ENGINE not in ('docker', 'nerdctl'):
     raise SystemExit('GPU_VENDOR 使用 nvidia/hygon，CONTAINER_ENGINE 使用 docker/nerdctl')
-path = Path('generated/site/site.json')
-cfg = json.loads(path.read_text())
+path = Path('generated/site/site.yaml')
+cfg = yaml.safe_load(path.read_text())
 cfg.update(project=PROJECT, task=TASK, simulation=False, offline=True,
            platform='linux/amd64', legacy_seccomp_unconfined=True,
            host_metrics='container', startup_timeout=180)
@@ -263,7 +263,7 @@ cfg['benchmark'] = {'dataset_type':'tokenid', 'input_length':1024, 'output_lengt
                     'prefix_length':0, 'request_count':1000, 'concurrency':16,
                     'request_rate':0, 'warmups':0, 'retry':1, 'mode':'perf',
                     'generation_kwargs':{'temperature':0, 'ignore_eos':True}}
-path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
 print('已更新：', path.resolve())
 print('Runtime：', cfg['runtime'], 'GPU：', GPU_VENDOR)
 PY
@@ -273,16 +273,16 @@ NVIDIA+Docker 保留两个选择变量；海光+nerdctl 将它们改成 hygon、
 
 ## 5. 找到并清理所有占位符
 
-手动编辑的位置就是 `generated/site/site.json`，可以 `vi generated/site/site.json`，输入 `/REPLACE_` 回车搜索，按 n 查下一处，按 i 修改，Esc 后输入 `:wq` 保存退出。JSON 不支持注释或末尾多余逗号。
+手动编辑的位置就是 `generated/site/site.yaml`，可以 `vi generated/site/site.yaml`，输入 `/REPLACE_` 回车搜索，按 n 查下一处，按 i 修改，Esc 后输入 `:wq` 保存退出。YAML 支持 # 注释，缩进使用空格，不能有重复键。
 
 也可以用主机 Python 列出占位符的**完整字段路径**，避免只改 inference 而漏掉旧 metrics 或主机字段：
 
 ```bash
-python3 -m json.tool generated/site/site.json > /dev/null
+python3 -m json.tool generated/site/site.yaml > /dev/null
 python3 - <<'PY'
-import json
+import yaml
 from pathlib import Path
-cfg = json.loads(Path('generated/site/site.json').read_text())
+cfg = yaml.safe_load(Path('generated/site/site.yaml').read_text())
 def walk(value, path=''):
     if isinstance(value, dict):
         for key, item in value.items():
@@ -302,52 +302,52 @@ PY
 
 ### 6.1 在当前终端导出 Token
 
-仅当配置了 inference.api_key_env 时执行，变量名与 JSON 一致。填纯 Token，不带 Bearer 前缀：
+仅当配置了 inference.api_key_env 时执行，变量名与 YAML 一致。填纯 Token，不带 Bearer 前缀：
 
 ```bash
 read -r -s -p 'Inference Token: ' INFERENCE_API_KEY
 export INFERENCE_API_KEY
 ```
 
-换终端或经过 sudo/作业调度器时，确认运行进程仍能读取该变量。Token 不写入 JSON 或 Git。应用 metrics 默认共用该变量；显式独立指标鉴权则额外导出其对应变量。Prometheus 的凭据文件在 up 时生成，Token 轮换后需要重建观测栈才能让采集使用新值。
+换终端或经过 sudo/作业调度器时，确认运行进程仍能读取该变量。Token 不写入 YAML 或 Git。应用 metrics 默认共用该变量；显式独立指标鉴权则额外导出其对应变量。Prometheus 的凭据文件在 up 时生成，Token 轮换后需要重建观测栈才能让采集使用新值。
 
 ### 6.2 校验配置和镜像
 
 ```bash
-./bin/llm-bench plan --config generated/site/site.json
-./bin/llm-bench images check --config generated/site/site.json
+./bin/llm-bench plan --config generated/site/site.yaml
+./bin/llm-bench images check --config generated/site/site.yaml
 ```
 
-plan 检查 JSON、参数和 tokenizer_config.json 存在，渲染快照及生效计划；不访问服务、不读取实际 Token，也不检查镜像存在或完整 tokenizer 能否加载。images check 调用所选引擎/namespace 检查镜像与架构；实际完整 tokenizer 验证由本地检查和 AISBench 完成。缺镜像时按 [离线导入步骤](offline-deployment.md#offline-unpack)补齐，不在离线运行 images build。
+plan 检查 YAML、参数和 tokenizer_config.json 存在，渲染快照及生效计划；不访问服务、不读取实际 Token，也不检查镜像存在或完整 tokenizer 能否加载。images check 调用所选引擎/namespace 检查镜像与架构；实际完整 tokenizer 验证由本地检查和 AISBench 完成。缺镜像时按 [离线导入步骤](offline-deployment.md#offline-unpack)补齐，不在离线运行 images build。
 
 ### 6.3 首次启动观测栈
 
 ```bash
 set -o pipefail
-./bin/llm-bench up --config generated/site/site.json --no-benchmark \
+./bin/llm-bench up --config generated/site/site.yaml --no-benchmark \
   2>&1 | tee generated/site/real-up.log
-./bin/llm-bench status --config generated/site/site.json
+./bin/llm-bench status --config generated/site/site.yaml
 ```
 
 up 创建项目网络、所选设备 Exporter、node_exporter、Loki、logrotate、Alloy、Prometheus、Grafana，检查 targets 和真实 v1/models 就绪；external 省略本机设备 Exporter。--no-benchmark 不执行 AISBench 请求。正常状态为观测组件 running，后续才发压；真实模式不会创建 fixture 或模型服务。
 
-**命令是 `llm-bench up`，没有 `llm-bench bench up`。** `bench` 下只有 run、suite、slo。首次直接 bench run 提示 No active stack 时，先运行上面的 up；冒烟栈的状态不能供真实 site.json 复用。
+**命令是 `llm-bench up`，没有 `llm-bench bench up`。** `bench` 下只有 run、suite、slo。首次直接 bench run 提示 No active stack 时，先运行上面的 up；冒烟栈的状态不能供真实 site.yaml 复用。
 
 ### 6.4 先小规模，再按配置正式发压
 
 ```bash
 # 保留配置中的 1k/1k 长度，先验证 8 次、并发 2
-./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
+./bin/llm-bench bench run --config generated/site/site.yaml --requests 8 --concurrency 2
 # 成功后执行默认 1000 次、并发 16
-./bin/llm-bench bench run --config generated/site/site.json
+./bin/llm-bench bench run --config generated/site/site.yaml
 ```
 
-小规模参数只覆盖这次运行，不修改现场 JSON 或默认负载。返回 0 且 PASS single、报告 Success Requests 等于正式请求数、Failed Requests 为 0，才算这例完成；性能是否符合业务 SLO 另行判断。随机输入、流式参数、ignore_eos 或长度不被后端接受时，可能出现手工短请求成功而压测失败，要看本次错误响应。
+小规模参数只覆盖这次运行，不修改现场 YAML 或默认负载。返回 0 且 PASS single、报告 Success Requests 等于正式请求数、Failed Requests 为 0，才算这例完成；性能是否符合业务 SLO 另行判断。随机输入、流式参数、ignore_eos 或长度不被后端接受时，可能出现手工短请求成功而压测失败，要看本次错误响应。
 
 也可在已有栈覆盖一次正式参数：
 
 ```bash
-./bin/llm-bench bench run --config generated/site/site.json \
+./bin/llm-bench bench run --config generated/site/site.yaml \
   --input-len 1024 --output-len 1024 --requests 1000 --concurrency 16
 ```
 
@@ -355,13 +355,13 @@ up 创建项目网络、所选设备 Exporter、node_exporter、Loki、logrotate
 
 ## 7. 多个不同输入输出、请求数和并发的测试例
 
-site.json 保留共用环境和默认 benchmark。各例放在独立 `generated/site/cases.json` 中，不向 site 增加 cases 数组，也不把 input_length/concurrency 等标量改为数组。
+site.yaml 保留共用环境和默认 benchmark。各例放在独立 `generated/site/cases.yaml` 中，不向 site 增加 cases 数组，也不把 input_length/concurrency 等标量改为数组。
 
 创建清单，已有文件时拒绝覆盖：
 
 ```bash
 python3 - <<'PY'
-import json
+import yaml
 from pathlib import Path
 suite = {'cooldown_seconds':5, 'stop_on_failure':True, 'cases':[
     {'name':'in512-out128-r100-c4', 'benchmark':{
@@ -371,10 +371,10 @@ suite = {'cooldown_seconds':5, 'stop_on_failure':True, 'cases':[
     {'name':'in4096-out256-r300-c8', 'benchmark':{
         'input_length':4096, 'output_length':256, 'request_count':300, 'concurrency':8}},
 ]}
-path = Path('generated/site/cases.json')
+path = Path('generated/site/cases.yaml')
 path.parent.mkdir(parents=True, exist_ok=True)
 with path.open('x') as stream:
-    stream.write(json.dumps(suite, ensure_ascii=False, indent=2) + '\n')
+    stream.write(yaml.safe_dump(suite, allow_unicode=True, sort_keys=False))
 print('已生成：', path.resolve())
 PY
 ```
@@ -382,17 +382,17 @@ PY
 先用 plan 检查每例实际参数，已有观测栈直接运行 suite：
 
 ```bash
-./bin/llm-bench plan --config generated/site/site.json --cases generated/site/cases.json
-./bin/llm-bench bench suite --config generated/site/site.json --cases generated/site/cases.json
+./bin/llm-bench plan --config generated/site/site.yaml --cases generated/site/cases.yaml
+./bin/llm-bench bench suite --config generated/site/site.yaml --cases generated/site/cases.yaml
 ```
 
 各例按顺序执行、例间冷却 5 秒，共 1400 次正式请求；并发控制各例内部请求，不是三例同时启动。未指定的字段每例独立继承 site.benchmark；generation_kwargs 整体替换；suite 会移除原生 concurrency_levels/requests_per_level 扫描。失败默认停止，报告仍保留。
 
-尚未启动栈时也可 `./bin/llm-bench up --config generated/site/site.json --cases generated/site/cases.json` 一次完成，只执行清单，不额外执行默认单档，且不能同时带 --no-benchmark。JSONL/ShareGPT 的文件路径、请求计数和挂载规则见 [混合数据集](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)；输入长度由真实文件内容决定。
+尚未启动栈时也可 `./bin/llm-bench up --config generated/site/site.yaml --cases generated/site/cases.yaml` 一次完成，只执行清单，不额外执行默认单档，且不能同时带 --no-benchmark。JSONL/ShareGPT 的文件路径、请求计数和挂载规则见 [混合数据集](aisbench-sequential.md#在同一份-casesyaml-混用三种数据集)；输入长度由真实文件内容决定。
 
 ## 8. 看实时日志、指标和本次报告
 
-Loki 无标签或日志/Logs Volume 为空时，先执行 `./bin/llm-bench logs check --config generated/site/site.json`；日志路径、只读挂载和任务入库的完整判断见 [日志链路排查](loki-log-troubleshooting.md)。
+Loki 无标签或日志/Logs Volume 为空时，先执行 `./bin/llm-bench logs check --config generated/site/site.yaml`；日志路径、只读挂载和任务入库的完整判断见 [日志链路排查](loki-log-troubleshooting.md)。
 
 以下路径以脚本中的 storage.root=generated/qwen-real 为例，换 root 后同步替换：
 
@@ -423,22 +423,22 @@ Grafana 默认 `http://运行观测栈的节点IP:33000`，打开 Inference Benc
 需要保留诊断时先采集，再关闭观测栈：
 
 ```bash
-./bin/llm-bench logs collect --config generated/site/site.json
-./bin/llm-bench down --config generated/site/site.json
+./bin/llm-bench logs collect --config generated/site/site.yaml
+./bin/llm-bench down --config generated/site/site.yaml
 ```
 
 down 只清理当前项目登记且 ownership 匹配的容器和网络，保留 tokenizer、原始日志、监控数据和压测报告，也不关闭外部推理服务。当前压测持有锁时先等它结束，再清理。
 
 | 要做的变更 | 操作 |
 | --- | --- |
-| 只改本次输入/输出、请求数、并发 | 已有栈使用 bench run 参数覆盖，或修改独立 cases.json 后 bench suite |
+| 只改本次输入/输出、请求数、并发 | 已有栈使用 bench run 参数覆盖，或修改独立 cases.yaml 后 bench suite |
 | 改 site 默认 benchmark | 先 down，再改 site、plan、images check、up，使新默认进入 manifest |
 | 改服务、日志、GPU 厂商/节点、端口或 runtime | 先 down 原栈，再编辑、重新提供所需 Token、plan、images check、up |
 | 改 project/storage.root | 先用原值 down，修改后重新 up；新 root 有独立状态和持久数据 |
 | 切换 Docker/nerdctl 或 namespace | 先 down、向目标存储/namespace 导入镜像、改 runtime 后重建栈，不重启系统 daemon |
 | 只换客户端请求 Token | 后续 bench 使用当前进程的值；metrics Token 在 up 时写文件，轮换采集凭据须重建栈 |
 
-**bench/status/down 从保存的 manifest 读取生效配置，现场 JSON 不会热更新正在运行的栈。** 停止后再次启动可复用 site 和持久目录；与更换 GPU 相关的设备/驱动依赖仍需现场准备。修改配置、标签、面板和运行时本身不需要重建已兼容的镜像。
+**bench/status/down 从保存的 manifest 读取生效配置，现场 YAML 不会热更新正在运行的栈。** 停止后再次启动可复用 site 和持久目录；与更换 GPU 相关的设备/驱动依赖仍需现场准备。修改配置、标签、面板和运行时本身不需要重建已兼容的镜像。
 
 ## 10. 常见报错如何处理
 

@@ -3,6 +3,7 @@ import copy
 import sqlite3
 import struct
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -101,8 +102,8 @@ class SearchTests(unittest.TestCase):
                 self.assertEqual(result['trial_count'], 1)
 
     def test_grid_and_policy_validation(self):
-        cfg = load_config(ROOT / 'configs/stacks/mac-slo-search.json')
-        p = json.loads((ROOT / 'configs/search/mac-slo.json').read_text())
+        cfg = load_config(ROOT / 'configs/stacks/mac-slo-search.yaml')
+        p = yaml.safe_load((ROOT / 'configs/search/mac-slo.yaml').read_text())
         validate_policy(p, cfg)
         for change in [{'max_concurrency': 5, 'step': 3}, {'repeats': 0},
                        {'thresholds_ms': {'TTFT': float('nan')}}, {'unknown': 1},

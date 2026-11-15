@@ -6,6 +6,7 @@ Network isolation and disabled host publishing are injected; pull policy comes f
 """
 import copy
 import json
+import yaml
 from pathlib import Path
 import platform
 import subprocess
@@ -68,7 +69,7 @@ def main():
     tag = uuid.uuid4().hex[:8]
     output = ROOT / 'generated/offline-validation' / tag
     output.mkdir(parents=True)
-    base = json.loads((ROOT / 'configs/stacks/mac-offline.json').read_text())
+    base = yaml.safe_load((ROOT / 'configs/stacks/mac-offline.yaml').read_text())
     require(base['runtime'] == ['docker'] and base['platform'] == 'linux/arm64',
             'Expected the Docker arm64 simulation template')
     base['ports'] = {}
@@ -126,8 +127,8 @@ def main():
             result = original_command(['docker', 'image', 'inspect', cfg['images'][key]],
                                       capture=True, check=False)
             require(result.returncode != 0, 'Negative test tag unexpectedly exists')
-        config = output / (name + '.json')
-        stack_module.write_json(config, cfg)
+        config = output / (name + '.yaml')
+        stack_module.write_yaml(config, cfg)
         cfg = stack_module.load_config(config)
         directory, selected_vendor = stack_module.prepare(cfg)
         stack = stack_module.Stack(cfg, directory, selected_vendor)
@@ -183,8 +184,8 @@ def main():
                                failed_requests=report['Failed Requests']['total'],
                                report=str(reports[0].relative_to(output)))
                 if vendor == 'nvidia':
-                    suite_path = output / 'suite.json'
-                    stack_module.write_json(suite_path, {'cooldown_seconds': 0, 'cases': [
+                    suite_path = output / 'suite.yaml'
+                    stack_module.write_yaml(suite_path, {'cooldown_seconds': 0, 'cases': [
                         {'name': 'string', 'benchmark': {'request_count': 4}},
                         {'name': 'tokenid', 'benchmark': {'request_count': 4, 'dataset_type': 'tokenid'}}]})
                     with patch.object(sys, 'argv', ['suite', '--config', str(config), '--suite', str(suite_path)]):
@@ -192,8 +193,8 @@ def main():
                     suite_report = next((stack.root/'data/results/suites').glob('*/suite-results.json'))
                     suite_results = json.loads(suite_report.read_text())
                     require(len(suite_results) == 2 and all(c['passed'] for c in suite_results), 'Offline suite failed')
-                    search_path = output / 'search.json'
-                    stack_module.write_json(search_path, {'min_concurrency': 1, 'max_concurrency': 2,
+                    search_path = output / 'search.yaml'
+                    stack_module.write_yaml(search_path, {'min_concurrency': 1, 'max_concurrency': 2,
                         'repeats': 1, 'min_requests': 8, 'max_rounds': 2, 'max_duration_seconds': 180,
                         'trial_timeout_seconds': 60, 'cooldown_seconds': 0, 'thresholds_ms': {'TTFT': 1000, 'TPOT': 1000}})
                     with patch.object(sys, 'argv', ['search', '--config', str(config), '--search', str(search_path)]):

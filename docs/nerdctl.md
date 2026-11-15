@@ -1,22 +1,29 @@
 # 使用 nerdctl / containerd 运行 llm-bench
 
-启动器已实现 nerdctl 适配，沿用同一套镜像、配置、任务标签与 Dashboard。入口仍为 `llm-bench`，通过 site.json 的 runtime 选择引擎。这里部署的是 containerd 中由 nerdctl 管理的独立容器，不会创建或修改 Kubernetes Pod。
+启动器已实现 nerdctl 适配，沿用同一套镜像、配置、任务标签与 Dashboard。入口仍为 `llm-bench`，通过 site.yaml 的 runtime 选择引擎。这里部署的是 containerd 中由 nerdctl 管理的独立容器，不会创建或修改 Kubernetes Pod。
 
 ## 运行环境与 namespace
 
 推荐 Linux amd64，已验证 nerdctl 1.7.7 / containerd 1.7.22 和 nerdctl 2.1.3 / containerd 2.1.3 两组软件链路；还需匹配的 OCI 后端、完整 CNI 插件和 iptables 等网络依赖。正式本机 GPU / host 指标采集使用 rootful 权限；先确认当前用户有权操作 containerd、CNI、设备和 bind mount 路径。服务启动不依赖 BuildKit；只有在线构建项目镜像时需要另行配置 BuildKit，当前 build 使用 host 网络，还需相应的 network.host entitlement。
 
-```json
-"runtime": ["nerdctl", "--namespace", "benchmark"]
+```yaml
+runtime:
+- nerdctl
+- --namespace
+- benchmark
 ```
 
 需要指定 socket、snapshotter 或 cgroup manager 时，放在同一个 runtime 数组中，作为 nerdctl 全局参数：
 
-```json
-"runtime": [
-  "nerdctl", "--address", "/run/containerd/containerd.sock",
-  "--namespace", "benchmark", "--snapshotter", "overlayfs"
-]
+```yaml
+runtime:
+- nerdctl
+- --address
+- /run/containerd/containerd.sock
+- --namespace
+- benchmark
+- --snapshotter
+- overlayfs
 ```
 
 namespace 必须显式填写，支持 `--namespace NAME`、`--namespace=NAME`、`-n NAME`，不能填写两次。不要依赖不同终端的默认 namespace。`benchmark` 是示例独立 namespace；如需使用 `k8s.io` 中的现有镜像，可明确选择它，但本工程仍只管理自己创建的带项目标签容器，不接管 Kubernetes 容器。
@@ -38,11 +45,11 @@ nerdctl --namespace benchmark load -i /home/llm-bench-delivery/offline-bundle/im
 
 ## 先跑完整冒烟测试
 
-提供 [nerdctl-offline-smoke.json](../configs/stacks/nerdctl-offline-smoke.json) 和 `nerdctl-offline-smoke` profile。该模板是 Linux amd64，无需 GPU；使用仓库 mock tokenizer 和模拟推理接口验证软件链路。要验证已经交付的模型 tokenizer，把复制后的 `storage.tokenizer` 改为 `assets/tokenizer` 或现场 tokenizer 的绝对路径。
+提供 [nerdctl-offline-smoke.yaml](../configs/stacks/nerdctl-offline-smoke.yaml) 和 `nerdctl-offline-smoke` profile。该模板是 Linux amd64，无需 GPU；使用仓库 mock tokenizer 和模拟推理接口验证软件链路。要验证已经交付的模型 tokenizer，把复制后的 `storage.tokenizer` 改为 `assets/tokenizer` 或现场 tokenizer 的绝对路径。
 
 ```bash
 mkdir -p generated/site
-cp configs/stacks/nerdctl-offline-smoke.json generated/site/nerdctl-smoke.json
+cp configs/stacks/nerdctl-offline-smoke.yaml generated/site/nerdctl-smoke.json
 # 编辑上面的 JSON：runtime namespace、镜像名称、tokenizer 和空闲端口。
 ./bin/llm-bench images check --config generated/site/nerdctl-smoke.json
 ./bin/llm-bench plan --config generated/site/nerdctl-smoke.json
@@ -66,7 +73,7 @@ nerdctl --namespace benchmark logs --tail 100 llm-nerdctl-smoke-aisbench
 
 ## 对接真实推理服务
 
-NVIDIA/海光需要修改的字段、完整 site 含义和启动后发压流程见 [site.json 配置与启动压测手册](site-config-and-benchmark.md)。
+NVIDIA/海光需要修改的字段、完整 site 含义和启动后发压流程见 [site.yaml 配置与启动压测手册](site-config-and-benchmark.md)。
 
 单机 NVIDIA 以 [GPU41 Qwen3-0.6B 完整示例](gpu41-qwen3-random-1k.md)生成现场文件：
 
@@ -74,15 +81,15 @@ NVIDIA/海光需要修改的字段、完整 site 含义和启动后发压流程�
 python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 ```
 
-输出 `generated/site/site.json`；已存在时拒绝覆盖，直接编辑已有文件或用 --output 另选路径。示例为随机 1k/1k、1000 次请求、并发 16，需核对接口、模型、日志、tokenizer、节点及端口。选择 Docker 可改用生成参数 `--runtime docker`；两者业务字段相同。通用模板 [nerdctl-nvidia-single.json](../configs/stacks/nerdctl-nvidia-single.json) 和 `nerdctl-single` profile 仍可使用，参数与 GPU41 现场示例不同。已有栈先 down，再更改 runtime 并 up。
+输出 `generated/site/site.yaml`；已存在时拒绝覆盖，直接编辑已有文件或用 --output 另选路径。示例为随机 1k/1k、1000 次请求、并发 16，需核对接口、模型、日志、tokenizer、节点及端口。选择 Docker 可改用生成参数 `--runtime docker`；两者业务字段相同。通用模板 [nerdctl-nvidia-single.json](../configs/stacks/nerdctl-nvidia-single.yaml) 和 `nerdctl-single` profile 仍可使用，参数与 GPU41 现场示例不同。已有栈先 down，再更改 runtime 并 up。
 
 需要核对：`project`、`task`、`storage.root/logs/tokenizer`、`gpu.nodes`、`inference.base_url/model/api/api_key_env`、端口和 benchmark。GPU41 使用 host_metrics=container；只有选择 host 模式才需填写可达的 `node_exporter_target`。标签、日志角色与 GPU 节点/型号/卡序号配置见 [任务观测说明](task-observability.md)。默认的 task 仍可省略并使用 project。
 
 ```bash
 # 需要鉴权时，在同一终端导出 inference.api_key_env 指定的变量。
-./bin/llm-bench images check --config generated/site/site.json
-./bin/llm-bench up --config generated/site/site.json --no-benchmark
-./bin/llm-bench bench run --config generated/site/site.json
+./bin/llm-bench images check --config generated/site/site.yaml
+./bin/llm-bench up --config generated/site/site.yaml --no-benchmark
+./bin/llm-bench bench run --config generated/site/site.yaml
 ```
 
 NVIDIA 本机 Exporter 的参数按引擎区分：

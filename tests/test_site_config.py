@@ -1,5 +1,6 @@
 import copy
 import json
+import yaml
 import os
 from pathlib import Path
 import subprocess
@@ -17,9 +18,9 @@ from llm_bench import parser_for_cli, running_stack
 class SiteConfigTests(unittest.TestCase):
     def test_generation_preserves_gpu41_workload_paths_and_gateway(self):
         with tempfile.TemporaryDirectory() as tmp:
-            output=Path(tmp)/'site/site.json'
+            output=Path(tmp)/'site/site.yaml'
             cfg=create_site(DEFAULT_SOURCE,output)
-            self.assertEqual(json.loads(output.read_text()),json.loads(DEFAULT_SOURCE.read_text()))
+            self.assertEqual(yaml.safe_load(output.read_text()),yaml.safe_load(DEFAULT_SOURCE.read_text()))
             self.assertEqual(cfg['runtime'],['docker'])
             self.assertEqual(cfg['storage']['root'],'generated/qwen-real')
             self.assertEqual(cfg['log_sources'][0]['path'],'server_log.log')
@@ -31,7 +32,7 @@ class SiteConfigTests(unittest.TestCase):
 
     def test_existing_site_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
-            output=Path(tmp)/'site.json';output.write_text('local edits')
+            output=Path(tmp)/'site.yaml';output.write_text('local edits')
             before=DEFAULT_SOURCE.read_bytes()
             with self.assertRaises(FileExistsError):
                 create_site(DEFAULT_SOURCE,output,runtime='docker')
@@ -39,22 +40,22 @@ class SiteConfigTests(unittest.TestCase):
             self.assertEqual(DEFAULT_SOURCE.read_bytes(),before)
 
     def test_runtime_override_preserves_all_other_fields(self):
-        original=json.loads(DEFAULT_SOURCE.read_text())
+        original=yaml.safe_load(DEFAULT_SOURCE.read_text())
         for runtime,namespace,expected in [('docker',None,['docker']),('nerdctl','k8s.io',['nerdctl','--namespace','k8s.io'])]:
             with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as tmp:
-                cfg=create_site(DEFAULT_SOURCE,Path(tmp)/'site.json',runtime,namespace)
+                cfg=create_site(DEFAULT_SOURCE,Path(tmp)/'site.yaml',runtime,namespace)
                 self.assertEqual(cfg.pop('runtime'),expected)
                 other=copy.deepcopy(original);other.pop('runtime')
                 self.assertEqual(cfg,other)
         with tempfile.TemporaryDirectory() as tmp:
             for runtime,namespace in [('nerdctl','bad/name'),('docker','benchmark')]:
                 with self.assertRaises(ValueError):
-                    create_site(DEFAULT_SOURCE,Path(tmp)/'invalid.json',runtime,namespace)
-            self.assertFalse((Path(tmp)/'invalid.json').exists())
+                    create_site(DEFAULT_SOURCE,Path(tmp)/'invalid.yaml',runtime,namespace)
+            self.assertFalse((Path(tmp)/'invalid.yaml').exists())
 
     def test_generated_site_can_plan_without_token_or_live_service(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base=Path(tmp);output=base/'site.json';create_site(DEFAULT_SOURCE,output,'nerdctl','benchmark')
+            base=Path(tmp);output=base/'site.yaml';create_site(DEFAULT_SOURCE,output,'nerdctl','benchmark')
             env=dict(os.environ);env.pop('INFERENCE_API_KEY',None)
             result=subprocess.run([str(ROOT/'bin/llm-bench'),'plan','--config',str(output),
                 '--data-dir',str(base/'data'),'--log-dir',str(base/'logs'),
@@ -63,7 +64,7 @@ class SiteConfigTests(unittest.TestCase):
             plan=json.loads(result.stdout)
             self.assertEqual(plan['runtime_scope']['namespace'],'benchmark')
             directory=Path(plan['config_dir'])
-            prom=json.loads((directory/'prometheus/prometheus.yml').read_text())
+            prom=yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())
             application=prom['scrape_configs'][0]
             self.assertEqual(application['metrics_path'],'/publishaddress/inference/qwen306b/metrics')
             self.assertEqual(application['authorization']['credentials_file'],'/run/benchmark-metrics.token')
@@ -74,17 +75,17 @@ class SiteConfigTests(unittest.TestCase):
 
     def test_generation_defers_tokenizer_existence_but_startup_validation_keeps_it(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base=Path(tmp);source=base/'source.json'
-            cfg=json.loads(DEFAULT_SOURCE.read_text())
+            base=Path(tmp);source=base/'source.yaml'
+            cfg=yaml.safe_load(DEFAULT_SOURCE.read_text())
             cfg['storage']['tokenizer']=str(base/'missing-tokenizer')
             source.write_text(json.dumps(cfg))
-            created=create_site(source,base/'site.json')
+            created=create_site(source,base/'site.yaml')
             with self.assertRaisesRegex(ValueError,'local tokenizer_config.json'):
                 validate_config(created)
 
     def test_cli_runtime_choice_preserves_source_and_workload(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base=Path(tmp);source=base/'site.json';create_site(DEFAULT_SOURCE,source)
+            base=Path(tmp);source=base/'site.yaml';create_site(DEFAULT_SOURCE,source)
             original=source.read_bytes()
             for flags,expected in [(['--runtime','docker'],{'kind':'docker','command':['docker']}),
                                    (['--runtime','nerdctl','--namespace','custom'],
@@ -98,14 +99,14 @@ class SiteConfigTests(unittest.TestCase):
                     self.assertEqual(result.returncode,0,result.stderr)
                     plan=json.loads(result.stdout)
                     self.assertEqual(plan['runtime_scope'],expected)
-                    self.assertEqual(plan['config']['benchmark'],json.loads(original)['benchmark'])
+                    self.assertEqual(plan['config']['benchmark'],yaml.safe_load(original)['benchmark'])
                     self.assertEqual(plan['config']['inference']['model'],'Qwen3-0.6B')
                     self.assertEqual(source.read_bytes(),original)
 
     def test_existing_stack_uses_saved_runtime_after_site_file_changes(self):
         for saved_runtime in ('docker','nerdctl'):
             with self.subTest(runtime=saved_runtime), tempfile.TemporaryDirectory() as tmp:
-                base=Path(tmp);source=base/'site.json'
+                base=Path(tmp);source=base/'site.yaml'
                 cfg=create_site(DEFAULT_SOURCE,source,saved_runtime)
                 cfg['storage'].update(root=str(base/'data'),logs=str(base/'logs'),
                     tokenizer=str(ROOT/'configs/fixtures/mock-tokenizer'))

@@ -1,5 +1,6 @@
 import copy
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -15,8 +16,8 @@ from benchmark_stack import Stack, load_config, prepare
 
 class OfflineImageTests(unittest.TestCase):
     def setUp(self):
-        self.site = json.loads(DEFAULT_SITE.read_text())
-        self.delivery = json.loads(DEFAULT_CONFIG.read_text())
+        self.site = yaml.safe_load(DEFAULT_SITE.read_text())
+        self.delivery = yaml.safe_load(DEFAULT_CONFIG.read_text())
 
     def test_default_delivery_contains_both_exporters_independently_of_runtime_vendor(self):
         for vendor in ('nvidia', 'hygon', 'auto'):
@@ -54,7 +55,7 @@ class OfflineImageTests(unittest.TestCase):
             pulls = [c.args[0][-1] for c in run.call_args_list if c.args[0][1] == 'pull']
             self.assertEqual(set(pulls), {e['image'] for e in plan['images'] if e['pull']})
             self.assertEqual(len(metadata), 9)
-            self.assertEqual(json.loads((Path(tmp)/'metadata/image-plan.json').read_text()), plan)
+            self.assertEqual(yaml.safe_load((Path(tmp)/'metadata/image-plan.json').read_text()), plan)
             self.assertEqual(run.call_args_list[-1].args[0][1:3], ['image', 'save'])
         info['Architecture'] = 'arm64'
         with tempfile.TemporaryDirectory() as tmp, patch('prepare_offline_images.subprocess.run') as run, \
@@ -68,7 +69,7 @@ class OfflineImageTests(unittest.TestCase):
         for runtime in (['docker'], ['nerdctl', '--namespace', 'benchmark']):
             for vendor, other in (('nvidia','hygon'), ('hygon','nvidia')):
                 with self.subTest(runtime=runtime, vendor=vendor), tempfile.TemporaryDirectory() as tmp:
-                    cfg = load_config(ROOT/'configs/stacks/mac-offline.json')
+                    cfg = load_config(ROOT/'configs/stacks/mac-offline.yaml')
                     cfg.update(runtime=runtime, simulation=False, platform='linux/amd64')
                     cfg['gpu']['vendor'] = vendor
                     cfg['images'] = copy.deepcopy(self.site['images'])

@@ -6,7 +6,7 @@
 
 本入口以 AISBench 为唯一发压客户端，启动已有推理服务之外的观测组件。生产模式不会启动或改动被测推理服务；`simulation: true` 才创建明确标识的测试 fixture，以便 Mac 无 GPU 验证。
 
-无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置，并在栈 JSON 中设置 `"offline": true`。未设置时默认保持在线行为。
+无公网环境请先按 [离线部署手册](offline-deployment.md)准备完整 amd64 镜像、tokenizer、运行时/驱动与内网配置，并在栈 YAML 中设置 `"offline": true`。未设置时默认保持在线行为。
 
 任务指标、GPU 与多副本日志的统一标签，以及预置 SGLang/vLLM/GPU/Logs Volume Dashboard，见 [按任务查看指标与日志](task-observability.md)。
 
@@ -15,33 +15,33 @@
 前提：Docker Desktop 已运行，主机有 Python 3.9+，能够拉取镜像及 AISBench 官方源码/依赖。无需 Compose。首次运行会构建缺失的工具与 AISBench 镜像，耗时取决于网络；后续复用镜像。
 
 ```bash
-llm-bench up --config configs/stacks/mac-simulation.json
+llm-bench up --config configs/stacks/mac-simulation.yaml
 ```
 
 其余操作：
 
 ```bash
 # 只渲染配置和打印容器计划，不启动容器
-llm-bench plan --config configs/stacks/mac-simulation.json
+llm-bench plan --config configs/stacks/mac-simulation.yaml
 # 提前构建客户端/辅助镜像（源码归档有固定提交与 SHA-256）
-llm-bench images build --config configs/stacks/mac-simulation.json
+llm-bench images build --config configs/stacks/mac-simulation.yaml
 # 只启动观测链路
-llm-bench up --config configs/stacks/mac-simulation.json --no-benchmark
-llm-bench status --config configs/stacks/mac-simulation.json
+llm-bench up --config configs/stacks/mac-simulation.yaml --no-benchmark
+llm-bench status --config configs/stacks/mac-simulation.yaml
 # 删除本项目创建的容器和网络，保留数据/结果/日志
-llm-bench down --config configs/stacks/mac-simulation.json
+llm-bench down --config configs/stacks/mac-simulation.yaml
 ```
 
 完整启动使用新的项目状态；已有状态时会拒绝重复启动。更改配置后先 `down`，再执行 `up`。失败时保留容器及日志用于诊断，不继续发压。不要在进程运行中修改配置或执行 down。
 
 ## 正式离线模式
 
-在 site.json 顶层设置 `"offline": true`，之后所有命令使用同一个配置文件。该字段也随配置传递到顺序用例和 SLO 搜索，无需每次重新加命令行开关。
+在 site.yaml 顶层设置 `"offline": true`，之后所有命令使用同一个配置文件。该字段也随配置传递到顺序用例和 SLO 搜索，无需每次重新加命令行开关。
 
 ```bash
 # 检查全部选用镜像的本地存在性和架构，不构建/拉取、不创建容器或网络
-llm-bench images check --config /path/to/site.json
-llm-bench up --config /path/to/site.json
+llm-bench images check --config /path/to/site.yaml
+llm-bench up --config /path/to/site.yaml
 ```
 
 `up` 在创建网络/容器前自动执行相同检查，一次列出所有缺失镜像、组件用途和架构错误。相同镜像只检查一次；只检查实际选用厂商的本地 Exporter，simulation/external 不要求本地硬件 Exporter 镜像。`images check --no-benchmark` 与 `up --no-benchmark` 只要求观测链路镜像；以后运行客户端时仍需 AISBench 镜像。
@@ -55,9 +55,9 @@ Grafana 自动合并 [离线覆盖配置](../configs/common/grafana/offline.ini)
 Mac 示例（需已准备 arm64 镜像）：
 
 ```bash
-llm-bench images check --config configs/stacks/mac-offline.json
-llm-bench up --config configs/stacks/mac-offline.json
-llm-bench down --config configs/stacks/mac-offline.json
+llm-bench images check --config configs/stacks/mac-offline.yaml
+llm-bench up --config configs/stacks/mac-offline.yaml
+llm-bench down --config configs/stacks/mac-offline.yaml
 ```
 
 要在独立内部网络中自动验证缺镜像、两种厂商模拟指标、顺序用例及 SLO 搜索，可执行 `python3 docs/examples/verify_offline_mac.py`，见 [正式离线模式验收](reports/mac-offline-mode-2026-11-07.md)。
@@ -80,20 +80,19 @@ llm-bench down --config configs/stacks/mac-offline.json
 
 AISBench 客户端、logrotate 和临时探测容器没有对外 HTTP 服务，不映射无用途的端口。external 模式的 GPU Exporter 由其他节点部署，不由本栈代理端口。此表是普通模板的默认值；mac-offline 及据其生成的冒烟配置使用 Grafana 33003、Prometheus 39093、Loki 33103、Alloy 32348、node_exporter 39103、GPU Exporter 39403、fixture 38083，减少与生产栈冲突。
 
-可以在 site.json 或 offline-smoke.json 顶层手工配置，省略的 ports 项继承默认值：
+可以在 site.yaml 或 offline-smoke.yaml 顶层手工配置，省略的 ports 项继承默认值：
 
-```json
-"port_bind_address": "0.0.0.0",
-"publish_ports": true,
-"ports": {
-  "grafana": 43000,
-  "prometheus": 49090,
-  "loki": 43100,
-  "alloy": 42345,
-  "node-exporter": 49100,
-  "gpu-exporter": 49400,
-  "fixture": 48080
-}
+```yaml
+port_bind_address: 0.0.0.0
+publish_ports: true
+ports:
+  grafana: 43000
+  prometheus: 49090
+  loki: 43100
+  alloy: 42345
+  node-exporter: 49100
+  gpu-exporter: 49400
+  fixture: 48080
 ```
 
 port_bind_address 可改为节点的某个 IP（如 10.142.118.41），也支持 IPv6；设为 127.0.0.1 时仅本机访问。端口允许 1..65535，启动器会检查类型及当前实际启动服务之间的配置重复；已经被其他进程占用的端口会在 Docker 创建/启动时报错，应另选端口。
@@ -121,11 +120,11 @@ host_metrics=host 时 node_exporter 使用宿主网络，不添加 Docker -p；�
 
 ## Linux NVIDIA 单机
 
-已知 GPU41 服务建议按 [完整现场示例](gpu41-qwen3-random-1k.md)执行 `python3 scripts/create_site_config.py --runtime docker`，生成 `generated/site/site.json`；选择 nerdctl 可替换为 `--runtime nerdctl --namespace benchmark`。也可复制通用 [nvidia-single.json](../configs/stacks/nvidia-single.json)，填写推理服务地址、模型名称和存储路径。实际发压入口是 `inference.base_url`（服务根 URL，可含网关前缀，不含 `/v1/completions`）。不配置显式 metrics 覆盖时自动拼接 metrics；通用模板中的 metrics_endpoints 占位符需删除或填写有效端点。服务必须可从 Docker 网络访问；不要把容器内 `localhost` 当成宿主机。可使用宿主机实际局域网 IP。
+已知 GPU41 服务建议按 [完整现场示例](gpu41-qwen3-random-1k.md)执行 `python3 scripts/create_site_config.py --runtime docker`，生成 `generated/site/site.yaml`；选择 nerdctl 可替换为 `--runtime nerdctl --namespace benchmark`。也可复制通用 [nvidia-single.json](../configs/stacks/nvidia-single.yaml)，填写推理服务地址、模型名称和存储路径。实际发压入口是 `inference.base_url`（服务根 URL，可含网关前缀，不含 `/v1/completions`）。不配置显式 metrics 覆盖时自动拼接 metrics；通用模板中的 metrics_endpoints 占位符需删除或填写有效端点。服务必须可从 Docker 网络访问；不要把容器内 `localhost` 当成宿主机。可使用宿主机实际局域网 IP。
 
 ```bash
-llm-bench plan --config /path/to/site.json
-llm-bench up --config /path/to/site.json
+llm-bench plan --config /path/to/site.yaml
+llm-bench up --config /path/to/site.yaml
 ```
 
 主机需已装 NVIDIA 驱动及 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)。`gpu.vendor: auto` 通过本机可用的设备工具识别厂商；不能唯一识别时会停止，绝不默认当成 NVIDIA。远程指标端点或两厂商工具同时可用时显式指定 `nvidia` / `hygon`。GPU Exporter 的镜像版本在 `images` 中固定，可按目标驱动兼容性更换。
@@ -141,7 +140,7 @@ NVIDIA 使用 DCGM；海光正式默认使用光合社区 DCU Exporter v2.4.1，
 | `task` | 推理任务标签，指标/GPU/日志共用；省略时使用 project |
 | `runtime` | CLI 参数数组，默认 `["docker"]`；nerdctl 需显式 --namespace NAME |
 | `runtime_kind` | 可选 docker/nerdctl；普通命令自动识别，自定义 nerdctl 包装器需明确指定 |
-| `offline` | 可选 JSON 布尔值，默认 false；true 时完整本地镜像预检查、禁构建/拉取，并关闭组件已知外联功能 |
+| `offline` | 可选 YAML 布尔值，默认 false；true 时完整本地镜像预检查、禁构建/拉取，并关闭组件已知外联功能 |
 | `platform` | 生产固定 linux/amd64；Apple Silicon Mac 模拟 linux/arm64，启动前校验缓存镜像架构 |
 | `simulation` | 仅测试时 true；模拟数值不能作为真实性能数据 |
 | `storage.root` | 生成配置、组件数据、运行状态、AISBench 输出所在目录 |
@@ -178,32 +177,39 @@ Prometheus/Grafana/Loki 默认以发起 CLI 的 UID/GID 运行以写入其目录
 
 `inference.base_url` 指向调度器/代理对外入口，AISBench 不直接决定 Prefill/Decode 路由。`topology.metrics_endpoints` 列出 master、router、prefill、decode、worker，按 task/instance_role/replica 附加标签。`gpu.deployment: external` 可采集多台已部署 Exporter；本启动器不通过 SSH 自动跨节点创建容器。
 
-```json
-{
-  "topology": {
-    "kind": "pd",
-    "tp": 8,
-    "pp": 1,
-    "metrics_endpoints": [
-      {"target": "router-host:30000", "role": "router", "replica": "router-0"},
-      {"target": "prefill-host:30000", "role": "prefill", "replica": "prefill-0"},
-      {"target": "decode-host:30000", "role": "decode", "replica": "decode-0"}
-    ]
-  },
-  "gpu": {
-    "vendor": "nvidia",
-    "deployment": "external",
-    "nodes": [
-      {"name": "prefill-host", "gpus": 8, "target": "prefill-host:9400"},
-      {"name": "decode-host", "gpus": 8, "target": "decode-host:9400"}
-    ]
-  },
-  "task": "example-inference-task",
-  "log_sources": [
-    {"path": "prefill/rank-0.log", "role": "prefill", "replica": "prefill-0"},
-    {"path": "decode/rank-0.log", "role": "decode", "replica": "decode-0"}
-  ]
-}
+```yaml
+topology:
+  kind: pd
+  tp: 8
+  pp: 1
+  metrics_endpoints:
+  - target: router-host:30000
+    role: router
+    replica: router-0
+  - target: prefill-host:30000
+    role: prefill
+    replica: prefill-0
+  - target: decode-host:30000
+    role: decode
+    replica: decode-0
+gpu:
+  vendor: nvidia
+  deployment: external
+  nodes:
+  - name: prefill-host
+    gpus: 8
+    target: prefill-host:9400
+  - name: decode-host
+    gpus: 8
+    target: decode-host:9400
+task: example-inference-task
+log_sources:
+- path: prefill/rank-0.log
+  role: prefill
+  replica: prefill-0
+- path: decode/rank-0.log
+  role: decode
+  replica: decode-0
 ```
 
 此为合并到完整栈配置的片段。只填写实际存在的指标端点；SGLang 某些 worker 没有独立请求指标入口，不能为补全节点数量虚构端点。多角色请求计数可能重复，需仅配置统计边界不重复的端点；统一总览中的 SGLang/vLLM 性能面板按任务聚合，不自动去重，也不宣称覆盖所有 PD 指标。若日志非共享卷，需要逐节点部署 Alloy/轮转并向同一 Loki 写入，避免多采集器重复读取。
@@ -223,11 +229,11 @@ Linux GPU 服务器统一为 x86：生产配置固定 `platform: linux/amd64`，
 完成 up 后执行：
 
 ```bash
-python3 scripts/verify_simulation.py --config configs/stacks/mac-simulation.json --exercise-restart
+python3 scripts/verify_simulation.py --config configs/stacks/mac-simulation.yaml --exercise-restart
 ```
 
 检查所有采集目标 UP、选中厂商指标存在/另一厂商不存在、Grafana 面板与数据源、Loki 请求日志、最新 AISBench 报告成功计数；可选项还会强制轮转模拟日志并重启采集/存储组件，验证旧数据与新日志。证据写入 `storage.root/verification.json`。若修改过 Grafana 密码，先通过环境变量 `BENCH_GRAFANA_PASSWORD` 传入。此工具拒绝操作生产栈。
 
-旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack YAML 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
 
 网关路径可统一配置 `inference.base_url`（如 `http://host:port/prefix/`），默认自动追加 `v1/chat/completions`、`v1/models` 和 `metrics`，应用指标默认复用推理 Bearer 鉴权；保留显式指标字段时以覆盖值为准。详见 [统一基础 URL](inference-auth.md#统一基础-url自动拼接推理与指标接口)。

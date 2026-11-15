@@ -6,10 +6,10 @@
 
 ## 配置范围
 
-工程支持顶层 JSON 布尔值 `legacy_seccomp_unconfined`，未填写时按 offline 取默认值：offline=true 时自动补为 true，在线模式默认 false；显式 false 始终保持运行时默认安全策略。启用时添加 `--security-opt seccomp=unconfined`：
+工程支持顶层 YAML 布尔值 `legacy_seccomp_unconfined`，未填写时按 offline 取默认值：offline=true 时自动补为 true，在线模式默认 false；显式 false 始终保持运行时默认安全策略。启用时添加 `--security-opt seccomp=unconfined`：
 
-```json
-"legacy_seccomp_unconfined": true
+```yaml
+legacy_seccomp_unconfined: true
 ```
 
 开启后，统一在本工程启动器发出的所有 `run` / `create` 命令中添加该参数，覆盖：
@@ -20,7 +20,7 @@
 
 只影响使用当前 stack 配置创建的项目容器，不改变 Docker daemon 配置、宿主机已有推理服务或其他工程的容器；不额外添加 privileged。`exec`、`start`、`restart` 不接受新的安全参数，已有容器须删除后重新创建才生效。offline 模式仍禁止拉取和构建。`plan` 输出中的 `container_security_options` 显示统一追加的参数。
 
-该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任项目工作负载（包含监控和临时探测）。本工程按现场需求对离线配置默认启用，因此新生成的离线配置和未填写该字段的已有离线配置都会在新建容器时取消过滤；在线配置仍默认关闭。若现场不需要此兼容性，应显式设 false。手工 docker run 不读取 stack JSON，需要单独指定参数。
+该设置降低指定容器的隔离程度，仅用于已经确认默认 seccomp 导致线程失败、且暂时不能升级运行时的受信任项目工作负载（包含监控和临时探测）。本工程按现场需求对离线配置默认启用，因此新生成的离线配置和未填写该字段的已有离线配置都会在新建容器时取消过滤；在线配置仍默认关闭。若现场不需要此兼容性，应显式设 false。手工 docker run 不读取 stack YAML，需要单独指定参数。
 
 ## 离线机现有模拟栈的启用步骤
 
@@ -29,7 +29,7 @@
 ```bash
 cd /home/llm-bench-runtime/LLM-Inference-Benchmark
 # 如实际源码位置不同，请修改上述路径。
-CONFIG=generated/offline-smoke.json
+CONFIG=generated/offline-smoke.yaml
 
 # 确认没有正在运行的压测，再停止本项目栈；不停止外部推理服务。
 python3 scripts/benchmark_stack.py down --config "$CONFIG"
@@ -39,13 +39,13 @@ python3 scripts/benchmark_stack.py down --config "$CONFIG"
 
 ```bash
 python3 - "$CONFIG" <<'PY'
-import json
+import yaml
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-cfg = json.loads(path.read_text())
+cfg = yaml.safe_load(path.read_text())
 cfg['legacy_seccomp_unconfined'] = True
-path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
 PY
 
 python3 scripts/benchmark_stack.py plan --config "$CONFIG"
@@ -54,7 +54,7 @@ python3 scripts/benchmark_stack.py up --config "$CONFIG"
 python3 scripts/verify_simulation.py --config "$CONFIG"
 ```
 
-逐条执行，前一条成功后再继续。若新开终端，需重新设置 CONFIG。若使用自己的模拟配置文件名，请修改 CONFIG。真实推理服务使用 `generated/site/site.json` 中的相同顶层字段，且保持 simulation=false；真实模式不运行 verify_simulation.py。Bearer Token 环境变量仍需正常提供。
+逐条执行，前一条成功后再继续。若新开终端，需重新设置 CONFIG。若使用自己的模拟配置文件名，请修改 CONFIG。真实推理服务使用 `generated/site/site.yaml` 中的相同顶层字段，且保持 simulation=false；真实模式不运行 verify_simulation.py。Bearer Token 环境变量仍需正常提供。
 
 修改配置会改变生成的配置目录/manifest；suite/search 继续使用与重新启动后的栈完全相同的配置。兼容参数也会自动传给它们创建的 AISBench 容器，不要在套件文件中单独修改。
 

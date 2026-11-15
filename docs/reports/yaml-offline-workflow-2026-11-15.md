@@ -1,0 +1,26 @@
+# YAML 与一键离线交付流程验证
+
+本次将 40 份项目 JSON 配置迁移为 YAML，增加带注释的单机共节点示例、在线构建交付脚本、离线部署脚本和[简明操作文档](../single-node-offline.md)。tokenizer、数据集、运行状态/结果及上游参考资料保留原格式；Grafana 运行时面板由 YAML 源生成 JSON。
+
+## 自动化验证
+
+- `python3 -m unittest discover -s tests`：154 项测试通过。
+- `bash -n scripts/build_offline_bundle.sh scripts/deploy_offline.sh`、`git diff --check`：通过。
+- 将迁移后的 40 份 YAML 与修改前的 JSON 逐一解析比较：值一致，仅 adapter 中的 Dashboard 源文件扩展名改为 `.yaml`。
+- YAML 新增测试覆盖注释、中文、布尔值与字符串、科学计数法、旧 JSON 读取、重复键/非法 YAML/不安全标签拒绝、单机配置渲染。
+- Shell 流程测试使用真实本地 Git 克隆、tar 和 SHA-256，以及安装器/容器命令替身：验证在线成功产包与校验、冒烟失败无成功压缩包；离线文件损坏/Python 版本不符/已有活跃栈时停止、镜像导入失败不启动栈、Docker 与 nerdctl namespace 一致、部署始终使用 `--no-benchmark`。
+
+## 实际容器验证
+
+在 Linux x86_64 Docker 环境中，使用已有 amd64 toolbox/AISBench 和观测镜像，从 YAML 模拟配置实际启动链路。该环境的网络包装脚本仅用于传入容器代理绕过地址，未写入交付配置。
+
+| 检查 | 结果 |
+| --- | --- |
+| 默认 `llm-bench up`，输入 32 / 输出 16，2 并发、8 请求 | 成功 8，失败 0 |
+| `verify_simulation.py` | 容器状态、Prometheus targets/GPU 标签、Grafana 数据源/任务面板、Loki 请求日志及 AISBench 报告通过 |
+| `llm-bench bench run`，输入 32 / 输出 16，1 并发、4 请求 | PASS，成功 4，失败 0 |
+| `llm-bench bench run`，输入 128 / 输出 64，2 并发、20 请求 | PASS，成功 20，失败 0 |
+| `llm-bench logs check` | `status: ok`，无 errors |
+| `llm-bench down` | 完成，测试容器及网络已移除，结果保留 |
+
+本次未重新进行全量镜像拉取/构建/导出，也未连接真实 GPU/DCU 离线服务。在线 Shell 测试的镜像及安装命令使用替身；上述实际容器检查使用真实已有镜像。完整镜像源可达性、现场驱动/设备容器运行时、实际模型 tokenizer 和真实服务性能须在目标环境按操作文档验收。

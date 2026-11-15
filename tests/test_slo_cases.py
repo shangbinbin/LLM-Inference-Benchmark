@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import yaml
 from pathlib import Path
 import sys
 import tempfile
@@ -21,12 +22,12 @@ class SloSuiteTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.cfg = load_config(ROOT / 'configs/stacks/mac-slo-search.json')
+        self.cfg = load_config(ROOT / 'configs/stacks/mac-slo-search.yaml')
         self.cfg['storage']['root'] = str(self.root)
-        path = ROOT / 'configs/suites/mixed-datasets.json'
-        self.suite = prepare_suite(self.cfg, json.loads(path.read_text()), path.parent)
+        path = ROOT / 'configs/suites/mixed-datasets.yaml'
+        self.suite = prepare_suite(self.cfg, yaml.safe_load(path.read_text()), path.parent)
         self.suite.cooldown = 0
-        self.policy = json.loads((ROOT / 'configs/search/mac-mixed-datasets.json').read_text())
+        self.policy = yaml.safe_load((ROOT / 'configs/search/mac-mixed-datasets.yaml').read_text())
         self.policy['repeats'] = 2
 
     def execute(self):
@@ -52,7 +53,7 @@ class SloSuiteTests(unittest.TestCase):
             code = self.execute()
             self.assertEqual(session.call_count, 1)
         summary_path, = self.root.rglob('suite-results.json')
-        summary = json.loads(summary_path.read_text())
+        summary = yaml.safe_load(summary_path.read_text())
         for entry in summary['cases']:
             if entry['status'] != 'skipped':
                 self.assertTrue((summary_path.parent / entry['report']).is_file())

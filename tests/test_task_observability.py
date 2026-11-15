@@ -1,4 +1,5 @@
 import json
+import yaml
 from pathlib import Path
 import re
 import sys
@@ -14,7 +15,7 @@ from task_dashboard import build_dashboard
 
 class TaskObservabilityTests(unittest.TestCase):
     def config(self, tmp, vendor='nvidia'):
-        cfg = stack.load_config(ROOT/'configs/stacks/mac-simulation.json')
+        cfg = stack.load_config(ROOT/'configs/stacks/mac-simulation.yaml')
         cfg.update(task='model-service-a', simulation=False, platform='linux/amd64')
         cfg['gpu'].update(vendor=vendor, deployment='external')
         cfg['gpu']['nodes'] = [
@@ -37,7 +38,7 @@ class TaskObservabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self.config(tmp)
             directory, vendor = stack.prepare(cfg)
-            prom = json.loads((directory/'prometheus/prometheus.yml').read_text())
+            prom = yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())
             application = prom['scrape_configs'][0]
             self.assertEqual(application['job_name'], 'inference')
             for endpoint, target in zip(cfg['topology']['metrics_endpoints'], application['static_configs']):
@@ -62,7 +63,7 @@ class TaskObservabilityTests(unittest.TestCase):
             with self.subTest(vendor=vendor), tempfile.TemporaryDirectory() as tmp:
                 cfg=self.config(tmp,vendor)
                 directory,chosen=stack.prepare(cfg)
-                prom=json.loads((directory/'prometheus/prometheus.yml').read_text())
+                prom=yaml.safe_load((directory/'prometheus/prometheus.yml').read_text())
                 gpu=prom['scrape_configs'][1]
                 for node,target in zip(cfg['gpu']['nodes'],gpu['static_configs']):
                     labels=target['labels']
@@ -73,7 +74,7 @@ class TaskObservabilityTests(unittest.TestCase):
                 self.assertTrue(any(r.get('source_labels')==[native_index] and r.get('target_label')=='gpu_index' for r in rules))
                 self.assertFalse(any(r.get('action') in ('labeldrop','labelkeep') for r in rules))
                 self.assertEqual(gpu['static_configs'][0]['labels']['gpu_model'],'configured-model')
-                dashboard=json.loads((directory/'grafana/dashboards/task-overview.json').read_text())
+                dashboard=yaml.safe_load((directory/'grafana/dashboards/task-overview.json').read_text())
                 self.assertEqual(dashboard['uid'],'inference-task-overview')
                 text=json.dumps(dashboard)
                 self.assertIn('DCGM_FI_DEV_GPU_UTIL' if vendor=='nvidia' else 'dcu_memorycap_bytes',text)
@@ -122,7 +123,7 @@ class TaskObservabilityTests(unittest.TestCase):
 
     def test_prebuilt_dashboards_match_generator(self):
         for vendor in ('nvidia','hygon'):
-            snapshot=json.loads((ROOT/f'configs/common/grafana/dashboards/task-overview-{vendor}.json').read_text())
+            snapshot=yaml.safe_load((ROOT/f'configs/common/grafana/dashboards/task-overview-{vendor}.yaml').read_text())
             self.assertEqual(snapshot,build_dashboard(vendor))
 
     def test_legacy_log_files_and_project_fallback(self):
@@ -156,4 +157,4 @@ class TaskObservabilityTests(unittest.TestCase):
                 command.return_value.returncode=0;command.return_value.stdout='Hygon'
                 directory,vendor=stack.prepare(cfg)
             self.assertEqual(vendor,'hygon')
-            self.assertIn('海光',json.loads((directory/'grafana/dashboards/task-overview.json').read_text())['title'])
+            self.assertIn('海光',yaml.safe_load((directory/'grafana/dashboards/task-overview.json').read_text())['title'])

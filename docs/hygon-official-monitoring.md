@@ -45,8 +45,8 @@ Prometheus 和 Grafana 自身的当前发行版分别从 [Prometheus 官方下�
 | --- | --- | --- |
 | 官方原件、版本、下载校验 | [来源档案](../references/hygon-official/2026-11-06/README.md) | 已下载并核对结构，未部署 |
 | HCU v3 指标采集和项目自制面板 | [hcu-exporter-v3](../configs/gpu/hygon/hcu-exporter-v3/README.md) | 基于官方文档，非官方面板原件 |
-| 不限定卡型号的 profile | [profile.json](../configs/gpu/hygon/model-agnostic-hcu-v3/profile.json) | 型号为 unspecified，不代表全型号适配 |
-| 待填现场地址的环境 | [environment.json](../configs/environments/hygon-hcu-v3-template/environment.json) | template，需要补齐地址、模型、卡数及日志路径 |
+| 不限定卡型号的 profile | [profile.yaml](../configs/gpu/hygon/model-agnostic-hcu-v3/profile.yaml) | 型号为 unspecified，不代表全型号适配 |
+| 待填现场地址的环境 | [environment.yaml](../configs/environments/hygon-hcu-v3-template/environment.yaml) | template，需要补齐地址、模型、卡数及日志路径 |
 
 ## 接入顺序
 
@@ -60,7 +60,7 @@ Prometheus 和 Grafana 自身的当前发行版分别从 [Prometheus 官方下�
 
 ```bash
 python3 scripts/render_observability.py \
-  --environment configs/environments/hygon-hcu-v3-template/environment.json \
+  --environment configs/environments/hygon-hcu-v3-template/environment.yaml \
   --output generated/hygon-hcu-v3-preview --allow-template
 ```
 

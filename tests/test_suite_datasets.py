@@ -1,5 +1,6 @@
 import csv
 import json
+import yaml
 from pathlib import Path
 import subprocess
 import sys
@@ -18,7 +19,7 @@ class SuiteDatasetTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.directory = Path(self.tmp.name)
-        self.cfg = load_config(ROOT / 'configs/stacks/mac-offline.json')
+        self.cfg = load_config(ROOT / 'configs/stacks/mac-offline.yaml')
 
     def case(self, spec, **benchmark):
         raw = {'cases': [{'name': 'example', 'dataset': spec, 'benchmark': benchmark}]}
@@ -26,8 +27,8 @@ class SuiteDatasetTests(unittest.TestCase):
 
     def test_mixed_example_and_legacy_suites(self):
         directory = ROOT / 'configs/suites'
-        for filename, expected in [('mixed-datasets.json', [2, 3, 4]), ('mac-smoke.json', [4, 4, 4])]:
-            raw = json.loads((directory / filename).read_text())
+        for filename, expected in [('mixed-datasets.yaml', [2, 3, 4]), ('mac-smoke.yaml', [4, 4, 4])]:
+            raw = yaml.safe_load((directory / filename).read_text())
             cases = prepare_suite(self.cfg, raw, directory).cases
             self.assertEqual([case.cfg['benchmark']['request_count'] for case in cases], expected)
             self.assertEqual([case.name for case in cases], [r['name'] for r in raw['cases']])

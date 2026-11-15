@@ -12,6 +12,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
+from config_io import read_object
 from diagnostics import collect, run_diagnosed
 from benchmark_stack import ROOT, Stack, prepare, validate_config, published_ports
 from container_runtime import runtime_scope, select_runtime
@@ -30,13 +31,6 @@ PROFILES = {
 }
 
 
-def read_object(path):
-    value = json.loads(path.read_text())
-    if not isinstance(value, dict):
-        raise ValueError(f'{path}: expected a JSON object')
-    return value
-
-
 def workload_options(parser):
     parser.add_argument('--input-len', type=int, dest='input_length', help='synthetic input length')
     parser.add_argument('--output-len', type=int, dest='output_length', help='requested output length')
@@ -51,7 +45,7 @@ def workload(args):
 
 
 def configure(parser):
-    parser.add_argument('--config', type=Path, help='stack JSON (overlay when used with --profile)')
+    parser.add_argument('--config', type=Path, help='stack YAML (overlay when used with --profile)')
     parser.add_argument('--profile', choices=PROFILES, help='built-in stack defaults')
     parser.add_argument('--runtime', choices=('docker', 'nerdctl'), help='choose the container runtime for plan/up/images')
     parser.add_argument('--namespace', help='explicit nerdctl namespace (implies nerdctl when used alone)')
@@ -128,7 +122,7 @@ def configured_stack(args):
         cfg = read_object(args.config)
     else:
         profile = PROFILES[args.profile or 'linux-single']
-        cfg = read_object(ROOT / 'configs/stacks' / (profile + '.json'))
+        cfg = read_object(ROOT / 'configs/stacks' / (profile + '.yaml'))
         if args.config:
             overlay(cfg, read_object(args.config))
     if args.project is not None:
@@ -251,7 +245,7 @@ def diagnostic_context(args):
         return cfg, manifest['vendor']
     if site:
         return site, None
-    raise ValueError('No saved diagnostic context; use --config with the original site JSON')
+    raise ValueError('No saved diagnostic context; use --config with the original site YAML')
 
 
 @contextmanager
@@ -319,7 +313,7 @@ def execute(args):
                 if (root / 'state.json').exists():
                     raise
                 cfg = site
-                origin = 'site JSON (no active stack; checking local files only)'
+                origin = 'site YAML (no active stack; checking local files only)'
             else:
                 cfg = active.cfg
                 network = active.network

@@ -14,6 +14,8 @@ from typing import Optional
 
 from diagnostics import failure_detail
 from suite_datasets import LocalDataset, resolve_dataset
+from config_io import read_object
+
 from benchmark_stack import (load_config, ais_config, Stack, LABEL, ROOT, write_json,
                              runtime_command, aisbench_environment, check_local_images, validate_config)
 
@@ -194,7 +196,7 @@ def main():
     args = parser.parse_args()
     try:
         cfg = load_config(args.config)
-        code = run_suite(cfg, prepare_suite(cfg, json.loads(args.suite.read_text()), args.suite.resolve().parent))
+        code = run_suite(cfg, prepare_suite(cfg, read_object(args.suite), args.suite.resolve().parent))
     except (OSError, KeyError, TypeError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         parser.exit(1, f'ERROR: {exc}\n')
     if code:

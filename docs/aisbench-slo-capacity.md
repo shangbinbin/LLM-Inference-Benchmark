@@ -4,7 +4,7 @@
 
 需要根据每轮结果自动调整并发时，使用新增的 [SLO 自适应搜索功能](aisbench-auto-slo.md)和 `llm-bench bench slo`。本页保留固定候选扫描、离线报告筛选和 SLO 业务口径说明；两种入口均不调整被测推理服务。
 
-真实服务先按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)生成 site.json，选择 Docker/nerdctl，并完成小规模单档验证；之后再按本页设置扫描 workload 和业务阈值。
+真实服务先按 [GPU41 完整示例](gpu41-qwen3-random-1k.md)生成 site.yaml，选择 Docker/nerdctl，并完成小规模单档验证；之后再按本页设置扫描 workload 和业务阈值。
 
 ## 1. 先明确搜索目标与版本能力
 
@@ -43,14 +43,14 @@ SLO（服务等级目标）是业务给定的约束，例如 P99 TTFT ≤ 1000 m
 
 ## 3. 准备服务和观测链路
 
-1. 从 `configs/stacks/nvidia-single.json` 复制完整 site.json，填写服务根 URL、model、指标端点、日志目录、真实 tokenizer 和数据目录。海光选择 gpu.vendor=hygon 或在本机使用 auto。
+1. 从 `configs/stacks/nvidia-single.yaml` 复制完整 site.yaml，填写服务根 URL、model、指标端点、日志目录、真实 tokenizer 和数据目录。海光选择 gpu.vendor=hygon 或在本机使用 auto。
 2. Linux GPU 服务器固定 **linux/amd64（x86）**，使用 `*-amd64` 自建镜像标签；Mac 模拟使用独立 arm64 标签。
 3. 固定模型/量化、服务版本、GPU 数量、TP/PP/PD 拓扑、缓存策略、输入输出长度、tokenizer、流式协议和预热方式。不同长度应分别执行一轮容量搜索，不能直接混为同一组候选。
 4. 确认上下文窗口能容纳输入与输出，真实输出长度与请求目标一致。tokenid 解码再编码仍可能改变 token 数，见 [合成数据说明](aisbench.md)。
 5. 只启动观测组件，避免先发送默认 workload：
 
 ```bash
-llm-bench up --config /absolute/path/site.json --no-benchmark
+llm-bench up --config /absolute/path/site.yaml --no-benchmark
 ```
 
 已有同一配置的观测栈且状态 ready/complete 时直接复用。不能同时运行其他压测。SGLang 服务应启用指标；PD 场景把 inference.base_url 指向对外路由入口，分别采集 prefill/decode 角色，不把不同角色的重复请求计数直接相加。
@@ -60,7 +60,7 @@ llm-bench up --config /absolute/path/site.json --no-benchmark
 从仓库根目录运行下面代码，生成策略和 suite，文件位于 Git 忽略的 generated/。这里固定输入 1024、输出 256、每轮 1000 条请求、三轮重复，扫描并发 1/8/16/32。全部使用无限定 QPS 的并发上限模式（request_rate=0）。
 
 ```python
-import json
+import yaml
 from pathlib import Path
 
 folder = Path('generated/slo-capacity')
@@ -87,8 +87,8 @@ for repeat in range(1, policy['repeats'] + 1):
             },
         })
 suite = {'cooldown_seconds': 15, 'stop_on_failure': True, 'cases': cases}
-for name, value in [('policy.json', policy), ('suite.json', suite)]:
-    (folder / name).write_text(json.dumps(value, indent=2) + '\n')
+for name, value in [('policy.yaml', policy), ('suite.yaml', suite)]:
+    (folder / name).write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=False))
 ```
 
 将代码保存为 `generated/create-slo-suite.py` 后执行 `python3 generated/create-slo-suite.py`；也可直接粘贴到 Python 解释器。若后端不支持 ignore_eos，替换为该后端支持的参数并核对实际输出长度，不要为了让压测跑通而忽略短输出。
@@ -99,8 +99,8 @@ for name, value in [('policy.json', policy), ('suite.json', suite)]:
 
 ```bash
 llm-bench bench suite \
-  --config /absolute/path/site.json \
-  --cases generated/slo-capacity/suite.json
+  --config /absolute/path/site.yaml \
+  --cases generated/slo-capacity/suite.yaml
 ```
 
 每例顺序运行并保留独立配置、client.log、性能 JSON/CSV/明细。脚本最后打印本次 `Suite report: .../suite-results.json`，记录这个**精确路径**；后续筛选不要使用不受控的 `latest` 或混入上次实验数据。
@@ -113,8 +113,8 @@ llm-bench bench suite \
 
 ```bash
 python3 docs/examples/select_aisbench_slo.py \
-  --suite generated/slo-capacity/suite.json \
-  --policy generated/slo-capacity/policy.json \
+  --suite generated/slo-capacity/suite.yaml \
+  --policy generated/slo-capacity/policy.yaml \
   --results /absolute/path/to/this-run/suite-results.json
 ```
 

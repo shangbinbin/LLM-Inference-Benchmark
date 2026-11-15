@@ -1,6 +1,6 @@
 # NVIDIA 适配
 
-`h200/profile.json` 选择 `dcgm/` 适配器；DCGM 的采集 job 和 GPU Dashboard 位于该适配器内。节点地址、24 卡规模与 TP/PP 不属于适配器，见 `configs/environments/nvidia-h200-3node-8gpu/environment.json`。
+`h200/profile.yaml` 选择 `dcgm/` 适配器；DCGM 的采集 job 和 GPU Dashboard 位于该适配器内。节点地址、24 卡规模与 TP/PP 不属于适配器，见 `configs/environments/nvidia-h200-3node-8gpu/environment.yaml`。
 
 面板沿用来源版本的 `DCGM_FI_*` 指标及 `node`、`gpu`、`UUID`、`modelName` 标签，未改为跨厂商指标。Exporter 安装方式、支持的计数器及现场核对步骤见[原始 GPU 说明](../../../references/nvidia-h200-3node-8gpu/gpu-monitoring/README.md)。新增型号时先核实所需计数器是否存在，再决定共享或新建适配器。
 
@@ -14,8 +14,8 @@
 
 如硬件、驱动及 profiling 环境已验证兼容，可在 gpu 对象中设置：
 
-```json
-"nvidia_metrics_profile": "full"
+```yaml
+nvidia_metrics_profile: full
 ```
 
 full 使用所选 Exporter 镜像自带的默认采集集合，不挂基础列表；换镜像标签时默认集合可能变化。基础模式未采集的 profiling、PCIe 错误及其他扩展面板可能显示无数据，这不是指标为零；基本 GPU 利用率、显存、功率、温度仍可查看。external 模式和海光不受该字段影响，模拟模式也不启动真实 Exporter。

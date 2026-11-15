@@ -4,7 +4,7 @@
 
 ## 1. 本次现场配置中的不一致
 
-本次现场 site.json 的实际采集路径由两项拼接：
+本次现场 site.yaml 的实际采集路径由两项拼接：
 
 | 字段 | 现场当前值 |
 | --- | --- |
@@ -23,7 +23,7 @@
 
 这是本次代码修复的检查缺口；路径仍需由操作者填写真实值，工程不会自动接管或猜测其他目录中的日志。本文路径来自此前现场信息；如果已经迁移，替换成服务当前实际写入的文件。
 
-## 2. 在离线机修正现场 site.json
+## 2. 在离线机修正现场 site.yaml
 
 所有命令在源码根目录执行：
 
@@ -35,18 +35,18 @@ cd /home/llm-bench-runtime/LLM-Inference-Benchmark
 
 ```bash
 python3 - <<'PY'
-import json
+import yaml
 from pathlib import Path
 
 logdir = Path('/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279')
 filename = 'server_log.log'
 if not (logdir / filename).is_file():
     raise SystemExit('未找到真实日志，请改为服务实际路径；不要创建空文件冒充：' + str(logdir / filename))
-path = Path('generated/site/site.json')
-cfg = json.loads(path.read_text())
+path = Path('generated/site/site.yaml')
+cfg = yaml.safe_load(path.read_text())
 cfg['storage']['logs'] = str(logdir)
 cfg['log_sources'] = [{'path':filename, 'role':'master', 'replica':'replica-0'}]
-path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
 print('已更新真实日志路径：', logdir / filename)
 PY
 ```
@@ -55,18 +55,18 @@ PY
 
 ```bash
 # 需要回传诊断时先保留旧栈证据
-./bin/llm-bench logs collect --config generated/site/site.json
-./bin/llm-bench down --config generated/site/site.json
+./bin/llm-bench logs collect --config generated/site/site.yaml
+./bin/llm-bench down --config generated/site/site.yaml
 
 # 需要鉴权时，在当前 Bash 终端重新导出实际 Token
 read -r -s -p 'Inference Token: ' INFERENCE_API_KEY
 export INFERENCE_API_KEY
 
-./bin/llm-bench plan --config generated/site/site.json
-./bin/llm-bench images check --config generated/site/site.json
-./bin/llm-bench up --config generated/site/site.json --no-benchmark
-./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
-./bin/llm-bench logs check --config generated/site/site.json
+./bin/llm-bench plan --config generated/site/site.yaml
+./bin/llm-bench images check --config generated/site/site.yaml
+./bin/llm-bench up --config generated/site/site.yaml --no-benchmark
+./bin/llm-bench bench run --config generated/site/site.yaml --requests 8 --concurrency 2
+./bin/llm-bench logs check --config generated/site/site.yaml
 ```
 
 如果根本没有启动过真实栈，跳过 logs collect/down。只有真实服务会将请求日志写入该文件；AISBench 自身的 client.log 是另一份客户端日志。确认服务会记录请求，并等待 Alloy 发现文件、批量推送和 Loki 查询可见；不向生产日志注入人工测试行。
@@ -76,9 +76,9 @@ export INFERENCE_API_KEY
 ## 3. 新增日志链路检查命令
 
 ```bash
-./bin/llm-bench logs check --config generated/site/site.json
+./bin/llm-bench logs check --config generated/site/site.yaml
 # 查询更早的日志，单位分钟，允许 1..10080
-./bin/llm-bench logs check --config generated/site/site.json --lookback-minutes 1440
+./bin/llm-bench logs check --config generated/site/site.yaml --lookback-minutes 1440
 ```
 
 Docker 和 nerdctl 共用此命令，按当前栈保存的 runtime/namespace 执行。功能如下：
@@ -102,10 +102,8 @@ status=error 表示路径、挂载或链路检查失败，退出码为 1。statu
 
 已有的空文件允许启动，因为服务可能在第一条请求时才写内容。对明确知道服务会延迟创建日志文件的场景，可在 site 顶层显式设置：
 
-```json
-{
-  "allow_missing_logs": true
-}
+```yaml
+allow_missing_logs: true
 ```
 
 这只是合并进完整 site 的字段片段。目录仍必须存在，不放行目录类型错误或实际文件读取失败；仍通过 Alloy 的文件发现处理后续文件。不要为了掩盖本次路径不一致而开启它。simulation=true 的 fixture 会自行创建日志，保持原来的延迟创建行为，不要求预先伪造日志。

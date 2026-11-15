@@ -1,6 +1,6 @@
 # 按推理任务查看指标与日志
 
-`llm-bench up --config site.json` 会自动预置一个“推理任务总览 · NVIDIA”或“推理任务总览 · 海光”Dashboard，包含 vLLM、SGLang 核心性能、当前厂商 GPU 指标、Logs Volume 和日志列表。无需在 Grafana 中手工添加面板或安装插件。
+`llm-bench up --config site.yaml` 会自动预置一个“推理任务总览 · NVIDIA”或“推理任务总览 · 海光”Dashboard，包含 vLLM、SGLang 核心性能、当前厂商 GPU 指标、Logs Volume 和日志列表。无需在 Grafana 中手工添加面板或安装插件。
 
 浏览器访问 `http://运行观测栈的节点IP:Grafana端口/d/inference-task-overview`，默认端口为 33000；冒烟配置默认 33003，以现场 `ports.grafana` 为准。也可从 Dashboards → Inference Benchmark 打开。
 
@@ -22,58 +22,64 @@
 
 真实日志必须实际位于 storage.logs + log_sources[].path；例如 server.log 与 server_log.log 是不同文件。真实启动前会检查文件与容器 /logs 可读性；已有空文件可启动，明确延迟创建需显式 allow_missing_logs=true。simulation 的 fixture 保留自动创建行为。
 
-`./bin/llm-bench logs check --config generated/site/site.json` 检查当前快照、文件/挂载、Alloy/Loki 及任务窗口内日志。Alloy ready 不保证已经读取文件。路径修正、Loki 无标签和 Logs Volume 为空的处理见 [日志链路排查](loki-log-troubleshooting.md)。
+`./bin/llm-bench logs check --config generated/site/site.yaml` 检查当前快照、文件/挂载、Alloy/Loki 及任务窗口内日志。Alloy ready 不保证已经读取文件。路径修正、Loki 无标签和 Logs Volume 为空的处理见 [日志链路排查](loki-log-troubleshooting.md)。
 
 ## 配置模板
 
-单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.json) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.json`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.json](../configs/stacks/nvidia-single.json)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.json)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.json 的片段：
+单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.yaml) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.yaml`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.json](../configs/stacks/nvidia-single.yaml)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.yaml)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.yaml 的片段：
 
-```json
-{
-  "project": "llm-bench-qwen-real",
-  "task": "qwen3-0.6b",
-  "inference": {
-    "base_url": "http://10.142.118.41:38000/publishaddress/inference/qwen306b/",
-    "model": "Qwen3-0.6B",
-    "api": "chat",
-    "engine": "vllm",
-    "api_key_env": "INFERENCE_API_KEY"
-  },
-  "gpu": {
-    "vendor": "nvidia",
-    "deployment": "local",
-    "nodes": [{"name": "gpu41", "gpus": 1}]
-  },
-  "storage": {
-    "root": "generated/qwen-real",
-    "logs": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279",
-    "tokenizer": "/nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279"
-  },
-  "log_sources": [
-    {"path": "server_log.log", "role": "master", "replica": "replica-0", "node": "gpu41"}
-  ]
-}
+```yaml
+project: llm-bench-qwen-real
+task: qwen3-0.6b
+inference:
+  base_url: http://10.142.118.41:38000/publishaddress/inference/qwen306b/
+  model: Qwen3-0.6B
+  api: chat
+  engine: vllm
+  api_key_env: INFERENCE_API_KEY
+gpu:
+  vendor: nvidia
+  deployment: local
+  nodes:
+  - name: gpu41
+    gpus: 1
+storage:
+  root: generated/qwen-real
+  logs: /nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279
+  tokenizer: /nfs-data/b80b3433c7374662bd67be120e30f566/a78f816093a2b0414d6ea1530dfae279
+log_sources:
+- path: server_log.log
+  role: master
+  replica: replica-0
+  node: gpu41
 ```
 
 `inference.engine` 支持 `auto`（默认）、`vllm`、`sglang`，作为服务描述标签；不会改变推理进程，也不改变 `inference.api`。两种引擎的常用图表都已预置，未暴露相应指标的图表显示 No data。接口及 metrics 鉴权仍按 [统一基础 URL](inference-auth.md#统一基础-url自动拼接推理与指标接口)配置，不把 Token 写入 JSON。
 
 ### 多副本：角色与日志路径一一对应
 
-```json
-{
-  "task": "qwen-service",
-  "topology": {
-    "kind": "pd", "tp": 8, "pp": 1,
-    "metrics_endpoints": [
-      {"target": "prefill-host:8000", "role": "prefill", "replica": "prefill-0"},
-      {"target": "decode-host:8000", "role": "decode", "replica": "decode-0"}
-    ]
-  },
-  "log_sources": [
-    {"path": "prefill-0/server.log", "role": "prefill", "replica": "prefill-0", "node": "gpu-a"},
-    {"path": "decode-0/server.log", "role": "decode", "replica": "decode-0", "node": "gpu-b"}
-  ]
-}
+```yaml
+task: qwen-service
+topology:
+  kind: pd
+  tp: 8
+  pp: 1
+  metrics_endpoints:
+  - target: prefill-host:8000
+    role: prefill
+    replica: prefill-0
+  - target: decode-host:8000
+    role: decode
+    replica: decode-0
+log_sources:
+- path: prefill-0/server.log
+  role: prefill
+  replica: prefill-0
+  node: gpu-a
+- path: decode-0/server.log
+  role: decode
+  replica: decode-0
+  node: gpu-b
 ```
 
 每个 `path` 都相对于 `storage.logs`，上述文件分别为 `storage.logs/prefill-0/server.log` 和 `storage.logs/decode-0/server.log`。角色可以是 `master`、`worker`、`router`、`prefill`、`decode` 等稳定名称；`replica` 用于区分同角色的多个实例。一个副本的多个日志文件使用相同角色和副本标签、不同路径即可。
@@ -90,17 +96,19 @@
 
 多个 GPU 节点使用 external 模式，提前在各节点部署 Exporter：
 
-```json
-{
-  "gpu": {
-    "vendor": "hygon",
-    "deployment": "external",
-    "nodes": [
-      {"name": "dcu-node-a", "gpus": 8, "target": "10.20.0.11:16080", "model": "填写实际海光型号"},
-      {"name": "dcu-node-b", "gpus": 8, "target": "10.20.0.12:16080", "model": "填写实际海光型号"}
-    ]
-  }
-}
+```yaml
+gpu:
+  vendor: hygon
+  deployment: external
+  nodes:
+  - name: dcu-node-a
+    gpus: 8
+    target: 10.20.0.11:16080
+    model: 填写实际海光型号
+  - name: dcu-node-b
+    gpus: 8
+    target: 10.20.0.12:16080
+    model: 填写实际海光型号
 ```
 
 型号与卡序号映射规则：
@@ -133,7 +141,7 @@ Dashboard 默认最近 30 分钟、每 5 秒自动刷新。日志行可展开详
 
 ## 生成文件与离线更新
 
-主配置仍是自己传给 `--config` 的 site.json。`plan` / `up` 自动生成以下文件，勿在哈希目录里手工修改后期待下次生效：
+主配置仍是自己传给 `--config` 的 site.yaml。`plan` / `up` 自动生成以下文件，勿在哈希目录里手工修改后期待下次生效：
 
 ```text
 storage.root/config/<hash>/
@@ -143,22 +151,22 @@ storage.root/config/<hash>/
 └── grafana/dashboards/task-overview.json
 ```
 
-通用生成逻辑位于 `scripts/observability_labels.py`、`scripts/task_dashboard.py` 和 `scripts/benchmark_stack.py`。预生成 JSON 在 `configs/common/grafana/dashboards/task-overview-{nvidia,hygon}.json`，便于审阅/导入已接入相同标签的数据源；自动启动只挂载按现场配置生成的一个 task-overview.json。可选 IB 面板仍独立保留。仅更改预生成快照不会改变启动器生成逻辑，修改生成器后用下列命令同步快照：
+通用生成逻辑位于 `scripts/observability_labels.py`、`scripts/task_dashboard.py` 和 `scripts/benchmark_stack.py`。预生成 JSON 在 `configs/common/grafana/dashboards/task-overview-{nvidia,hygon}.yaml`，便于审阅/导入已接入相同标签的数据源；自动启动只挂载按现场配置生成的一个 task-overview.json。可选 IB 面板仍独立保留。仅更改预生成快照不会改变启动器生成逻辑，修改生成器后用下列命令同步快照：
 
 ```bash
 python3 scripts/task_dashboard.py --output-dir configs/common/grafana/dashboards
 ```
 
-**本次标签和 Dashboard 更新只需同步当前源码与配置，不需要重新构建镜像。** 不要只复制 benchmark_stack.py，需同时包含上述新增 Python 模块及 configs/。已有栈先用原配置 down，再修改现场 JSON、重新导出鉴权环境变量并 up：
+**本次标签和 Dashboard 更新只需同步当前源码与配置，不需要重新构建镜像。** 不要只复制 benchmark_stack.py，需同时包含上述新增 Python 模块及 configs/。已有栈先用原配置 down，再修改现场 YAML、重新导出鉴权环境变量并 up：
 
 ```bash
 # 在离线源码根目录执行；将路径换成当前现场配置。
-./bin/llm-bench down --config generated/site/site.json
-# 此时更新源码/配置并编辑 site.json；不要覆盖 storage.root/data 或现场 tokenizer。
-./bin/llm-bench plan --config generated/site/site.json
-./bin/llm-bench up --config generated/site/site.json --no-benchmark
+./bin/llm-bench down --config generated/site/site.yaml
+# 此时更新源码/配置并编辑 site.yaml；不要覆盖 storage.root/data 或现场 tokenizer。
+./bin/llm-bench plan --config generated/site/site.yaml
+./bin/llm-bench up --config generated/site/site.yaml --no-benchmark
 # 需要发压时，再复用观测栈。
-./bin/llm-bench bench run --config generated/site/site.json
+./bin/llm-bench bench run --config generated/site/site.yaml
 ```
 
 新标签仅作用于重新采集的数据，不回填历史 TSDB/Loki。保留的旧数据仍可用 deployment 查询；选择过渡后的时间范围再使用新任务 Dashboard。旧的生成式 SGLang/GPU 面板由统一任务总览替代，Grafana 中自行保存的自定义面板不会自动重写。

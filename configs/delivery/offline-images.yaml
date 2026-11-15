@@ -1,0 +1,8 @@
+schema_version: 1
+gpu_exporters:
+  nvidia: nvidia_exporter
+  hygon: hygon_exporter
+selected_gpu_exporters:
+- nvidia
+- hygon
+additional_images: []

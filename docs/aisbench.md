@@ -1,30 +1,30 @@
 # AISBench 合成数据与推理服务压测
 
-同一份清单可逐例选择业务 JSONL、ShareGPT 多轮对话或本文的合成数据。[完整配置与挂载方法](aisbench-sequential.md#在同一份-casesjson-混用三种数据集)
+同一份清单可逐例选择业务 JSONL、ShareGPT 多轮对话或本文的合成数据。[完整配置与挂载方法](aisbench-sequential.md#在同一份-casesyaml-混用三种数据集)
 
 
 命令入口与安装步骤见 [CLI 快速上手](cli.md#快速上手)。
 
-客户端使用 [AISBench/benchmark](https://github.com/AISBench/benchmark)，本项目固定源码提交 [`e330dc134c33f47671926144d9c143b554bc71cc`](https://github.com/AISBench/benchmark/tree/e330dc134c33f47671926144d9c143b554bc71cc)（2026-11-05）。容器内为 Python 3.11 和 CPU PyTorch，不占用被测 GPU。容器记录完整依赖清单 `/opt/aisbench/dependencies.txt`；主机只需 Python 标准库和容器运行时。
+客户端使用 [AISBench/benchmark](https://github.com/AISBench/benchmark)，本项目固定源码提交 [`e330dc134c33f47671926144d9c143b554bc71cc`](https://github.com/AISBench/benchmark/tree/e330dc134c33f47671926144d9c143b554bc71cc)（2026-11-05）。容器内为 Python 3.11 和 CPU PyTorch，不占用被测 GPU。容器记录完整依赖清单 `/opt/aisbench/dependencies.txt`；主机需要 Python、PyYAML（`pip install -r requirements.txt`）和容器运行时。
 
 AISBench 内置后端名称仍包含 `vllm_api_*`，这是它的 OpenAI 兼容协议实现类，不是 `vllm bench serve` 命令，也不会启动 vLLM 服务。项目默认为流式 `/v1/completions`，可用 `inference.api: chat` 选择 `/v1/chat/completions`，对 SGLang 等兼容服务需确认请求字段与 usage 响应。
 
 ## 指定输入/输出长度
 
-在栈 JSON 的 `benchmark` 中填写：
+在栈 YAML 的 `benchmark` 中填写：
 
-```json
-{
-  "dataset_type": "string",
-  "input_length": 1024,
-  "output_length": 256,
-  "request_count": 1000,
-  "concurrency": 16,
-  "request_rate": 0,
-  "warmups": 1,
-  "mode": "perf",
-  "generation_kwargs": {"temperature": 0, "ignore_eos": true}
-}
+```yaml
+dataset_type: string
+input_length: 1024
+output_length: 256
+request_count: 1000
+concurrency: 16
+request_rate: 0
+warmups: 1
+mode: perf
+generation_kwargs:
+  temperature: 0
+  ignore_eos: true
 ```
 
 启动器生成标准 AISBench Python 配置：选择 `SyntheticDataset`，设置 RequestCount；string 输入/输出分布采用 uniform，并将 MinValue、MaxValue 同时设为指定长度。每条请求携带其输出长度，模型配置同时设置 max_out_len。执行 `plan` 即可在 `storage.root/config/<hash>/aisbench.py` 查看实际配置。
@@ -45,19 +45,19 @@ string 生成过程本身不依赖 tokenizer，但本固定版本的性能汇总
 4. 生成器设置 TokenIdConfig.RequestSize 和 PrefixLen，并把模型 path 指向 `/tokenizer`。AISBench 排除特殊 token 后随机采样，再解码成字符串发给接口。
 5. 核对结果中的 InputTokens/OutputTokens。decode→encode 不一定保持原 token 数；PrefixLen 表示采样时共享 token 数，不保证实际缓存命中率。当前默认关闭 trust_remote_code，不会自动执行模型仓库代码。
 
-```json
-{
-  "dataset_type": "tokenid",
-  "input_length": 1024,
-  "prefix_length": 0,
-  "output_length": 256,
-  "request_count": 1000,
-  "concurrency": 16,
-  "request_rate": 0,
-  "warmups": 1,
-  "mode": "perf",
-  "generation_kwargs": {"temperature": 0, "ignore_eos": true}
-}
+```yaml
+dataset_type: tokenid
+input_length: 1024
+prefix_length: 0
+output_length: 256
+request_count: 1000
+concurrency: 16
+request_rate: 0
+warmups: 1
+mode: perf
+generation_kwargs:
+  temperature: 0
+  ignore_eos: true
 ```
 
 tokenid 配置的输出上限来自 max_out_len。`ignore_eos` 属于后端扩展参数，AISBench 会转发而不会替服务生成固定长度。后端不支持时应移除/替换该参数，明确输出只是上限；即便支持，也需确认没有 stop 条件、上下文窗口不足或请求失败导致提前停止。不要仅凭配置值声称获得严格固定输入/输出 token。
@@ -66,14 +66,14 @@ tokenid 配置的输出上限来自 max_out_len。`ignore_eos` 属于后端扩�
 
 AISBench string 原生支持 uniform、gaussian、zipf，可在生成的 Python 配置副本中将 Input/Output 的 Method、Params 改为需要的分布，然后使用下文直接容器命令。gaussian 的 Var 在源码中是方差（采样标准差为 sqrt(Var)），并被 MinValue/MaxValue 截断；zipf 也被上下界裁剪。高级字段的准确含义以固定提交的[合成配置](https://github.com/AISBench/benchmark/tree/e330dc134c33f47671926144d9c143b554bc71cc/ais_bench/benchmark/configs/datasets/synthetic)为准。
 
-本栈 JSON 简化入口只实现固定长度；不会把尚未实现的高级分布字段静默传入。原生合成数据在加载时生成；若要严格复现实验，应固定客户端/服务/tokenizer 版本并保存实际请求数据及 seed/调度设置，不能仅依赖相同长度和请求数。上下文窗口至少覆盖真实输入（含模板）与最大输出。
+本栈 YAML 简化入口只实现固定长度；不会把尚未实现的高级分布字段静默传入。原生合成数据在加载时生成；若要严格复现实验，应固定客户端/服务/tokenizer 版本并保存实际请求数据及 seed/调度设置，不能仅依赖相同长度和请求数。上下文窗口至少覆盖真实输入（含模板）与最大输出。
 
 ## 启动压测
 
 推荐使用完整栈入口，自动等待观测链路和服务就绪：
 
 ```bash
-llm-bench up --config /path/to/site.json
+llm-bench up --config /path/to/site.yaml
 ```
 
 如果观测链路已经由其他系统管理，可直接用同一 AISBench 镜像与 Python 配置（路径按实际生成目录修改）：
@@ -97,7 +97,7 @@ docker run --rm --network <project>-net \
 | 定速请求 | `request_rate: R` | QPS 调度目标，仍受客户端并发、延迟与资源限制；实际发出速率可能低于目标 |
 | 持续压力测试 | `mode: pressure`、`pressure_seconds: 60` | 映射为 `--mode perf --pressure --pressure-time 60`；可循环使用数据，完成数不等于原始 RequestCount |
 | 仅重新统计 | 直接 `--mode perf_viz --reuse <run-id>` | 读取已有结果；需保留原始配置、性能明细和输出目录 |
-| 组合实验 | AISBench Python 配置的 models/datasets、model_dataset_combinations | 可组合不同并发、速率、输入/输出长度；本栈 JSON 当前一次一个 workload |
+| 组合实验 | AISBench Python 配置的 models/datasets、model_dataset_combinations | 可组合不同并发、速率、输入/输出长度；本栈 YAML 当前一次一个 workload |
 | 精度测试 | AISBench all/infer/eval/viz | 不是本项目合成性能入口；随机合成数据不应计算精度 |
 
 `warmups` 不计入正式请求数；在检查模拟服务请求计数时应考虑预热。本固定版本源码使用 `range(retry)`，因此 retry 表示总尝试次数：默认 `retry=1` 才是一次请求、不自动重试；`0` 会完全不发请求，启动器会拒绝。可配置 benchmark.retry，但需要记录重试对失败率的影响。CPU、客户端网卡、连接数和容器资源也可能成为瓶颈。
@@ -131,4 +131,4 @@ docker run --rm --network <project>-net \
 
 AISBench 的单次、顺序和 SLO 压测入口统一限制客户端 OpenBLAS/OpenMP/MKL/NumExpr 为单线程，并设置 `TOKENIZERS_PARALLELISM=false`，避免受限容器中计算库初始化线程失败。此设置不改变请求并发数；旧镜像由当前启动器传入这些变量，新镜像也内置相同默认值。手工 tokenizer 验证命令见 [离线部署说明](offline-deployment.md#34-准备真实-tokenizer-并做无网络加载检查)。
 
-旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack JSON 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。
+旧 Docker 环境若最小 Python 线程测试失败、且仅在关闭 seccomp 后成功，可在 stack YAML 顶层显式设置 `"legacy_seccomp_unconfined": true`。离线模式默认开启、在线模式默认关闭，显式设 false 可关闭；开启后统一影响本工程新建的所有容器，包括监控组件、Exporter 和临时探测，不影响其他项目；适用范围、安全影响、重建容器及恢复步骤见 [旧 Docker 线程兼容说明](legacy-docker-threads.md)。

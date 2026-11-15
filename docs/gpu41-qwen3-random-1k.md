@@ -1,10 +1,10 @@
 # GPU41：离线单实例 Qwen3-0.6B 压测
 
-以 [gpu41-qwen3-0.6b-random-1k.json](../configs/sites/gpu41-qwen3-0.6b-random-1k.json) 为完整现场示例。它对接已经部署的推理服务，不会启动模型服务或修改 Kubernetes Pod。所有命令在解压后的仓库根目录执行。
+以 [gpu41-qwen3-0.6b-random-1k.yaml](../configs/sites/gpu41-qwen3-0.6b-random-1k.yaml) 为完整现场示例。它对接已经部署的推理服务，不会启动模型服务或修改 Kubernetes Pod。所有命令在解压后的仓库根目录执行。
 
 ## 1. 生成现场配置并选择 Docker 或 nerdctl
 
-**`generated/site/site.json` 需要先生成。它不会随仓库下载出现，`up` 也不会自动创建这个输入文件。** 以下两条生成命令选择一条执行：
+**`generated/site/site.yaml` 需要先生成。它不会随仓库下载出现，`up` 也不会自动创建这个输入文件。** 以下两条生成命令选择一条执行：
 
 ```bash
 # Docker
@@ -16,7 +16,7 @@ python3 scripts/create_site_config.py --runtime docker
 python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 ```
 
-默认源文件是上述 GPU41 示例，默认输出为当前目录下的 `generated/site/site.json`。省略 `--runtime` 时沿用源文件设置（GPU41 示例为 Docker）。可用 `--source 完整配置.json --output 另一现场配置.json` 指定其他文件。**输出已存在时拒绝覆盖**；已有现场配置应直接编辑或另选输出文件。生成时校验配置结构，tokenizer 的实际文件在后续 plan/up 时检查。
+默认源文件是上述 GPU41 示例，默认输出为当前目录下的 `generated/site/site.yaml`。省略 `--runtime` 时沿用源文件设置（GPU41 示例为 Docker）。可用 `--source 完整配置.yaml --output 另一现场配置.yaml` 指定其他文件。**输出已存在时拒绝覆盖**；已有现场配置应直接编辑或另选输出文件。生成时校验配置结构，tokenizer 的实际文件在后续 plan/up 时检查。
 
 选择运行时只修改 `runtime`，保持服务、鉴权变量名、日志、端口与 workload。等价 JSON 为：
 
@@ -29,9 +29,9 @@ python3 scripts/create_site_config.py --runtime nerdctl --namespace benchmark
 
 ## 2. 核对现场字段
 
-逐字段说明、占位符定位、NVIDIA/海光和 Docker/nerdctl 对照，以及修改后完整启动顺序见 [site.json 配置与启动压测手册](site-config-and-benchmark.md)。
+逐字段说明、占位符定位、NVIDIA/海光和 Docker/nerdctl 对照，以及修改后完整启动顺序见 [site.yaml 配置与启动压测手册](site-config-and-benchmark.md)。
 
-编辑 `generated/site/site.json`。示例的 GPU41 地址与 NFS 目录不会自动发现或转换，换节点、模型时必须同步修改。
+编辑 `generated/site/site.yaml`。示例的 GPU41 地址与 NFS 目录不会自动发现或转换，换节点、模型时必须同步修改。
 
 | 字段 | GPU41 示例与修改要求 |
 | --- | --- |
@@ -64,7 +64,7 @@ docker image load -i /home/llm-bench-delivery/offline-bundle/images/images-linux
 ```
 
 ```bash
-# nerdctl 配置使用这一条，namespace 与 site.json 一致
+# nerdctl 配置使用这一条，namespace 与 site.yaml 一致
 nerdctl --namespace benchmark load -i /home/llm-bench-delivery/offline-bundle/images/images-linux-amd64.tar
 ```
 
@@ -75,8 +75,8 @@ Docker 与 containerd 的镜像存储独立，namespace 也必须一致。仅切
 ```bash
 read -r -s -p 'Inference Token: ' INFERENCE_API_KEY
 export INFERENCE_API_KEY
-./bin/llm-bench plan --config generated/site/site.json
-./bin/llm-bench images check --config generated/site/site.json
+./bin/llm-bench plan --config generated/site/site.yaml
+./bin/llm-bench images check --config generated/site/site.yaml
 ```
 
 plan 不读取 Token、不访问服务，也不验证镜像存在；它会检查 tokenizer 文件并生成配置快照。images check 使用所选运行时检查本地镜像。不要将 plan 当成服务连通性验收。
@@ -84,12 +84,12 @@ plan 不读取 Token、不访问服务，也不验证镜像存在；它会检查
 ## 4. 启动、小规模验证和正式压测
 
 ```bash
-./bin/llm-bench up --config generated/site/site.json --no-benchmark
-./bin/llm-bench status --config generated/site/site.json
+./bin/llm-bench up --config generated/site/site.yaml --no-benchmark
+./bin/llm-bench status --config generated/site/site.yaml
 # 先以相同 1k/1k 长度做 8 次请求、并发 2 验证
-./bin/llm-bench bench run --config generated/site/site.json --requests 8 --concurrency 2
+./bin/llm-bench bench run --config generated/site/site.yaml --requests 8 --concurrency 2
 # 验证通过后使用配置中的 1000 次请求、并发 16
-./bin/llm-bench bench run --config generated/site/site.json
+./bin/llm-bench bench run --config generated/site/site.yaml
 ```
 
 只需直接启动并执行一次正式压测时，使用不带 `--no-benchmark` 的 up。**已有栈再次发压使用 bench run，不要重复 up。** bench run 的进度输出写入用例目录的 client.log，可在另一终端对本次文件执行 `tail -f`。
@@ -107,10 +107,10 @@ Grafana：`http://运行观测栈的节点IP:33000`（部署在 GPU41 时为 `ht
 | 原始推理日志 | `storage.logs/server_log.log`，仍在真实服务的节点目录 |
 
 ```bash
-./bin/llm-bench logs collect --config generated/site/site.json
-./bin/llm-bench down --config generated/site/site.json
+./bin/llm-bench logs collect --config generated/site/site.yaml
+./bin/llm-bench down --config generated/site/site.yaml
 ```
 
 down 只删除本项目登记且标签匹配的容器和网络，保留持久数据与原始日志。status/down/bench 使用启动时保存的 runtime/namespace；它们不接受运行时覆盖参数。
 
-**Docker ↔ nerdctl 切换流程：先 down 原栈 → 将镜像导入新引擎/namespace → 修改现场 JSON 的 runtime（或在 up 时显式覆盖）→ images check → up。** 同一持久目录可保留，但须确认新容器有读写权限。修改 JSON 后直接 bench run 不会改变已运行栈的引擎或基础配置。并行运行两套时必须分别配置 project、storage.root 与端口；nerdctl 1.7.7 的 project 名称还须在节点上唯一。
+**Docker ↔ nerdctl 切换流程：先 down 原栈 → 将镜像导入新引擎/namespace → 修改现场 YAML 的 runtime（或在 up 时显式覆盖）→ images check → up。** 同一持久目录可保留，但须确认新容器有读写权限。修改 JSON 后直接 bench run 不会改变已运行栈的引擎或基础配置。并行运行两套时必须分别配置 project、storage.root 与端口；nerdctl 1.7.7 的 project 名称还须在节点上唯一。
