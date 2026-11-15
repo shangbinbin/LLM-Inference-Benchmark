@@ -1,6 +1,6 @@
 # 按推理任务查看指标与日志
 
-`llm-bench up --config site.yaml` 会自动预置一个“推理任务总览 · NVIDIA”或“推理任务总览 · 海光”Dashboard，包含 vLLM、SGLang 核心性能、当前厂商 GPU 指标、Logs Volume 和日志列表。无需在 Grafana 中手工添加面板或安装插件。
+`llm-bench up --config site.yaml` 会自动预置一个“推理任务总览 · NVIDIA”或“推理任务总览 · 海光”Dashboard，包含 node-exporter 主机资源、vLLM、SGLang 核心性能、当前厂商 GPU 指标、Logs Volume 和日志列表。无需在 Grafana 中手工添加面板或安装插件。
 
 浏览器访问 `http://运行观测栈的节点IP:Grafana端口/d/inference-task-overview`，默认端口为 33000；冒烟配置默认 33003，以现场 `ports.grafana` 为准。也可从 Dashboards → Inference Benchmark 打开。
 
@@ -9,6 +9,7 @@
 | 数据 | 主筛选链 | 配置来源 |
 | --- | --- | --- |
 | 推理服务性能 | `task` | 顶层 `task`，省略时使用 `project` |
+| 主机资源 / 网卡 | `task` → `host` → `net_device`（仅网络面板） | node-exporter 的 `instance` / `device` 标签 |
 | GPU 监控 | `task` → `gpu_node` → `gpu_model` → `gpu_index` | 同一任务、`gpu.nodes[].name`、型号、Exporter 原生卡序号 |
 | Loki 日志 / Logs Volume | `task` → `instance_role` → `replica` → `source_file` | 同一任务、`log_sources[].role` / `.replica` / `.path` |
 
@@ -26,7 +27,7 @@
 
 ## 配置模板
 
-单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.yaml) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.yaml`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.json](../configs/stacks/nvidia-single.yaml)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.yaml)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.yaml 的片段：
+单机以 [GPU41 现场配置](../configs/sites/gpu41-qwen3-0.6b-random-1k.yaml) 为完整例子，先按 [GPU41 指南](gpu41-qwen3-random-1k.md)生成 `generated/site/site.yaml`，支持 Docker/nerdctl 选择；通用场景也可复制 [nvidia-single.yaml](../configs/stacks/nvidia-single.yaml)。多副本参考 [完整模板](../configs/sites/task-multi-replica.example.yaml)，替换全部 `REPLACE_`，并保留实际使用的实例。以下是合并到完整 site.yaml 的片段：
 
 ```yaml
 project: llm-bench-qwen-real
@@ -125,11 +126,22 @@ Exporter 有其他字段名时，可在 `gpu` 中配置 `"model_label": "实际�
 
 ## 预置图表与实时日志
 
+- node-exporter：采集健康、CPU 使用率与 I/O 等待、1/5/15 分钟负载、内存使用率/容量、Swap、文件系统使用率/可用空间、磁盘读写吞吐/IOPS/忙碌率、网络吞吐/错误/丢包速率。NVIDIA 与海光面板均包含这一节。
 - vLLM：请求完成速率、输入/输出 Token 吞吐、运行/排队请求、TTFT、端到端延迟、KV Cache、ITL/TPOT、排队时间、抢占速率。
 - SGLang：运行/排队请求、输出 Token 吞吐、缓存命中率、TTFT、端到端延迟和版本支持的 Token 间延迟。
 - NVIDIA：利用率、已用/空闲显存、显存比例、功率、温度、时钟、XID 及可见卡数。默认 basic 配置避免 profiling 不兼容；显式 full 时增加 profiling 面板，需现场确认支持。
 - 海光 DCU v2.4.1：dcu_utilizationrate（%）、显存已用/容量（bytes）、按已用/容量计算显存比例、dcu_temp（℃）、功耗（W）、PCIe 带宽（MiB/s）、核心时钟（MHz）、CE/UE 原始计数和卡数。名称/单位依据保存的官方 DCU Dashboard；真实版本可用性仍需现场验证。按任务/节点/型号/卡序号对物理卡指标取 max 去除 Pod 元数据副本，不将副本相加或混入 vdcu_*。
 - 日志：Logs Volume 按级别堆叠显示时间窗内条数，未识别级别归 unknown；日志列表和 Volume 共享任务、角色、副本、文件及“日志包含”筛选。
+
+### 主机资源的筛选与采集口径
+
+选择任务后，用“主机采集目标”按 node-exporter 的 `instance` 筛选，支持多选和 All；列表从 `up{job="node-exporter"}` 获取，保留采集失败的目标以便看健康状态。“主机网卡”依赖任务和主机，只影响网络面板，支持多选和 All，包含 lo、物理网卡、Docker 网桥及 veth，以便观察同机压测流量。主机与网卡筛选独立于 GPU 节点/型号/卡序号。当前启动器只部署并抓取本机一个 node-exporter，GPU external 多节点配置不会自动增加远端主机采集；接入远端主机需要额外配置对应采集目标及一致的 task 标签。
+
+Linux 单机共节点部署应使用 [`single-node.example.yaml`](../configs/sites/single-node.example.yaml) 中的 `host_metrics: host`，并将 `node_exporter_target` 改成容器可达的本机 IP。此模式使用宿主机网络及 `/proc`、`/sys`、根目录挂载。`host_metrics: container` 只提供容器采集视角，尤其文件系统和网卡不代表完整宿主机；Mac 模拟模式也不能据此观察 macOS 主机。面板的说明会标注启动时使用的模式。
+
+CPU 使用率为各逻辑 CPU 平均非 idle 时间，包含 iowait；内存使用率按 MemAvailable 计算，避免将可回收缓存全部算作已用；负载是原始 load average，需结合 CPU 核数判断。主机指标反映整个节点，不表示推理服务或压测客户端的独占资源。同机压测时应结合 GPU 和延迟面板，观察客户端与推理进程是否存在 CPU、内存或 I/O 竞争。
+
+磁盘与网卡按设备分别展示，文件系统按挂载点展示，不跨设备层或接口求和，以免 dm/md 与底层盘、bond 与成员网卡、网桥/veth 与物理网卡重复计数。默认排除常见虚拟文件系统和 loop/ram/fd 块设备；文件系统 0 容量不参与使用率计算，未配置 Swap 时容量为 0。缺失的指标保留 No data。磁盘忙碌率表示有 I/O 执行的时间比例，不等同于 NVMe/RAID 已达到吞吐上限。
 
 Dashboard 默认最近 30 分钟、每 5 秒自动刷新。日志行可展开详情查看标签。需要真正的持续 Live 跟踪时，打开 Explore，选择 Benchmark Loki、切换 Code，输入：
 
@@ -151,7 +163,7 @@ storage.root/config/<hash>/
 └── grafana/dashboards/task-overview.json
 ```
 
-通用生成逻辑位于 `scripts/observability_labels.py`、`scripts/task_dashboard.py` 和 `scripts/benchmark_stack.py`。预生成 JSON 在 `configs/common/grafana/dashboards/task-overview-{nvidia,hygon}.yaml`，便于审阅/导入已接入相同标签的数据源；自动启动只挂载按现场配置生成的一个 task-overview.json。可选 IB 面板仍独立保留。仅更改预生成快照不会改变启动器生成逻辑，修改生成器后用下列命令同步快照：
+通用生成逻辑位于 `scripts/observability_labels.py`、`scripts/task_dashboard.py` 和 `scripts/benchmark_stack.py`。预生成 YAML 在 `configs/common/grafana/dashboards/task-overview-{nvidia,hygon}.yaml`，便于审阅；自动启动将面板渲染为 Grafana 所需的一个 task-overview.json。可选 IB 面板仍独立保留。仅更改预生成快照不会改变启动器生成逻辑，修改生成器后用下列命令同步 YAML 快照：
 
 ```bash
 python3 scripts/task_dashboard.py --output-dir configs/common/grafana/dashboards

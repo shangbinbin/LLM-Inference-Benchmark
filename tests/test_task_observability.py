@@ -2,6 +2,7 @@ import json
 import yaml
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -86,7 +87,7 @@ class TaskObservabilityTests(unittest.TestCase):
         for vendor in ('nvidia','hygon'):
             dashboard=build_dashboard(vendor,{'task':'a','gpu':{'nvidia_metrics_profile':'basic'}})
             variables={v['name']:v for v in dashboard['templating']['list']}
-            for name,parents in [('gpu_node',['task']),('gpu_model',['task','gpu_node']),
+            for name,parents in [('host',['task']),('net_device',['task','host']),('gpu_node',['task']),('gpu_model',['task','gpu_node']),
                                  ('gpu_index',['task','gpu_node','gpu_model']),('instance_role',['task']),
                                  ('replica',['task','instance_role']),('source_file',['task','instance_role','replica'])]:
                 definition=variables[name]['definition']
@@ -125,6 +126,64 @@ class TaskObservabilityTests(unittest.TestCase):
         for vendor in ('nvidia','hygon'):
             snapshot=yaml.safe_load((ROOT/f'configs/common/grafana/dashboards/task-overview-{vendor}.yaml').read_text())
             self.assertEqual(snapshot,build_dashboard(vendor))
+
+    def test_host_panels_scope_rates_units_and_capacity(self):
+        for vendor in ('nvidia', 'hygon'):
+            dashboard = build_dashboard(vendor, {'host_metrics': 'host'})
+            panels = {p['title']: p for p in dashboard['panels'] if p['type'] != 'row' and p['title'].startswith('主机')}
+            self.assertEqual(len(panels), 15)
+            for panel in panels.values():
+                for target in panel['targets']:
+                    expression = target['expr']
+                    self.assertIn('job="node-exporter"', expression)
+                    self.assertIn('task=~`${task:regex}`', expression)
+                    self.assertIn('instance=~`${host:regex}`', expression)
+                    self.assertNotIn('gpu_node', expression)
+                    self.assertNotIn('or vector(0)', expression)
+                    if '_total{' in expression or 'node_disk_io_time_seconds_total{' in expression:
+                        self.assertIn('rate(', expression)
+                        self.assertIn('[$__rate_interval]', expression)
+            memory = panels['主机内存使用率']['targets'][0]['expr']
+            self.assertIn('node_memory_MemAvailable_bytes', memory)
+            self.assertNotIn('MemFree', memory)
+            self.assertIn(' > 0)', memory)
+            self.assertIn(' > 0)', panels['主机文件系统使用率']['targets'][0]['expr'])
+            for name, unit in [('主机 CPU 使用率', 'percent'), ('主机磁盘读写吞吐', 'Bps'),
+                               ('主机磁盘 IOPS', 'iops'), ('主机网络收发吞吐', 'Bps'),
+                               ('主机文件系统可用空间', 'bytes'), ('主机网络丢包速率', 'pps')]:
+                self.assertEqual(panels[name]['fieldConfig']['defaults']['unit'], unit)
+            health = panels['主机 Exporter 健康']
+            self.assertIn('宿主机 /proc', health['description'])
+            variables = {v['name']: v for v in dashboard['templating']['list']}
+            self.assertIn('up{', variables['host']['definition'])
+            self.assertNotIn('== 1', variables['host']['definition'])
+            self.assertTrue(variables['host']['multi'])
+            self.assertTrue(variables['host']['includeAll'])
+            self.assertIn('device=~`${net_device:regex}`', panels['主机网络收发吞吐']['targets'][0]['expr'])
+            self.assertNotIn('device!~', panels['主机网络收发吞吐']['targets'][0]['expr'])
+            self.assertTrue(variables['net_device']['includeAll'])
+
+    def test_host_panels_describe_container_scope_and_do_not_overlap(self):
+        dashboard = build_dashboard('nvidia', {'simulation': True, 'host_metrics': 'container'})
+        health = next(p for p in dashboard['panels'] if p['title'] == '主机 Exporter 健康')
+        self.assertIn('容器采集视角', health['description'])
+        positions = []
+        for panel in dashboard['panels']:
+            pos = panel['gridPos']
+            self.assertLessEqual(pos['x'] + pos['w'], 24)
+            for old in positions:
+                overlap = (pos['x'] < old['x'] + old['w'] and old['x'] < pos['x'] + pos['w']
+                           and pos['y'] < old['y'] + old['h'] and old['y'] < pos['y'] + pos['h'])
+                self.assertFalse(overlap, panel['title'])
+            positions.append(pos)
+
+    def test_dashboard_cli_generates_yaml_snapshots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run([sys.executable, str(ROOT/'scripts/task_dashboard.py'), '--output-dir', tmp], check=True)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()),
+                             ['task-overview-hygon.yaml', 'task-overview-nvidia.yaml'])
+            for path in Path(tmp).iterdir():
+                self.assertEqual(yaml.safe_load(path.read_text()), build_dashboard(path.stem.split('-')[-1]))
 
     def test_legacy_log_files_and_project_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

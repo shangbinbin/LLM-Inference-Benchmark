@@ -1,13 +1,18 @@
 """Build an offline Grafana task dashboard with exactly one hardware vendor section."""
 import argparse
-import json
 from pathlib import Path
+from config_io import write_yaml
 from gpu_metrics import DEVICE_METRICS, GPU_JOBS
 
 PROM = {'type': 'prometheus', 'uid': '$datasource'}
 LOKI = {'type': 'loki', 'uid': '$loki_datasource'}
 TASK = 'task=~`${task:regex}`'
 GPU = TASK + ',gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`'
+HOST = TASK + ',job="node-exporter",instance=~`${host:regex}`'
+# Retain separate mount/device series: summing stacked devices or interfaces double counts I/O.
+FILESYSTEM = ',fstype!~"tmpfs|devtmpfs|overlay|squashfs|nsfs",mountpoint!~"/(dev|proc|sys|run)($|/.*)"'
+DISK = ',device!~"loop[0-9]+|ram[0-9]+|fd[0-9]+"'
+INTERFACE = ',device=~`${net_device:regex}`'
 # Loki's default formatter escapes multi-select values for a quoted LogQL regex.
 LOG_TASK = 'task=${task:doublequote}'
 LOG = '{' + LOG_TASK + ',instance_role=~"$instance_role",replica=~"$replica",source_file=~"$source_file"} |= ${log_search:doublequote}'
@@ -83,6 +88,54 @@ def build_dashboard(vendor, cfg=None):
     chart('运行实例数', [('UP', 'sum(up{' + TASK + ',job="inference"})')], kind='stat')
     chart('GPU Exporter 健康', [('{{gpu_node}}', 'up{' + TASK + ',gpu_vendor="' + vendor + '",job="' + GPU_JOBS[vendor] + '"}')], kind='stat')
 
+    row('主机资源 · node-exporter（按任务 / 主机采集目标筛选）')
+    def host(name, filters=''):
+        return name + '{' + HOST + filters + '}'
+    def host_rate(name, filters=''):
+        return 'rate(' + host(name, filters) + '[$__rate_interval])'
+    host_legend = '{{instance}}'
+    scope = ('当前挂载宿主机 /proc、/sys 和根目录，展示节点整体资源。' if cfg.get('host_metrics') == 'host'
+             else '当前为容器采集视角；真实 Linux 节点应配置 host_metrics: host 和 node_exporter_target，才能完整观察宿主机文件系统及网络。')
+    chart('主机 Exporter 健康', [(host_legend, host('up'))], kind='stat',
+          description='1 为采集成功，0 为失败；主机下拉保留采集失败的目标。' + scope + '这些指标不代表任务独占资源。')
+    chart('主机 CPU 使用率', [(host_legend, '100 * (1 - avg by (instance) (' + host_rate('node_cpu_seconds_total', ',mode="idle"') + '))')],
+          'percent', '各逻辑 CPU 平均非 idle 时间，包含 iowait；不是推理进程或客户端独占使用率。')
+    chart('主机 CPU I/O 等待', [(host_legend, '100 * avg by (instance) (' + host_rate('node_cpu_seconds_total', ',mode="iowait"') + ')')],
+          'percent', 'CPU 等待 I/O 的时间比例，结合磁盘忙碌率及设备吞吐定位存储瓶颈。')
+    chart('主机系统负载', [(host_legend + ' / ' + window, host('node_load' + window)) for window in ('1', '5', '15')],
+          description='1/5/15 分钟原始 load average，含可运行及不可中断等待任务；不是 CPU 百分比，需结合节点 CPU 核数判断。')
+    memory_total, memory_available = host('node_memory_MemTotal_bytes'), host('node_memory_MemAvailable_bytes')
+    chart('主机内存使用率', [(host_legend, '100 * (1 - ' + memory_available + ' / (' + memory_total + ' > 0))')],
+          'percent', '使用 MemAvailable 而非 MemFree，避免把可回收缓存全部视作已用内存。')
+    chart('主机内存容量', [(host_legend + ' / 已用', memory_total + ' - ' + memory_available),
+                            (host_legend + ' / 可用', memory_available), (host_legend + ' / 总量', memory_total)], 'bytes')
+    chart('主机 Swap 容量', [(host_legend + ' / 已用', host('node_memory_SwapTotal_bytes') + ' - ' + host('node_memory_SwapFree_bytes')),
+                            (host_legend + ' / 总量', host('node_memory_SwapTotal_bytes'))], 'bytes',
+          '未配置 Swap 时为 0；不计算除以零的使用率。')
+    fs_available = host('node_filesystem_avail_bytes', FILESYSTEM)
+    fs_size = host('node_filesystem_size_bytes', FILESYSTEM)
+    fs_legend = host_legend + ' / {{mountpoint}} / {{device}}'
+    chart('主机文件系统使用率', [(fs_legend, '100 * (1 - ' + fs_available + ' / (' + fs_size + ' > 0))')],
+          'percent', '按挂载点展示，使用普通用户可用空间计算；排除常见虚拟文件系统，0 容量不参与计算。' + scope)
+    chart('主机文件系统可用空间', [(fs_legend, fs_available)], 'bytes',
+          '按挂载点保留独立序列，不将同一设备的多个挂载点相加。')
+    disk_legend = host_legend + ' / {{device}}'
+    chart('主机磁盘读写吞吐', [(disk_legend + ' / 读', host_rate('node_disk_read_bytes_total', DISK)),
+                              (disk_legend + ' / 写', host_rate('node_disk_written_bytes_total', DISK))], 'Bps',
+          '按块设备展示字节速率，排除 loop/ram/fd；dm/md 与底层盘可能重复，不跨层求和。')
+    chart('主机磁盘 IOPS', [(disk_legend + ' / 读', host_rate('node_disk_reads_completed_total', DISK)),
+                           (disk_legend + ' / 写', host_rate('node_disk_writes_completed_total', DISK))], 'iops')
+    chart('主机磁盘忙碌率', [(disk_legend, '100 * ' + host_rate('node_disk_io_time_seconds_total', DISK))], 'percent',
+          '设备有 I/O 在执行的时间比例；不代表 NVMe/RAID 的吞吐能力已达上限。')
+    net_legend = host_legend + ' / {{device}}'
+    chart('主机网络收发吞吐', [(net_legend + ' / 收', host_rate('node_network_receive_bytes_total', INTERFACE)),
+                              (net_legend + ' / 发', host_rate('node_network_transmit_bytes_total', INTERFACE))], 'Bps',
+          '按“主机网卡”筛选，保留 lo/网桥/veth 以观察同机容器流量；bond 与成员接口、虚拟与物理接口不求和。' + scope)
+    chart('主机网络错误速率', [(net_legend + ' / 收', host_rate('node_network_receive_errs_total', INTERFACE)),
+                              (net_legend + ' / 发', host_rate('node_network_transmit_errs_total', INTERFACE))], 'ops')
+    chart('主机网络丢包速率', [(net_legend + ' / 收', host_rate('node_network_receive_drop_total', INTERFACE)),
+                              (net_legend + ' / 发', host_rate('node_network_transmit_drop_total', INTERFACE))], 'pps')
+
     row('vLLM 核心性能（只按任务筛选）')
     chart('vLLM 成功请求完成速率', [('请求/s', rate('vllm:request_success_total'))], 'reqps', '不包含被网关提前拒绝的请求；不是压测发送 QPS。')
     chart('vLLM Token 吞吐', [('输入 Token/s', rate('vllm:prompt_tokens_total')), ('输出 Token/s', rate('vllm:generation_tokens_total'))])
@@ -155,6 +208,8 @@ def build_dashboard(vendor, cfg=None):
     ]
     device_metric = DEVICE_METRICS[vendor]
     variables += [
+        prom_variable('host','主机采集目标', 'up{'+TASK+',job="node-exporter"}', 'instance'),
+        prom_variable('net_device','主机网卡', 'node_network_receive_bytes_total{'+HOST+'}', 'device'),
         prom_variable('gpu_node','GPU 节点', device_metric+'{'+TASK+'}', 'gpu_node'),
         prom_variable('gpu_model','GPU 型号', device_metric+'{'+TASK+',gpu_node=~`${gpu_node:regex}`}', 'gpu_model'),
         prom_variable('gpu_index','GPU 卡序号', device_metric+'{'+TASK+',gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`}', 'gpu_index'),
@@ -164,8 +219,8 @@ def build_dashboard(vendor, cfg=None):
         {'name':'log_search','label':'日志包含','type':'textbox','query':'','current':{'text':'','value':''}},
     ]
     return {'id':None,'uid':'inference-task-overview','title':'推理任务总览 · '+('NVIDIA' if vendor=='nvidia' else '海光'),
-            'description':'按任务查看 SGLang/vLLM；GPU 类型由启动器选择，按节点/型号/卡序号联动；日志按任务/角色/副本筛选。未暴露的指标显示无数据，不伪造为 0。'+(' 当前为模拟数据。' if cfg.get('simulation') else ''),
-            'tags':['inference','task',vendor],'schemaVersion':39,'version':1,'editable':False,'timezone':'browser',
+            'description':'按任务查看 SGLang/vLLM；node-exporter 按任务/主机采集目标展示整体资源；GPU 类型由启动器选择，按节点/型号/卡序号联动；日志按任务/角色/副本筛选。未暴露的指标显示无数据，不伪造为 0。'+(' 当前为模拟数据。' if cfg.get('simulation') else ''),
+            'tags':['inference','task',vendor],'schemaVersion':39,'version':2,'editable':False,'timezone':'browser',
             'refresh':'5s','time':{'from':'now-30m','to':'now'},'panels':panels,'templating':{'list':variables},'annotations':{'list':[]},'links':[]}
 
 
@@ -175,7 +230,7 @@ def main():
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for vendor in ('nvidia','hygon'):
-        (args.output_dir/('task-overview-'+vendor+'.json')).write_text(json.dumps(build_dashboard(vendor),ensure_ascii=False,indent=2)+'\n')
+        write_yaml(args.output_dir/('task-overview-'+vendor+'.yaml'), build_dashboard(vendor))
 
 
 if __name__ == '__main__':

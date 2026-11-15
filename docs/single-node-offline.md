@@ -82,7 +82,7 @@ llm-bench down --config "$SITE"
 
 `bench run` 只对当前运行栈的 workload 做参数覆盖。若修改 `site.yaml` 的模型、路径、GPU、端口或正式参数，先 `down` 再重新部署；运行中的栈使用启动时保存的配置。测试按顺序执行，勿同时运行不同 workload。默认结果在 `storage.root/data/results/suites/<时间>/`，`suite-results.json` 中每例应为 `passed: true`、`status: complete`，AISBench 汇总的 Failed Requests 应为 0。Grafana 默认 `http://<此机IP>:33000`，初始账号按镜像默认 `admin/admin`，首次登录后修改密码，密码变更保存在持久数据目录。
 
-同机压测会与推理服务共享 CPU、内存和网络资源，正式并发应根据小规模测试逐步提高，同时观察客户端是否成为瓶颈。失败时停止后续档位，用 `llm-bench logs collect --config "$SITE"` 收集诊断包；部署失败也保留栈和日志，先定位再用 `down` 清理后重试。不要直接反复执行部署脚本覆盖活跃栈。
+同机压测会与推理服务共享 CPU、内存和网络资源，正式并发应根据小规模测试逐步提高，同时观察客户端是否成为瓶颈。Grafana 任务总览的 node-exporter 主机资源区域可查看 CPU/I/O 等待、负载、内存、文件系统、磁盘和网络；通过“主机采集目标”筛选，单机模板保持 `host_metrics: host` 才能完整采集宿主机。详细口径见[任务观测说明](task-observability.md#主机资源的筛选与采集口径)。失败时停止后续档位，用 `llm-bench logs collect --config "$SITE"` 收集诊断包；部署失败也保留栈和日志，先定位再用 `down` 清理后重试。不要直接反复执行部署脚本覆盖活跃栈。
 
 ## YAML 迁移说明
 
