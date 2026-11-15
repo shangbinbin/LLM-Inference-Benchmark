@@ -1,13 +1,13 @@
 id: null
 uid: inference-task-overview
 title: 推理任务总览 · NVIDIA
-description: 按任务查看 SGLang/vLLM；node-exporter 按任务/主机采集目标展示整体资源；GPU 类型由启动器选择，按节点/型号/卡序号联动；日志按任务/角色/副本筛选。未暴露的指标显示无数据，不伪造为 0。
+description: 按任务/推理实例查看 SGLang/vLLM 的吞吐、延迟、缓存和调度；主机/GPU/日志独立筛选。版本或功能未暴露的指标显示无数据；HTTP 2xx 不代表流式生成成功。
 tags:
 - inference
 - task
 - nvidia
 schemaVersion: 39
-version: 2
+version: 3
 editable: false
 timezone: browser
 refresh: 5s
@@ -27,14 +27,14 @@ panels:
   panels: []
 - id: 2
   title: 推理实例健康
-  description: 1 为采集正常，0 为失败；任务内各实例独立显示。
+  description: 所选实例的指标抓取状态：1 正常、0 失败；不代表生成请求一定成功。
   type: stat
   datasource: &id001
     type: prometheus
     uid: $datasource
   targets:
   - refId: A
-    expr: up{task=~`${task:regex}`,job="inference"}
+    expr: up{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
     legendFormat: '{{replica}} / {{instance_role}}'
     editorMode: code
     range: true
@@ -58,13 +58,13 @@ panels:
     colorMode: value
     graphMode: area
 - id: 3
-  title: 运行实例数
-  description: ''
+  title: 采集正常的推理实例数
+  description: 所选推理指标端点中抓取正常的数量，不等于进程或 GPU 数。
   type: stat
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(up{task=~`${task:regex}`,job="inference"})
+    expr: sum(up{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
     legendFormat: UP
     editorMode: code
     range: true
@@ -89,7 +89,7 @@ panels:
     graphMode: area
 - id: 4
   title: GPU Exporter 健康
-  description: ''
+  description: GPU/DCU 指标抓取状态：1 正常、0 失败。
   type: stat
   datasource: *id001
   targets:
@@ -288,7 +288,7 @@ panels:
       sort: desc
 - id: 11
   title: 主机内存容量
-  description: ''
+  description: 主机总内存、可用内存及两者之差；已用量排除可回收缓存。
   type: timeseries
   datasource: *id001
   targets:
@@ -459,7 +459,7 @@ panels:
       sort: desc
 - id: 16
   title: 主机磁盘 IOPS
-  description: ''
+  description: 各块设备每秒完成的读写操作数；与吞吐、忙碌率一起判断 I/O 压力。
   type: timeseries
   datasource: *id001
   targets:
@@ -558,7 +558,7 @@ panels:
       sort: desc
 - id: 19
   title: 主机网络错误速率
-  description: ''
+  description: 各网卡每秒接收/发送错误数；升高时核查网卡、驱动和链路。
   type: timeseries
   datasource: *id001
   targets:
@@ -593,7 +593,7 @@ panels:
       sort: desc
 - id: 20
   title: 主机网络丢包速率
-  description: ''
+  description: 各网卡每秒接收/发送丢包数；结合错误、吞吐及队列排查网络压力。
   type: timeseries
   datasource: *id001
   targets:
@@ -628,7 +628,7 @@ panels:
       sort: desc
 - id: 21
   type: row
-  title: vLLM 核心性能（只按任务筛选）
+  title: vLLM 核心性能 · 任务 / 推理实例
   collapsed: false
   gridPos:
     x: 0
@@ -637,14 +637,14 @@ panels:
     h: 1
   panels: []
 - id: 22
-  title: vLLM 成功请求完成速率
-  description: 不包含被网关提前拒绝的请求；不是压测发送 QPS。
+  title: vLLM 请求结束速率
+  description: 每秒结束的请求数，按 stop/length/abort 等实际原因分组；不是发送 QPS 或 HTTP 成功率。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(rate(vllm:request_success_total{task=~`${task:regex}`}[$__rate_interval]))
-    legendFormat: 请求/s
+    expr: sum by (finished_reason)(rate(vllm:request_success_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: '{{finished_reason}}'
     editorMode: code
     range: true
     datasource: *id001
@@ -667,18 +667,18 @@ panels:
       sort: desc
 - id: 23
   title: vLLM Token 吞吐
-  description: ''
+  description: 每秒处理的输入和生成 Token 数；观察吞吐是否随并发增长或进入平台期。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(rate(vllm:prompt_tokens_total{task=~`${task:regex}`}[$__rate_interval]))
+    expr: sum(rate(vllm:prompt_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
     legendFormat: 输入 Token/s
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: sum(rate(vllm:generation_tokens_total{task=~`${task:regex}`}[$__rate_interval]))
+    expr: sum(rate(vllm:generation_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
     legendFormat: 输出 Token/s
     editorMode: code
     range: true
@@ -690,7 +690,7 @@ panels:
     h: 7
   fieldConfig:
     defaults:
-      unit: short
+      unit: suffix:Token/s
       min: 0
     overrides: []
   options:
@@ -702,18 +702,18 @@ panels:
       sort: desc
 - id: 24
   title: vLLM 运行/排队请求
-  description: ''
+  description: 正在执行和等待调度的请求总数；持续排队说明到达负载超过当前处理能力。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(vllm:num_requests_running{task=~`${task:regex}`})
+    expr: sum(vllm:num_requests_running{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
     legendFormat: 运行
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: sum(vllm:num_requests_waiting{task=~`${task:regex}`})
+    expr: sum(vllm:num_requests_waiting{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
     legendFormat: 排队
     editorMode: code
     range: true
@@ -737,25 +737,39 @@ panels:
       sort: desc
 - id: 25
   title: vLLM TTFT
-  description: ''
+  description: 服务端首 Token 延迟，含排队和 Prefill；展示 P50/P95/P99 及样本加权平均。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P50
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P95
     editorMode: code
     range: true
     datasource: *id001
   - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:time_to_first_token_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -778,25 +792,39 @@ panels:
       sort: desc
 - id: 26
   title: vLLM 端到端延迟
-  description: ''
+  description: 服务端从接收到完成请求的耗时；不包含完整客户端网络路径。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P50
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P95
     editorMode: code
     range: true
     datasource: *id001
   - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:e2e_request_latency_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -819,13 +847,13 @@ panels:
       sort: desc
 - id: 27
   title: vLLM KV Cache 使用率
-  description: ''
+  description: 各实例/引擎的 KV 缓存块占用比例，1=100%；接近满载并伴随抢占时关注缓存容量。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: max(vllm:kv_cache_usage_perc{task=~`${task:regex}`} or vllm:gpu_cache_usage_perc{task=~`${task:regex}`})
-    legendFormat: 最大实例
+    expr: vllm:kv_cache_usage_perc{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`} or vllm:gpu_cache_usage_perc{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
+    legendFormat: '{{instance}} / {{model_name}} / 引擎{{engine}}'
     editorMode: code
     range: true
     datasource: *id001
@@ -847,20 +875,40 @@ panels:
       mode: multi
       sort: desc
 - id: 28
-  title: vLLM 每 Token 延迟（版本相关）
-  description: 分别查询两种名称，不相加；精确语义以实际 vLLM 版本为准。
+  title: vLLM 输出间隔 ITL
+  description: 相邻服务端输出事件的间隔；一次输出可能包含多个 Token，不等于请求级 TPOT。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: histogram_quantile(0.95, sum by (le) (rate(vllm:inter_token_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: ITL P95
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(vllm:time_per_output_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: TPOT/旧版间隔 P95
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:inter_token_latency_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -883,25 +931,39 @@ panels:
       sort: desc
 - id: 29
   title: vLLM 排队时间
-  description: ''
+  description: 请求处于等待调度阶段的累计时间；用于区分排队与执行耗时。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P50
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P95
     editorMode: code
     range: true
     datasource: *id001
   - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
     legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_queue_time_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -924,13 +986,13 @@ panels:
       sort: desc
 - id: 30
   title: vLLM 抢占速率
-  description: ''
+  description: 各实例每秒抢占次数；升高时结合 KV 占用和长请求排查重计算开销。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(rate(vllm:num_preemptions_total{task=~`${task:regex}`}[$__rate_interval]))
-    legendFormat: 抢占/s
+    expr: sum by (instance)(rate(vllm:num_preemptions_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: '{{instance}}'
     editorMode: code
     range: true
     datasource: *id001
@@ -953,7 +1015,7 @@ panels:
       sort: desc
 - id: 31
   type: row
-  title: SGLang 核心性能（只按任务筛选）
+  title: vLLM 执行与负载诊断 · 任务 / 推理实例
   collapsed: false
   gridPos:
     x: 0
@@ -962,20 +1024,40 @@ panels:
     h: 1
   panels: []
 - id: 32
-  title: SGLang 运行/排队请求
-  description: ''
+  title: vLLM 请求级 TPOT
+  description: 每请求首 Token 后的平均输出 Token 耗时；与 ITL 分开统计，短输出口径随版本变化。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(sglang:num_running_reqs{task=~`${task:regex}`})
-    legendFormat: 运行
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_time_per_output_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_time_per_output_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: sum(sglang:num_queue_reqs{task=~`${task:regex}`})
-    legendFormat: 排队
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_time_per_output_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_time_per_output_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_time_per_output_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_time_per_output_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_time_per_output_token_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_time_per_output_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -986,7 +1068,7 @@ panels:
     h: 7
   fieldConfig:
     defaults:
-      unit: short
+      unit: s
       min: 0
     overrides: []
   options:
@@ -997,14 +1079,40 @@ panels:
       mode: multi
       sort: desc
 - id: 33
-  title: SGLang 输出 Token 吞吐
-  description: ''
+  title: vLLM Prefill 耗时
+  description: 每请求 Prefill 阶段墙钟耗时；长输入或缓存未命中时通常升高，不是纯 GPU 内核时间。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sum(sglang:gen_throughput{task=~`${task:regex}`})
-    legendFormat: Token/s
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_prefill_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prefill_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_prefill_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prefill_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_prefill_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prefill_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_prefill_time_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_prefill_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
@@ -1015,7 +1123,7 @@ panels:
     h: 7
   fieldConfig:
     defaults:
-      unit: short
+      unit: s
       min: 0
     overrides: []
   options:
@@ -1026,20 +1134,280 @@ panels:
       mode: multi
       sort: desc
 - id: 34
-  title: SGLang 缓存命中率（实例）
-  description: 保留原始值，按实际部署版本核对比率单位；不跨实例简单平均。
+  title: vLLM Decode 耗时
+  description: 每请求 Decode 阶段总耗时；受输出长度和调度影响，需与 TPOT 一起看。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: sglang:cache_hit_rate{task=~`${task:regex}`}
-    legendFormat: '{{instance}}'
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_decode_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_decode_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_decode_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_decode_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_decode_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_decode_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_decode_time_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_decode_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
   gridPos:
     x: 16
     y: 67
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 35
+  title: vLLM 输入 Token 分布
+  description: 完成请求的实际输入长度分布；用于核对 workload 和长输入尾部。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_prompt_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prompt_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_prompt_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prompt_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_prompt_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_prompt_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_prompt_tokens_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_prompt_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 74
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 36
+  title: vLLM 输出 Token 分布
+  description: 完成请求的实际生成长度分布；核对是否因 EOS 或长度限制提前结束。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_generation_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_generation_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_generation_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_generation_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_generation_tokens_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_generation_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_generation_tokens_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_generation_tokens_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 74
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 37
+  title: vLLM 前缀缓存命中率
+  description: 窗口内命中 Token / 查询 Token，加权合并实例；不是请求命中率，无查询时无数据。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum(rate(vllm:prefix_cache_hits_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:prefix_cache_queries_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: Token 命中率
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 74
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percentunit
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 38
+  title: vLLM 实例结束速率
+  description: 分别比较各实例每秒结束请求数，定位负载不均；包含该计数器记录的结束原因。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (instance)(rate(vllm:request_success_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 81
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: reqps
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 39
+  title: vLLM 实例输出吞吐
+  description: 分别比较各实例输出 Token/s，避免总吞吐掩盖慢副本。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (instance)(rate(vllm:generation_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 81
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token/s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 40
+  title: vLLM 实例运行/排队
+  description: 各实例当前运行和等待请求数；识别单个副本排队或路由倾斜。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (instance)(vllm:num_requests_running{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: '{{instance}} / 运行'
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: sum by (instance)(vllm:num_requests_waiting{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: '{{instance}} / 排队'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 81
     w: 8
     h: 7
   fieldConfig:
@@ -1054,220 +1422,28 @@ panels:
     tooltip:
       mode: multi
       sort: desc
-- id: 35
-  title: SGLang TTFT
-  description: ''
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P50
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P95
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P99
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 0
-    y: 74
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: s
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
-- id: 36
-  title: SGLang 端到端延迟
-  description: ''
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P50
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P95
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P99
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 8
-    y: 74
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: s
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
-- id: 37
-  title: SGLang 每 Token 延迟（版本相关）
-  description: 旧版本未暴露此指标时无数据；不会伪造为 0。
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: histogram_quantile(0.5, sum by (le) (rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P50
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: B
-    expr: histogram_quantile(0.95, sum by (le) (rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P95
-    editorMode: code
-    range: true
-    datasource: *id001
-  - refId: C
-    expr: histogram_quantile(0.99, sum by (le) (rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`}[$__rate_interval])))
-    legendFormat: P99
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 16
-    y: 74
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: s
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
-- id: 38
-  type: row
-  title: NVIDIA GPU · 任务 → 节点 → 型号 → 卡序号
-  collapsed: false
-  gridPos:
-    x: 0
-    y: 81
-    w: 24
-    h: 1
-  panels: []
-- id: 39
-  title: GPU 利用率
-  description: ''
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: DCGM_FI_DEV_GPU_UTIL{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 0
-    y: 82
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: percent
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
-- id: 40
-  title: GPU 显存占用
-  description: ''
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: 100 * DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-      / (DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-      + DCGM_FI_DEV_FB_FREE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 8
-    y: 82
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: percent
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
 - id: 41
-  title: GPU 已用显存
-  description: ''
+  title: vLLM 实例 TTFT P99
+  description: 各实例首 Token 延迟 P99；不对实例分位数求平均。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-      * 1048576
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    expr: histogram_quantile(0.99, sum by (instance,le)(rate(vllm:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum by (instance)(rate(vllm:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: '{{instance}} / P99'
     editorMode: code
     range: true
     datasource: *id001
   gridPos:
-    x: 16
-    y: 82
+    x: 0
+    y: 88
     w: 8
     h: 7
   fieldConfig:
     defaults:
-      unit: bytes
+      unit: s
       min: 0
     overrides: []
   options:
@@ -1278,25 +1454,51 @@ panels:
       mode: multi
       sort: desc
 - id: 42
-  title: GPU 功率
-  description: ''
+  title: vLLM 请求执行时间
+  description: 请求处于执行阶段的墙钟时间，含 Prefill/Decode；不是 CPU/GPU 纯计算时间。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: DCGM_FI_DEV_POWER_USAGE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:request_inference_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_inference_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:request_inference_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_inference_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:request_inference_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:request_inference_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:request_inference_time_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:request_inference_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
   gridPos:
-    x: 0
-    y: 89
+    x: 8
+    y: 88
     w: 8
     h: 7
   fieldConfig:
     defaults:
-      unit: watt
+      unit: s
       min: 0
     overrides: []
   options:
@@ -1307,25 +1509,51 @@ panels:
       mode: multi
       sort: desc
 - id: 43
-  title: GPU 温度
-  description: ''
+  title: vLLM 每轮调度 Token 分布
+  description: 每次引擎迭代处理的 Token 数，混合输入和输出；不是请求 batch 大小。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: DCGM_FI_DEV_GPU_TEMP{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    expr: histogram_quantile(0.5, sum by (le)(rate(vllm:iteration_tokens_total_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:iteration_tokens_total_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(vllm:iteration_tokens_total_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:iteration_tokens_total_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(vllm:iteration_tokens_total_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(vllm:iteration_tokens_total_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(vllm:iteration_tokens_total_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(vllm:iteration_tokens_total_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
     editorMode: code
     range: true
     datasource: *id001
   gridPos:
-    x: 8
-    y: 89
+    x: 16
+    y: 88
     w: 8
     h: 7
   fieldConfig:
     defaults:
-      unit: celsius
+      unit: suffix:Token
       min: 0
     overrides: []
   options:
@@ -1336,49 +1564,30 @@ panels:
       mode: multi
       sort: desc
 - id: 44
-  title: GPU 时钟
-  description: ''
+  type: row
+  title: SGLang 核心性能 · 任务 / 推理实例
+  collapsed: false
+  gridPos:
+    x: 0
+    y: 95
+    w: 24
+    h: 1
+  panels: []
+- id: 45
+  title: SGLang 运行/排队请求
+  description: 当前运行和等待调度的请求总数；持续排队时结合缓存和延迟定位容量限制。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: DCGM_FI_DEV_SM_CLOCK{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: SM {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}
+    expr: sum(sglang:num_running_reqs{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: 运行
     editorMode: code
     range: true
     datasource: *id001
   - refId: B
-    expr: DCGM_FI_DEV_MEM_CLOCK{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: 显存 {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}
-    editorMode: code
-    range: true
-    datasource: *id001
-  gridPos:
-    x: 16
-    y: 89
-    w: 8
-    h: 7
-  fieldConfig:
-    defaults:
-      unit: suffix:MHz
-      min: 0
-    overrides: []
-  options:
-    legend:
-      displayMode: list
-      placement: bottom
-    tooltip:
-      mode: multi
-      sort: desc
-- id: 45
-  title: 最近 XID 错误代码
-  description: 这是错误代码，不是错误计数；0 表示当前没有上报 XID。
-  type: timeseries
-  datasource: *id001
-  targets:
-  - refId: A
-    expr: DCGM_FI_DEV_XID_ERRORS{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    expr: sum(sglang:num_queue_reqs{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: 排队
     editorMode: code
     range: true
     datasource: *id001
@@ -1400,21 +1609,981 @@ panels:
       mode: multi
       sort: desc
 - id: 46
-  title: GPU 空闲显存
-  description: ''
+  title: SGLang 输出 Token 吞吐
+  description: 调度器上报的输出 Token/s；不同于按完成请求计数器计算的吞吐窗口。
   type: timeseries
   datasource: *id001
   targets:
   - refId: A
-    expr: DCGM_FI_DEV_FB_FREE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
-      * 1048576
-    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    expr: sum(sglang:gen_throughput{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: Token/s
     editorMode: code
     range: true
     datasource: *id001
   gridPos:
     x: 8
     y: 96
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token/s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 47
+  title: SGLang 缓存命中率（实例）
+  description: 各调度器上报的前缀缓存命中比例，1=100%；不跨实例简单平均。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sglang:cache_hit_rate{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 96
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percentunit
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 48
+  title: SGLang TTFT
+  description: 服务端首 Token 延迟，含排队和 Prefill；流式/非流式终点定义依服务版本。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:time_to_first_token_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 103
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 49
+  title: SGLang 端到端延迟
+  description: 服务端从接收到完成请求的耗时；用于结合排队时间判断执行开销。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:e2e_request_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:e2e_request_latency_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:e2e_request_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 103
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 50
+  title: SGLang 每 Token 延迟
+  description: 服务端输出间隔按新增 Token 数折算的延迟分布；多 Token 输出时不同于原始事件间隔。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:inter_token_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:inter_token_latency_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:inter_token_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 103
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 51
+  title: SGLang 请求完成速率
+  description: 每秒正常走完完成统计的请求数；中止另计，不代表入口请求总量。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum(rate(sglang:num_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: 请求/s
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 110
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: reqps
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 52
+  title: SGLang 请求中止速率
+  description: 每秒中止请求数，可能含客户端取消或服务异常；需结合错误日志判断原因。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum(rate(sglang:num_aborted_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: 中止/s
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 110
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: reqps
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 53
+  title: SGLang 完成请求 Token 吞吐
+  description: 完成请求累计 Token 的每秒速率；长请求完成时可能突增，不等于逐 Decode 步瞬时吞吐。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum(rate(sglang:prompt_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: 输入 Token/s
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: sum(rate(sglang:generation_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: 输出 Token/s
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 110
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token/s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 54
+  type: row
+  title: SGLang 缓存、调度与负载诊断 · 任务 / 推理实例
+  collapsed: false
+  gridPos:
+    x: 0
+    y: 117
+    w: 24
+    h: 1
+  panels: []
+- id: 55
+  title: SGLang KV Token 容量使用率
+  description: 各调度器 KV Token 池使用比例，1=100%；不是整卡显存使用率。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sglang:token_usage{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 118
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percentunit
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 56
+  title: SGLang 已用 KV Token 数
+  description: 当前 KV Token 池已用 Token 数；与容量使用率一起观察长上下文压力。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sglang:num_used_tokens{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 118
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 57
+  title: SGLang 排队时间
+  description: 调度器记录的等待队列耗时；PD 的其他队列需结合分阶段指标查看。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:queue_time_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:queue_time_seconds_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:queue_time_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 118
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 58
+  title: SGLang 分阶段耗时 P95
+  description: 按实例和原始 stage 分别展示请求阶段耗时 P95；不混合不同阶段，也不等同纯 GPU 耗时。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.95, sum by (instance,stage,le)(rate(sglang:per_stage_req_latency_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum by (instance,stage)(rate(sglang:per_stage_req_latency_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: '{{instance}} / {{stage}} / P95'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 125
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 59
+  title: SGLang 周期重调度请求
+  description: 最近调度统计周期的回退/重调度请求数；是采样 Gauge，非累计计数或当前队列长度，不能求 rate。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sglang:num_retracted_reqs{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 125
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: short
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 60
+  title: SGLang 每请求重调度次数
+  description: 已完成请求的重调度次数分布；用于观察缓存压力带来的重复执行。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:num_retractions_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:num_retractions_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:num_retractions_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:num_retractions_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:num_retractions_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:num_retractions_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:num_retractions_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:num_retractions_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 125
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: short
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 61
+  title: SGLang 输入 Token 分布
+  description: 完成请求的实际输入长度分布；需在服务端启用 --collect-tokens-histogram。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:prompt_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:prompt_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:prompt_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:prompt_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:prompt_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:prompt_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:prompt_tokens_histogram_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:prompt_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 132
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 62
+  title: SGLang 输出 Token 分布
+  description: 完成请求的实际生成长度分布；需在服务端启用 --collect-tokens-histogram。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.5, sum by (le)(rate(sglang:generation_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:generation_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P50
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: histogram_quantile(0.95, sum by (le)(rate(sglang:generation_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:generation_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P95
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: C
+    expr: histogram_quantile(0.99, sum by (le)(rate(sglang:generation_tokens_histogram_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum(rate(sglang:generation_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: P99
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: D
+    expr: sum(rate(sglang:generation_tokens_histogram_sum{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:generation_tokens_histogram_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: 平均
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 132
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 63
+  title: SGLang 完成请求缓存命中率
+  description: 完成请求缓存 Token / 输入 Token，按 Token 加权；尚未创建命中序列时无数据，可对照调度器命中率。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum(rate(sglang:cached_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      / (sum(rate(sglang:prompt_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: Token 命中率
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 132
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percentunit
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 64
+  title: SGLang 实例输出吞吐
+  description: 分别比较各实例完成请求的输出 Token/s；长请求完成时计数可能成批更新。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (instance)(rate(sglang:generation_tokens_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+    legendFormat: '{{instance}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 139
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:Token/s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 65
+  title: SGLang 实例运行/排队
+  description: 各实例当前运行和排队请求数；用于发现路由倾斜或慢副本。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (instance)(sglang:num_running_reqs{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: '{{instance}} / 运行'
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: sum by (instance)(sglang:num_queue_reqs{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`})
+    legendFormat: '{{instance}} / 排队'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 139
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: short
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 66
+  title: SGLang 实例 TTFT P99
+  description: 各实例首 Token 延迟 P99；避免总体分位数掩盖单实例瓶颈。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: histogram_quantile(0.99, sum by (instance,le)(rate(sglang:time_to_first_token_seconds_bucket{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval])))
+      and (sum by (instance)(rate(sglang:time_to_first_token_seconds_count{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`}[$__rate_interval]))
+      > 0)
+    legendFormat: '{{instance}} / P99'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 139
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: s
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 67
+  type: row
+  title: HTTP 生成接口（需暴露 http_requests_total）
+  collapsed: false
+  gridPos:
+    x: 0
+    y: 146
+    w: 24
+    h: 1
+  panels: []
+- id: 68
+  title: HTTP 生成接口响应速率
+  description: 生成接口完成响应的每秒速率，按 HTTP 状态分组；流式 2xx 不保证后续生成成功。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (status)(rate(http_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`,method="POST",handler=~".*/v1/(chat/completions|completions)"}[$__rate_interval]))
+    legendFormat: '{{status}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 147
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: reqps
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 69
+  title: HTTP 4xx/5xx 速率
+  description: 每秒客户端/服务端错误响应数；不包含已返回 2xx 后发生的流式错误。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: sum by (status)(rate(http_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`,method="POST",handler=~".*/v1/(chat/completions|completions)",status=~"4..|5.."}[$__rate_interval]))
+    legendFormat: '{{status}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 147
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: reqps
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 70
+  title: HTTP 4xx/5xx 比例
+  description: 窗口内 4xx/5xx 占生成接口响应的比例；只在观测到响应时补零，无接口指标或无流量时无数据。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: (sum(rate(http_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`,method="POST",handler=~".*/v1/(chat/completions|completions)",status=~"4..|5.."}[$__rate_interval]))
+      or (0 * sum(rate(http_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`,method="POST",handler=~".*/v1/(chat/completions|completions)"}[$__rate_interval]))))
+      / (sum(rate(http_requests_total{task=~`${task:regex}`,job="inference",instance=~`${inference_instance:regex}`,method="POST",handler=~".*/v1/(chat/completions|completions)"}[$__rate_interval]))
+      > 0)
+    legendFormat: 错误响应比例
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 147
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percentunit
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 71
+  type: row
+  title: NVIDIA GPU · 任务 → 节点 → 型号 → 卡序号
+  collapsed: false
+  gridPos:
+    x: 0
+    y: 154
+    w: 24
+    h: 1
+  panels: []
+- id: 72
+  title: GPU 利用率
+  description: 整卡 GPU 活动时间比例；高值不等于 Tensor 算力或显存带宽已饱和。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_GPU_UTIL{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 155
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percent
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 73
+  title: GPU 显存占用
+  description: 整卡已用显存比例，含权重、KV 和运行开销；不等同 KV Cache 使用率。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: 100 * DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+      / (DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+      + DCGM_FI_DEV_FB_FREE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`})
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 155
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: percent
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 74
+  title: GPU 已用显存
+  description: 各卡已用显存字节数，包含同卡其他进程。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_FB_USED{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+      * 1048576
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 155
     w: 8
     h: 7
   fieldConfig:
@@ -1429,9 +2598,161 @@ panels:
     tooltip:
       mode: multi
       sort: desc
-- id: 47
+- id: 75
+  title: GPU 功率
+  description: 各卡当前功耗；结合温度、时钟和利用率观察功耗限制。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_POWER_USAGE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 162
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: watt
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 76
+  title: GPU 温度
+  description: 各卡 GPU 温度；高温伴随时钟下降时核查散热和降频。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_GPU_TEMP{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 162
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: celsius
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 77
+  title: GPU 时钟
+  description: 各卡 SM 与显存频率；与功耗、温度一起观察降频。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_SM_CLOCK{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: SM {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}
+    editorMode: code
+    range: true
+    datasource: *id001
+  - refId: B
+    expr: DCGM_FI_DEV_MEM_CLOCK{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: 显存 {{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 16
+    y: 162
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: suffix:MHz
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 78
+  title: 最近 XID 错误代码
+  description: 这是错误代码，不是错误计数；0 表示当前没有上报 XID。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_XID_ERRORS{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 0
+    y: 169
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: short
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 79
+  title: GPU 空闲显存
+  description: 各卡当前空闲显存；关注是否有扩展 KV 或并发的空间。
+  type: timeseries
+  datasource: *id001
+  targets:
+  - refId: A
+    expr: DCGM_FI_DEV_FB_FREE{task=~`${task:regex}`,gpu_node=~`${gpu_node:regex}`,gpu_model=~`${gpu_model:regex}`,gpu_index=~`${gpu_index:regex}`}
+      * 1048576
+    legendFormat: '{{gpu_node}} / {{gpu_model}} / 卡{{gpu_index}}'
+    editorMode: code
+    range: true
+    datasource: *id001
+  gridPos:
+    x: 8
+    y: 169
+    w: 8
+    h: 7
+  fieldConfig:
+    defaults:
+      unit: bytes
+      min: 0
+    overrides: []
+  options:
+    legend:
+      displayMode: list
+      placement: bottom
+    tooltip:
+      mode: multi
+      sort: desc
+- id: 80
   title: 可见 GPU 卡数
-  description: ''
+  description: 当前筛选下采集到利用率指标的 GPU 序列数；不是配置文件声明的卡数。
   type: stat
   datasource: *id001
   targets:
@@ -1443,7 +2764,7 @@ panels:
     datasource: *id001
   gridPos:
     x: 16
-    y: 96
+    y: 169
     w: 8
     h: 7
   fieldConfig:
@@ -1459,17 +2780,17 @@ panels:
       values: false
     colorMode: value
     graphMode: area
-- id: 48
+- id: 81
   type: row
   title: 推理实例日志 · 任务 → 角色 → 副本
   collapsed: false
   gridPos:
     x: 0
-    y: 103
+    y: 176
     w: 24
     h: 1
   panels: []
-- id: 49
+- id: 82
   title: Logs Volume
   description: 每个时间窗的日志条数；无级别信息归 unknown，图例求和不代替精确全时段日志计数。
   type: timeseries
@@ -1488,7 +2809,7 @@ panels:
     queryType: range
   gridPos:
     x: 0
-    y: 104
+    y: 177
     w: 24
     h: 6
   fieldConfig:
@@ -1559,7 +2880,7 @@ panels:
       mode: multi
       sort: desc
   interval: 5s
-- id: 50
+- id: 83
   title: 推理日志（每 5 秒自动刷新）
   description: Dashboard 是轮询刷新；需要真正的 Live 流式跟踪时，在 Explore 选 Benchmark Loki 使用同一查询并点击 Live。
   type: logs
@@ -1575,7 +2896,7 @@ panels:
     maxLines: 1000
   gridPos:
     x: 0
-    y: 110
+    y: 183
     w: 24
     h: 12
   fieldConfig:
@@ -1625,6 +2946,22 @@ templating:
     includeAll: false
     allValue: null
     current: {}
+  - name: inference_instance
+    label: 推理实例
+    type: query
+    datasource: *id001
+    definition: label_values(up{task=~`${task:regex}`,job="inference"}, instance)
+    query:
+      query: label_values(up{task=~`${task:regex}`,job="inference"}, instance)
+      refId: StandardVariableQuery
+    refresh: 1
+    sort: 1
+    multi: true
+    includeAll: true
+    allValue: .*
+    current:
+      text: All
+      value: $__all
   - name: host
     label: 主机采集目标
     type: query

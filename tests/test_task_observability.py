@@ -87,7 +87,7 @@ class TaskObservabilityTests(unittest.TestCase):
         for vendor in ('nvidia','hygon'):
             dashboard=build_dashboard(vendor,{'task':'a','gpu':{'nvidia_metrics_profile':'basic'}})
             variables={v['name']:v for v in dashboard['templating']['list']}
-            for name,parents in [('host',['task']),('net_device',['task','host']),('gpu_node',['task']),('gpu_model',['task','gpu_node']),
+            for name,parents in [('inference_instance',['task']),('host',['task']),('net_device',['task','host']),('gpu_node',['task']),('gpu_model',['task','gpu_node']),
                                  ('gpu_index',['task','gpu_node','gpu_model']),('instance_role',['task']),
                                  ('replica',['task','instance_role']),('source_file',['task','instance_role','replica'])]:
                 definition=variables[name]['definition']
@@ -184,6 +184,50 @@ class TaskObservabilityTests(unittest.TestCase):
                              ['task-overview-hygon.yaml', 'task-overview-nvidia.yaml'])
             for path in Path(tmp).iterdir():
                 self.assertEqual(yaml.safe_load(path.read_text()), build_dashboard(path.stem.split('-')[-1]))
+
+    def test_every_panel_explains_its_metric_and_inference_queries_are_scoped(self):
+        for vendor in ('nvidia', 'hygon'):
+            for kind in ('single', 'pd'):
+                dashboard = build_dashboard(vendor, {'topology': {'kind': kind}, 'gpu': {'nvidia_metrics_profile': 'full'}})
+                for panel in dashboard['panels']:
+                    if panel['type'] == 'row':
+                        continue
+                    self.assertTrue(panel['description'].strip(), panel['title'])
+                    self.assertLessEqual(len(panel['description']), 160, panel['title'])
+                    if panel['title'].startswith(('vLLM', 'SGLang', 'HTTP')):
+                        for target in panel['targets']:
+                            expression = target['expr']
+                            self.assertIn('job="inference"', expression)
+                            self.assertIn('instance=~`${inference_instance:regex}`', expression)
+                            self.assertNotIn('gpu_node', expression)
+                            self.assertNotIn('or vector(0)', expression)
+
+    def test_latency_and_gauge_semantics_are_distinct(self):
+        panels = {p['title']: p for p in build_dashboard('nvidia')['panels']}
+        tpot = json.dumps(panels['vLLM 请求级 TPOT']['targets'])
+        self.assertIn('vllm:request_time_per_output_token_seconds', tpot)
+        self.assertNotIn('vllm:inter_token_latency_seconds', tpot)
+        itl = json.dumps(panels['vLLM 输出间隔 ITL']['targets'])
+        self.assertIn('vllm:inter_token_latency_seconds', itl)
+        self.assertNotIn('vllm:request_time_per_output_token_seconds', itl)
+        retract = panels['SGLang 周期重调度请求']['targets'][0]['expr']
+        self.assertIn('sglang:num_retracted_reqs', retract)
+        self.assertNotIn('rate(', retract)
+        self.assertNotIn('rate(', panels['SGLang KV Token 容量使用率']['targets'][0]['expr'])
+        self.assertIn('sum by (instance,stage,le)', panels['SGLang 分阶段耗时 P95']['targets'][0]['expr'])
+
+    def test_pd_diagnostics_only_appear_for_pd_topology(self):
+        for vendor in ('nvidia', 'hygon'):
+            ordinary = build_dashboard(vendor)
+            self.assertFalse(any(p['title'].startswith('SGLang PD') for p in ordinary['panels']))
+            pd = build_dashboard(vendor, {'topology': {'kind': 'pd'}})
+            for title in ('SGLang PD 队列', 'SGLang PD KV 传输耗时', 'SGLang PD KV 传输速率', 'SGLang PD 失败速率'):
+                self.assertTrue(any(p['title'] == title for p in pd['panels']))
+            positions = [p['gridPos'] for p in pd['panels']]
+            for index, pos in enumerate(positions):
+                for old in positions[:index]:
+                    self.assertFalse(pos['x'] < old['x'] + old['w'] and old['x'] < pos['x'] + pos['w']
+                                     and pos['y'] < old['y'] + old['h'] and old['y'] < pos['y'] + pos['h'])
 
     def test_legacy_log_files_and_project_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

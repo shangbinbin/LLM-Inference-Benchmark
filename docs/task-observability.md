@@ -8,7 +8,7 @@
 
 | 数据 | 主筛选链 | 配置来源 |
 | --- | --- | --- |
-| 推理服务性能 | `task` | 顶层 `task`，省略时使用 `project` |
+| 推理服务性能 / HTTP | `task` → `inference_instance` | 顶层 `task`、指标端点的 `instance`；省略 task 时使用 project |
 | 主机资源 / 网卡 | `task` → `host` → `net_device`（仅网络面板） | node-exporter 的 `instance` / `device` 标签 |
 | GPU 监控 | `task` → `gpu_node` → `gpu_model` → `gpu_index` | 同一任务、`gpu.nodes[].name`、型号、Exporter 原生卡序号 |
 | Loki 日志 / Logs Volume | `task` → `instance_role` → `replica` → `source_file` | 同一任务、`log_sources[].role` / `.replica` / `.path` |
@@ -17,7 +17,7 @@
 
 旧标签 `deployment=project`、`environment=project` 保留。推理指标和日志保留 `role` 别名，GPU 保留 `node` 别名及原生 `gpu`、`modelName`、`minor_number` 等字段。应用抓取 job 统一为 `inference`；旧的 `job="sglang"` 自定义查询应相应修改。`inference_engine` 根据 `vllm:` / `sglang:` 指标名称识别，其他指标使用 `inference.engine` 配置值。
 
-推理性能图只按任务聚合，改变 GPU 或日志筛选不会改变推理性能图。GPU 节点、型号、卡序号和日志角色、副本、文件都支持多选 / All；下级选项依赖上级选项。配置中的标签值为最多 128 字符的非空字符串，不含控制字符、双引号、反斜杠或反引号。不要用请求 ID、时间戳等不断变化的内容作为这些标签。
+推理性能图按任务和“推理实例”筛选；All 汇总所选指标端点，实例对比面板保留各 instance。改变 GPU、主机或日志筛选不会改变推理性能图。推理实例、GPU 节点、型号、卡序号和日志角色、副本、文件都支持多选 / All；下级选项依赖上级选项。配置中的标签值为最多 128 字符的非空字符串，不含控制字符、双引号、反斜杠或反引号。不要用请求 ID、时间戳等不断变化的内容作为这些标签。
 
 ## 日志文件与入库验证
 
@@ -127,11 +127,14 @@ Exporter 有其他字段名时，可在 `gpu` 中配置 `"model_label": "实际�
 ## 预置图表与实时日志
 
 - node-exporter：采集健康、CPU 使用率与 I/O 等待、1/5/15 分钟负载、内存使用率/容量、Swap、文件系统使用率/可用空间、磁盘读写吞吐/IOPS/忙碌率、网络吞吐/错误/丢包速率。NVIDIA 与海光面板均包含这一节。
-- vLLM：请求完成速率、输入/输出 Token 吞吐、运行/排队请求、TTFT、端到端延迟、KV Cache、ITL/TPOT、排队时间、抢占速率。
-- SGLang：运行/排队请求、输出 Token 吞吐、缓存命中率、TTFT、端到端延迟和版本支持的 Token 间延迟。
+- vLLM：21 个面板，覆盖结束原因与速率、Token 吞吐、运行/排队、TTFT/E2E/ITL/请求级 TPOT、Prefill/Decode/执行/排队耗时、KV 占用与前缀命中率、抢占、输入输出/每轮 Token 分布，以及实例吞吐、排队和尾延迟对比。
+- SGLang：21 个面板，覆盖运行/排队、调度器与完成请求吞吐、缓存命中率、TTFT/E2E/每 Token 延迟、完成/中止速率、KV Token 容量、排队与分阶段耗时、重调度、输入输出长度分布和实例对比。`topology.kind: pd` 时额外显示 PD 队列、KV 传输耗时、速率和失败速率共四个面板。
+- HTTP：生成接口按状态分组的响应速率、4xx/5xx 速率与比例；仅在服务暴露 `http_requests_total` 时可用。HTTP 2xx 不保证流式请求最终生成成功。
 - NVIDIA：利用率、已用/空闲显存、显存比例、功率、温度、时钟、XID 及可见卡数。默认 basic 配置避免 profiling 不兼容；显式 full 时增加 profiling 面板，需现场确认支持。
 - 海光 DCU v2.4.1：dcu_utilizationrate（%）、显存已用/容量（bytes）、按已用/容量计算显存比例、dcu_temp（℃）、功耗（W）、PCIe 带宽（MiB/s）、核心时钟（MHz）、CE/UE 原始计数和卡数。名称/单位依据保存的官方 DCU Dashboard；真实版本可用性仍需现场验证。按任务/节点/型号/卡序号对物理卡指标取 max 去除 Pod 元数据副本，不将副本相加或混入 vdcu_*。
 - 日志：Logs Volume 按级别堆叠显示时间窗内条数，未识别级别归 unknown；日志列表和 Volume 共享任务、角色、副本、文件及“日志包含”筛选。
+
+各面板的说明图标提供简短指标释义。指标对应关系、版本要求及瓶颈排查方法见[压测性能诊断](inference-performance.md)。服务未暴露的指标不补成零；延迟分布在窗口无样本时不显示分位数或平均值。
 
 ### 主机资源的筛选与采集口径
 
