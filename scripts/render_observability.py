@@ -146,9 +146,9 @@ def render(environment, output, allow_template=False):
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(network / 'prometheus/alerts.yml', dest)
     write_yaml(output / 'environment.yaml', env)
-    (output / 'README.txt').write_text(
+    (output / '生成说明.txt').write_text(
         ('TEMPLATE PREVIEW ONLY — NOT READY FOR DEPLOYMENT\n' if allow_template else '') +
-        'Generated configuration only; no services deployed. See docs/observability.md.\n')
+        'Generated configuration only; no services deployed. See docs/观测链路使用指南.md.\n')
 
 
 def main():

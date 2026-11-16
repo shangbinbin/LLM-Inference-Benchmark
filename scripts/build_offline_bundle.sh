@@ -123,7 +123,7 @@ cp generated/delivery-smoke/verification.json "$bundle/metadata/online-smoke.jso
 cp "$smoke_config" "$bundle/metadata/online-smoke.yaml"
 bin/llm-bench down --config "$smoke_config"
 smoke_owned=0
-cp docs/single-node-offline.md "$bundle/操作说明.md"
+cp "docs/单机共节点离线部署与分级压测.md" "$bundle/操作说明.md"
 # site.yaml and delivery.yaml are intended to be edited on site; verify every immutable payload.
 (cd "$bundle" && find repo images metadata wheelhouse -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 if [[ -d $bundle/tokenizer ]]; then

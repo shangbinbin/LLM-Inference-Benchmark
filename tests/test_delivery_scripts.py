@@ -139,7 +139,7 @@ sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
             (repo/'scripts').mkdir(exist_ok=True)
             shutil.copyfile(ROOT/'scripts'/name, repo/'scripts'/name)
         for name in ('configs/stacks/nerdctl-offline-smoke.yaml', 'configs/sites/single-node.example.yaml',
-                     'configs/delivery/offline-images.yaml', 'docs/single-node-offline.md'):
+                     'configs/delivery/offline-images.yaml', 'docs/单机共节点离线部署与分级压测.md'):
             target = repo/name; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/name, target)
         (repo/'requirements.txt').write_text('')
