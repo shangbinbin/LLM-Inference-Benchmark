@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 13:32:36
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 15:24:47
- * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/alloy/日志采集配置说明.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/alloy/README.md
  * @Description: alloy配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
@@ -12,7 +12,7 @@
 # alloy配置说明
 
 > 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
-> 来源版本、适用范围和配置适配说明见[参考配置索引](../多节点英伟达环境参考说明.md)。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 alloy组件使用的配置文件参见[此处](./config.alloy)，使用的镜像为`m.daocloud.io/docker.io/grafana/alloy:v1.18.0`。该组件的启动命令具体如下所示：
 

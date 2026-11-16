@@ -19,7 +19,7 @@
 - [单机 Dashboard](upstream/grafana/dcu-exporter-dashboard.json)、[Kubernetes Dashboard](upstream/grafana/dcu-exporter-k8s-dashboard.json)、[集群 Dashboard](upstream/grafana/dcu-cluster-monitor.json)
 - [下载清单和校验值](downloads.json)、[官方文档与镜像版本元数据](sources.json)
 
-`upstream/` 文件按下载字节原样保存，未修正旧配置。Exporter YAML 自带 Hygon 版权及 Apache-2.0 SPDX 标记，附[许可证文本](开源许可证版本2.0.txt)；其他文件保留原内容，未替来源添加许可声明。修改后的本项目配置放在 `configs/`，不覆盖原件。
+`upstream/` 文件按下载字节原样保存，未修正旧配置。Exporter YAML 自带 Hygon 版权及 Apache-2.0 SPDX 标记，附[许可证文本](APACHE-2.0.txt)；其他文件保留原内容，未替来源添加许可声明。修改后的本项目配置放在 `configs/`，不覆盖原件。
 
 ## 核对出的使用差异
 

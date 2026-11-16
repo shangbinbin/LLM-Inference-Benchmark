@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 13:47:44
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/grafana/可视化面板配置说明.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/grafana/README.md
  * @Description: grafana配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
@@ -12,7 +12,7 @@
 # grafana配置说明
 
 > 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
-> 来源版本、适用范围和配置适配说明见[参考配置索引](../多节点英伟达环境参考说明.md)。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 grafana组件使用的配置文件参见[此处](./grafana.ini)，使用的镜像为`grafana:13.0.4-ubuntu-root`，该镜像通过[此处](./grafana-dockerfile/Dockerfile)的Dockerfile构建。grafana配置的启动命令如下所示：
 
@@ -143,7 +143,7 @@ transmit-wait 和完整错误统计；不能用其他 counter 的值代替这些
 Dashboard 使用 `datasource`、`instance`、`device` 和 `port` 变量。Prometheus 会发现当前
 无头 Service 的全部 Endpoint；正式压测时，必须在 `instance` 中只选择 SGLang 两个 Rank
 实际所在节点对应的 `IP:9100`。完整的节点映射方法、指标含义和验收步骤参见
-[IB 网卡监控配置说明](../ib-network-monitoring/高速网卡监控配置说明.md)。
+[IB 网卡监控配置说明](../ib-network-monitoring/README.md)。
 
 Dashboard v2 还修复了 tooltip 有值但曲线不可见的问题：IB 时序面板改为稀疏数据自动
 显示点、只连接 30 秒以内的 null、使用 2 px 线宽，并在每条 `rate()` 查询上设置与
@@ -177,4 +177,4 @@ Dashboard 展示 target health、可见 GPU 数量、核心与显存利用率、
 graphics/tensor/DRAM activity、PCIe RX/TX bytes/s，以及 XID、row remap 和 PCIe replay
 状态。DCGM profiling 字段按 0–1 ratio 乘以 100 展示；`DCGM_FI_PROF_PCIE_*_BYTES`
 本身已经是 bytes/s gauge，不再使用 `rate()`。完整接入、PromQL 验证和常见问题参见
-[GPU 监控配置说明](../gpu-monitoring/设备监控配置说明.md)。
+[GPU 监控配置说明](../gpu-monitoring/README.md)。

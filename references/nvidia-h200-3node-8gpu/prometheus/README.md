@@ -3,7 +3,7 @@
  * @Date: 2026-07-27 15:21:52
  * @LastEditors: shangbinbin shangbinbin1993@outlook.com
  * @LastEditTime: 2026-08-01 16:43:19
- * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/prometheus/指标采集配置说明.md
+ * @FilePath: /LLM-Inference-Benchmark/references/nvidia-h200-3node-8gpu/prometheus/README.md
  * @Description: prometheus配置说明
  * 
  * Copyright (c) 2026 by shangbinbin shangbinbin1993@outlook.com, All Rights Reserved. 
@@ -12,7 +12,7 @@
 # prometheus配置说明
 
 > 本文及配套文件来自 `sglang-inference-platform`，作为压测链路搭建参考。
-> 来源版本、适用范围和配置适配说明见[参考配置索引](../多节点英伟达环境参考说明.md)。
+> 来源版本、适用范围和配置适配说明见[参考配置索引](../README.md)。
 
 Prometheus 组件使用的当前配置文件参见[此处](./prometheus.yml)。该配置已切换到 GLM5.2
 三节点、每节点 8 GPU 场景，只抓取 `glm52-sglang-3node` 普通 Service 暴露的 rank 0
@@ -79,7 +79,7 @@ rank 0/master Service 指标。rank 1/2 的 SGLang 应用指标不应在未确�
 `ampha-business/prometheus-node-exporter` 无头 Service，通过 DNS service discovery 为每个
 Endpoint 建立独立 target，并加载 [IB 网卡告警规则](./rules/ib-network-alerts.yml)。完整的
 三节点的 IB HCA 接入、现场验证、PromQL 和故障排查步骤参见
-[IB 网卡监控配置说明](../ib-network-monitoring/高速网卡监控配置说明.md)。
+[IB 网卡监控配置说明](../ib-network-monitoring/README.md)。
 
 当前现场 IB-only 响应已确认为 node_exporter 0.17.0，实际提供 RX/TX 字节、
 单播/组播包数、link-down 和 link-error-recovery counter，但不提供 `info`、
@@ -158,4 +158,4 @@ count by (node) (
 现场三个节点各暴露 8 张 NVIDIA H200，预期结果分别为 8、合计 24 张。Grafana 使用
 [NVIDIA DCGM GPU Dashboard](../grafana/dashboards/nvidia-dcgm-gpu-dashboard.json)
 展示利用率、显存、温度、功耗、时钟、profiling、PCIe 和错误指标。完整部署、指标口径及
-排障步骤参见 [GPU 监控配置说明](../gpu-monitoring/设备监控配置说明.md)。
+排障步骤参见 [GPU 监控配置说明](../gpu-monitoring/README.md)。

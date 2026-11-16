@@ -2,7 +2,7 @@
 
 **当前正式链路默认：光合社区 dcu-exporter:v2.4.1，dcu_* 指标、name/minor_number 标签。** 升级、端口核对、镜像导入与 Dashboard 说明见 [DCU v2.4.1](../../../docs/海光采集器版本2.4.1适配指南.md)。下方 HCU v3 文档/适配器保留作独立版本参考，不再代表 llm-bench 的默认选择。
 
-已根据 2026-11-06 检索到的官方资料增加 [HCU-Exporter v3 参考适配器](hcu-exporter-v3/新版设备采集器参考说明.md)。历史 HCU 独立渲染配置可从 `configs/environments/hygon-hcu-v3-template/environment.yaml` 开始，暂不限定卡型号。官方文档、具体下载链接和版本差异见[接入指南](../../../docs/海光官方监控资料指南.md)。配置已按文档核对，但尚未实机验证。
+已根据 2026-11-06 检索到的官方资料增加 [HCU-Exporter v3 参考适配器](hcu-exporter-v3/README.md)。历史 HCU 独立渲染配置可从 `configs/environments/hygon-hcu-v3-template/environment.yaml` 开始，暂不限定卡型号。官方文档、具体下载链接和版本差异见[接入指南](../../../docs/海光官方监控资料指南.md)。配置已按文档核对，但尚未实机验证。
 
 下面的原始空模板保留给其他 Exporter/版本使用，独立于 HCU v3 适配器。
 
