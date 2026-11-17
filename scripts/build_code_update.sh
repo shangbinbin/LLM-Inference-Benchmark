@@ -23,14 +23,29 @@ mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
 work=$(mktemp -d "$OUTPUT_DIR/.build-XXXXXXXX")
 exec > >(tee "$work/build.log") 2>&1
-trap 'result=$?; if [[ $result != 0 ]]; then echo "Code update failed; logs retained in $work" >&2; fi' EXIT
+phase=source-checkout
+cleanup() {
+  result=$?
+  trap - EXIT
+  if [[ $result != 0 ]]; then
+    echo "Code update failed at stage: $phase (exit $result)" >&2
+    if [[ $phase == unit-tests && -f $work/unit-tests.log ]]; then
+      echo "Unit tests failed; last 100 lines of $work/unit-tests.log:" >&2
+      tail -n 100 "$work/unit-tests.log" >&2 || true
+    fi
+    echo "Code update failed; logs retained in $work" >&2
+  fi
+  exit "$result"
+}
+trap cleanup EXIT
 git clone --no-checkout -- "$REPO_URL" "$work/source"
 cd "$work/source"
 resolve() {
+  [[ $1 != -* ]] || { echo 'Git ref cannot start with -' >&2; return 2; }
   if git show-ref --verify --quiet "refs/remotes/origin/$1"; then
     git rev-parse --verify "refs/remotes/origin/$1^{commit}"
   else
-    git rev-parse --verify --end-of-options "$1^{commit}"
+    git rev-parse --verify "$1^{commit}"
   fi
 }
 base_revision=$(resolve "$BASE_REF")
@@ -42,11 +57,16 @@ git archive "$revision" | tar -xf - -C "$work/new"
 cmp -s "$work/base/requirements.txt" requirements.txt || {
   echo 'Host requirements changed; build a full offline bundle' >&2; exit 1;
 }
+phase=python-dependencies
 python3 -m venv "$work/venv"
 export PATH="$work/venv/bin:$PATH"
 python -m pip install -r requirements.txt
+phase=compatibility-check
 python scripts/code_update.py check --base "$work/base" --source "$work/new"
+phase=unit-tests
+echo "[build] unit-tests; log: $work/unit-tests.log"
 python -m unittest discover -s tests > "$work/unit-tests.log" 2>&1
+phase=archive-creation
 name="llm-bench-code-${base_revision:0:12}-to-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
 python scripts/code_update.py pack --base "$work/base" --source "$work/new" \
   --base-revision "$base_revision" --revision "$revision" \

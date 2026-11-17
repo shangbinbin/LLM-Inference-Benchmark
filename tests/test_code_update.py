@@ -209,7 +209,8 @@ class CodeUpdateTests(unittest.TestCase):
         (origin / 'tests/test_ok.py').write_text('import unittest\nclass Test(unittest.TestCase):\n    def test_ok(self): pass\n')
         def git(*args):
             return subprocess.check_output(['git', *args], cwd=origin, text=True).strip()
-        git('init', '-b', 'main')
+        git('init', '-q')
+        git('symbolic-ref', 'HEAD', 'refs/heads/main')
         git('add', '.')
         git('-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-qm', 'base')
         base = git('rev-parse', 'HEAD')
@@ -265,3 +266,6 @@ exec {real_python} "$@"
                                         capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(list(failed_output.glob('*.tar.gz')))
+                if failure == 'tests':
+                    self.assertIn('Code update failed at stage: unit-tests', result.stdout + result.stderr)
+                    self.assertIn('RuntimeError: test failure', result.stdout + result.stderr)

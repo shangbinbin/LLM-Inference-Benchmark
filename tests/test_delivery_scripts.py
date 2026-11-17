@@ -197,7 +197,8 @@ def snapshot_download(**kwargs):
     shutil.copytree(os.environ['TEST_TOKENIZER'], kwargs['local_dir'])
 ''')
         (repo/'tests').mkdir()
-        (repo/'tests/test_fixture.py').write_text('import unittest\nclass Fixture(unittest.TestCase):\n    def test_ok(self): pass\n')
+        (repo/'tests/test_fixture.py').write_text('import os, unittest\nclass Fixture(unittest.TestCase):\n'
+            '    def test_ok(self): self.assertNotEqual(os.environ.get("FAIL_STAGE"), "unit-tests", "injected unit test failure")\n')
         self.fake_cli(repo)
         (repo/'scripts/prepare_offline_images.py').write_text('''from pathlib import Path
 import json, os, sys
@@ -207,14 +208,14 @@ if '--pull-only' not in sys.argv:
     (bundle/'images').mkdir()
     (bundle/'images/images-linux-amd64.tar').write_text('stub images')
 ''')
-        for command in (['git', 'init', '-b', 'main'], ['git', 'add', '.'],
+        for command in (['git', 'init', '-q'], ['git', 'symbolic-ref', 'HEAD', 'refs/heads/main'], ['git', 'add', '.'],
                         ['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-m', 'Fixture']):
             subprocess.run(command, cwd=repo, check=True, capture_output=True)
         return repo
 
     def test_online_publishes_archive_only_after_smoke_and_checksums_payload(self):
         repo = self.online_repo()
-        for stage in ('download', 'up', 'verify', ''):
+        for stage in ('download', 'unit-tests', 'up', 'verify', ''):
             with self.subTest(stage=stage):
                 output = self.base/(stage or 'success')
                 env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output), FAIL_STAGE=stage,
@@ -225,6 +226,10 @@ if '--pull-only' not in sys.argv:
                 if stage:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertFalse(archives)
+                    self.assertIn('Build failed at stage:', result.stdout + result.stderr)
+                    if stage == 'unit-tests':
+                        self.assertIn('Unit tests failed; last 100 lines', result.stdout + result.stderr)
+                        self.assertIn('injected unit test failure', result.stdout + result.stderr)
                 else:
                     self.assertEqual(result.returncode, 0, result.stderr+result.stdout)
                     self.assertEqual(len(archives), 1)

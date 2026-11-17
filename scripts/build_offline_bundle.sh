@@ -36,17 +36,29 @@ work=$(mktemp -d "$OUTPUT_DIR/.build-XXXXXXXX")
 exec > >(tee "$work/build.log") 2>&1
 smoke_config=
 smoke_owned=0
+phase=preflight
+unit_test_log=
+stage() { phase=$1; echo "[build] $phase"; }
 cleanup() {
   result=$?
   trap - EXIT
   if [[ $smoke_owned == 1 ]]; then
     "$work/venv/bin/python" "$work/source/bin/llm-bench" down --config "$smoke_config" || true
   fi
-  if [[ $result != 0 ]]; then echo "Build failed; logs and evidence retained in $work" >&2; fi
+  if [[ $result != 0 ]]; then
+    echo "Build failed at stage: $phase (exit $result)" >&2
+    if [[ $phase == unit-tests && -n $unit_test_log && -f $unit_test_log ]]; then
+      echo "Unit tests failed; last 100 lines of $unit_test_log:" >&2
+      tail -n 100 "$unit_test_log" >&2 || true
+    fi
+    echo "Build failed; logs and evidence retained in $work" >&2
+  fi
   exit "$result"
 }
 trap cleanup EXIT
+stage preflight
 docker info >/dev/null
+stage source-checkout
 git clone --no-checkout -- "$REPO_URL" "$work/source"
 cd "$work/source"
 if git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
@@ -59,6 +71,7 @@ name="llm-bench-offline-${revision:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
 bundle="$work/$name"
 mkdir -p "$bundle/repo" "$bundle/metadata" "$bundle/wheelhouse"
 git archive HEAD | tar -xf - -C "$bundle/repo"
+stage python-dependencies
 python3 -m venv "$work/venv"
 export PATH="$work/venv/bin:$PATH"
 python -m pip install -r requirements.txt
@@ -69,6 +82,7 @@ printf '%s\n' "$OFFLINE_PYTHON" > "$bundle/metadata/offline-python.txt"
 printf '%s\n' "$revision" > "$bundle/metadata/revision.txt"
 cp "${SITE_CONFIG:-configs/sites/single-node.example.yaml}" "$bundle/site.yaml"
 cp "${DELIVERY_CONFIG:-configs/delivery/offline-images.yaml}" "$bundle/delivery.yaml"
+stage tokenizer-preparation
 if [[ -z ${TOKENIZER_DIR:-} ]]; then
   python -m pip install -r requirements-build.txt
 fi
@@ -78,6 +92,7 @@ tokenizer_command=(python scripts/bundle_support.py --output "$bundle/tokenizer"
   --metadata "$bundle/metadata/tokenizer.json" --revision "${TOKENIZER_REVISION:-master}")
 if [[ -n ${TOKENIZER_DIR:-} ]]; then tokenizer_command+=(--source "$TOKENIZER_DIR"); fi
 "${tokenizer_command[@]}"
+stage simulation-configuration
 smoke_config="$work/source/generated/delivery-smoke.yaml"
 export BUNDLE_PATH="$bundle" SMOKE_CONFIG="$smoke_config" SMOKE_PORT_BASE=${SMOKE_PORT_BASE:-43000}
 python - <<'PY'
@@ -94,9 +109,14 @@ cfg = simulation_config(read_object(bundle / 'site.yaml'), bundle / 'tokenizer',
                         port_base=int(os.environ['SMOKE_PORT_BASE']), online=True)
 write_simulation(os.environ['SMOKE_CONFIG'], cfg)
 PY
-python -m unittest discover -s tests > "$bundle/metadata/unit-tests.log" 2>&1
+stage unit-tests
+unit_test_log="$bundle/metadata/unit-tests.log"
+echo "Unit test log: $unit_test_log"
+python -m unittest discover -s tests > "$unit_test_log" 2>&1
+stage image-build
 bin/llm-bench images build --config "$smoke_config"
 # Pull/check images before smoke, but export delivery archives only after verification.
+stage image-preparation
 python scripts/prepare_offline_images.py --site "$bundle/site.yaml" \
   --config "$bundle/delivery.yaml" --output "$bundle" --pull-only
 python - <<'PY'
@@ -109,15 +129,20 @@ cfg['offline'] = True
 write_yaml(path, cfg)
 PY
 smoke_owned=1
+stage simulation-startup
 bin/llm-bench up --config "$smoke_config"
+stage simulation-verification
 bin/llm-bench verify --config "$smoke_config"
 cp generated/delivery-smoke/verification.json "$bundle/metadata/online-smoke.json"
 cp "$smoke_config" "$bundle/metadata/online-smoke.yaml"
+stage simulation-cleanup
 bin/llm-bench down --config "$smoke_config"
 smoke_owned=0
+stage image-export
 python scripts/prepare_offline_images.py --site "$bundle/site.yaml" \
   --config "$bundle/delivery.yaml" --output "$bundle" --local-only
 cp "docs/单机共节点离线部署与分级压测.md" "$bundle/操作说明.md"
+stage archive-creation
 # site.yaml and delivery.yaml are intended to be edited on site; verify every immutable payload.
 (cd "$bundle" && find repo images metadata wheelhouse -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 if [[ -d $bundle/tokenizer ]]; then
