@@ -1,0 +1,2 @@
+# Online tokenizer download only; not needed or installed on the offline host.
+modelscope==1.40.3

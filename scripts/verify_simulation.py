@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a running Mac fixture stack using real metrics, logs and AISBench reports."""
+"""Verify a running CPU fixture stack using metrics, logs and AISBench reports."""
 import argparse
 import base64
 import json
@@ -38,22 +38,26 @@ def eventually(check, timeout=60):
     raise RuntimeError(f'Verification timed out: {error}')
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--exercise-restart', action='store_true', help='rotate fixture logs and restart owned collectors')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     cfg = load_config(args.config)
     if not cfg.get('simulation'):
         parser.error('This verifier is restricted to simulation stacks')
     root = Path(cfg['storage']['root'])
     state = json.loads((root/'state.json').read_text())
+    if state.get('status') != 'complete' or cfg['project']+'-aisbench' not in state['containers']:
+        raise ValueError('Simulation has no completed default AISBench run; finish llm-bench up without --no-benchmark/--cases first')
     directory = Path(state['config_dir'])
     manifest = json.loads((directory/'manifest.json').read_text())
     if manifest['stack'] != cfg or state['project'] != cfg['project']:
         parser.error('Running state does not match supplied config')
     stack = Stack(cfg, directory, manifest['vendor'])
-    evidence = {'simulation': True, 'platform': cfg['platform'], 'vendor': manifest['vendor'], 'checks': {}}
+    evidence = {'simulation': True, 'platform': cfg['platform'], 'vendor': manifest['vendor'],
+                'dataset_type': cfg['benchmark']['dataset_type'],
+                'tokenizer': cfg['storage']['tokenizer'], 'checks': {}}
     checks = evidence['checks']
     for name in state['containers']:
         info = stack.inspect(name)

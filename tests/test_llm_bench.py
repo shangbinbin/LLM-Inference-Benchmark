@@ -2,14 +2,24 @@ import json
 import yaml
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / 'bin/llm-bench'
+sys.path.insert(0, str(ROOT / 'scripts'))
 
 
 class CommandLineTests(unittest.TestCase):
+    def test_verify_cli_forwards_simulation_selection_and_restart_option(self):
+        from llm_bench import execute, parser_for_cli
+        args = parser_for_cli().parse_args(['verify', '--config', 'offline-simulation.yaml', '--exercise-restart'])
+        with patch('verify_simulation.main') as verify:
+            self.assertEqual(execute(args), 0)
+            verify.assert_called_once_with(['--config', 'offline-simulation.yaml', '--exercise-restart'])
+
     def cli(self, cwd, *args):
         return subprocess.run([CLI, *args], cwd=cwd, text=True, capture_output=True)
 

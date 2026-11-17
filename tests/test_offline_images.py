@@ -84,6 +84,19 @@ class OfflineImageTests(unittest.TestCase):
                         instance.preflight_images()
                         self.assertNotIn(self.site['images'][other+'_exporter'], check.call_args.args[1])
 
+    def test_pre_smoke_pulls_without_export_and_post_smoke_exports_without_pulls(self):
+        plan = image_plan(self.site, self.delivery)
+        info = {'Os': 'linux', 'Architecture': 'amd64', 'Id': 'sha256:test'}
+        with tempfile.TemporaryDirectory() as tmp, patch('prepare_offline_images.subprocess.run') as run, \
+                patch('prepare_offline_images.subprocess.check_output', return_value=json.dumps([info])):
+            prepare_images(plan, Path(tmp), export=False)
+            self.assertTrue(all(c.args[0][1] == 'pull' for c in run.call_args_list))
+            self.assertFalse((Path(tmp) / 'images').exists())
+            run.reset_mock()
+            prepare_images(plan, Path(tmp), pull=False)
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0][1:3], ['image', 'save'])
+
     def test_plan_runs_without_docker_gpu_tokenizer_or_service(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run([sys.executable, str(ROOT/'scripts/prepare_offline_images.py'), '--plan'],

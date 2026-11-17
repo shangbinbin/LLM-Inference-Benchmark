@@ -49,18 +49,20 @@ def image_plan(site, delivery, exporters=None):
     return {'platform': 'linux/amd64', 'gpu_exporters': selected, 'images': list(images.values())}
 
 
-def prepare_images(plan, bundle):
+def prepare_images(plan, bundle, *, export=True, pull=True):
     metadata = []
     # Validate every selected image before writing an archive or successful metadata.
     for entry in plan['images']:
         ref = entry['image']
-        if entry['pull']:
+        if pull and entry['pull']:
             subprocess.run(['docker', 'pull', '--platform', plan['platform'], ref], check=True)
         info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', ref], text=True))[0]
         if (info['Os'], info['Architecture']) != ('linux', 'amd64'):
             raise ValueError('Wrong architecture: ' + ref)
         metadata.append({'image': ref, 'id': info['Id'], 'digests': info.get('RepoDigests', []),
                          'platform': plan['platform']})
+    if not export:
+        return metadata
     (bundle / 'images').mkdir(parents=True, exist_ok=True)
     (bundle / 'metadata').mkdir(parents=True, exist_ok=True)
     subprocess.run(['docker', 'image', 'save', '-o', str(bundle / 'images/images-linux-amd64.tar'),
@@ -77,14 +79,18 @@ def main():
     parser.add_argument('--exporters', nargs='+', help='override selected_gpu_exporters, e.g. nvidia hygon')
     parser.add_argument('--output', type=Path, default=Path('generated/offline-bundle'))
     parser.add_argument('--plan', action='store_true', help='print image selection without contacting Docker or pulling images')
+    stages = parser.add_mutually_exclusive_group()
+    stages.add_argument('--pull-only', action='store_true', help='pull/check images without exporting an archive')
+    stages.add_argument('--local-only', action='store_true', help='check/export local images without registry access')
     args = parser.parse_args()
     try:
         plan = image_plan(read_object(args.site), read_object(args.config), args.exporters)
         if args.plan:
             print(json.dumps(plan, ensure_ascii=False, indent=2))
         else:
-            prepare_images(plan, args.output)
-            print('Exported ' + str(len(plan['images'])) + ' images to ' + str(args.output.resolve()))
+            prepare_images(plan, args.output, export=not args.pull_only, pull=not args.local_only)
+            print(('Checked ' if args.pull_only else 'Exported ') + str(len(plan['images'])) +
+                  ' images' + ('' if args.pull_only else ' to ' + str(args.output.resolve())))
     except (ValueError, KeyError, TypeError, IndexError, OSError, subprocess.SubprocessError) as exc:
         parser.exit(1, 'ERROR: ' + str(exc) + '\n')
 

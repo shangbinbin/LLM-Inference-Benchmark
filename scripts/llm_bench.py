@@ -71,6 +71,9 @@ def select_stack(parser):
 def parser_for_cli():
     parser = argparse.ArgumentParser(prog='llm-bench', description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    verify = commands.add_parser('verify', help='Verify a running simulation end to end (no new workload)')
+    verify.add_argument('--config', type=Path, required=True)
+    verify.add_argument('--exercise-restart', action='store_true', help='also test log rotation and collector restart')
     for name, desc in [('up', 'Start observability and run AISBench'), ('plan', 'Show effective configuration and startup order')]:
         sub = commands.add_parser(name, help=desc)
         configure(sub)
@@ -261,6 +264,11 @@ def operation(root):
 
 
 def execute(args):
+    if args.command == 'verify':
+        from verify_simulation import main as verify_simulation
+        verify_simulation(['--config', str(args.config)] +
+                          (['--exercise-restart'] if args.exercise_restart else []))
+        return 0
     if args.command in ('up', 'plan', 'images'):
         cfg = configured_stack(args)
         suite = None
@@ -372,6 +380,6 @@ def main():
         return execute(args)
     except KeyboardInterrupt:
         return 130
-    except (ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
+    except (AssertionError, ValueError, KeyError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 1

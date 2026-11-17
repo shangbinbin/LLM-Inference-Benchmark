@@ -58,14 +58,23 @@ exec {shlex.quote(sys.executable)} "$@"
         self.executable(repo/'bin/llm-bench', '''#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ['COMMAND_LOG'], 'a') as f: f.write(json.dumps(['llm-bench', *sys.argv[1:]])+'\\n')
-sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
+if os.environ.get('FAIL_STAGE') == sys.argv[1]: sys.exit(17)
+if sys.argv[1] == 'verify':
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
+    from config_io import read_object
+    cfg = read_object(sys.argv[sys.argv.index('--config')+1])
+    assert cfg['benchmark']['dataset_type'] == 'tokenid'
+    assert Path(cfg['storage']['tokenizer'], 'tokenizer.json').is_file()
+    root = Path(cfg['storage']['root']); root.mkdir(parents=True, exist_ok=True)
+    (root/'verification.json').write_text('{"passed":true}')
 '''.replace('#!/usr/bin/env python3', '#!'+sys.executable))
 
     def records(self):
         return [json.loads(line) for line in self.commands.read_text().splitlines()] if self.commands.exists() else []
 
     def checksum(self, bundle):
-        paths = [p for directory in ('repo', 'images', 'metadata') for p in (bundle/directory).rglob('*') if p.is_file()]
+        paths = [p for directory in ('repo', 'images', 'metadata', 'tokenizer') for p in (bundle/directory).rglob('*') if p.is_file()]
         (bundle/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(bundle))+'\n' for p in sorted(paths)))
 
     def offline_bundle(self, runtime):
@@ -74,6 +83,10 @@ sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
         shutil.copytree(ROOT/'scripts', repo/'scripts', ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copyfile(ROOT/'requirements.txt', repo/'requirements.txt')
         self.fake_cli(repo)
+        template = repo/'configs/stacks/nerdctl-offline-smoke.yaml'
+        template.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT/'configs/stacks/nerdctl-offline-smoke.yaml', template)
+        shutil.copytree(ROOT/'configs/fixtures/mock-tokenizer', bundle/'tokenizer')
         (bundle/'metadata').mkdir()
         (bundle/'wheelhouse').mkdir()
         (bundle/'images').mkdir()
@@ -87,8 +100,8 @@ sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
         self.checksum(bundle)
         return bundle
 
-    def deploy(self, bundle, **env):
-        return subprocess.run(['bash', str(bundle/'repo/scripts/deploy_offline.sh')],
+    def deploy(self, bundle, *args, **env):
+        return subprocess.run(['bash', str(bundle/'repo/scripts/deploy_offline.sh'), *args],
                               env=dict(self.env, PYTHON=str(self.fakebin/'python3'), **env),
                               text=True, capture_output=True)
 
@@ -114,11 +127,42 @@ sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
         (bundle/'images/images-linux-amd64.tar').write_text('corrupt')
         self.assertNotEqual(self.deploy(bundle).returncode, 0)
         self.assertEqual(self.records(), [])
+
         self.checksum(bundle)
         (bundle/'metadata/offline-python.txt').write_text('0.0\n')
         self.checksum(bundle)
         result = self.deploy(bundle)
         self.assertIn('requires CPython', result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_simulation_import_needs_no_real_service_and_starts_no_containers(self):
+        bundle = self.offline_bundle(['nerdctl', '--namespace', 'cpu-test'])
+        shutil.copy2(self.fakebin/'docker', self.fakebin/'nerdctl')
+        # Deliberately leave the real site unusable; simulation reads images/runtime only.
+        cfg = read_object(bundle/'site.yaml')
+        cfg['storage']['tokenizer'] = '/not-present'
+        cfg['inference']['base_url'] = 'http://REPLACE_HOST:8000'
+        write_yaml(bundle/'site.yaml', cfg)
+        result = self.deploy(bundle, '--simulation')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        smoke = read_object(bundle/'offline-simulation.yaml')
+        self.assertEqual(smoke['runtime'], ['nerdctl', '--namespace', 'cpu-test'])
+        self.assertTrue(smoke['simulation'] and smoke['offline'])
+        self.assertEqual(smoke['host_metrics'], 'container')
+        self.assertEqual(smoke['storage']['tokenizer'], str(bundle/'tokenizer'))
+        self.assertEqual(smoke['inference']['base_url'], 'http://fixture:18000/')
+        cli = [r[1:] for r in self.records() if r[0] == 'llm-bench']
+        self.assertEqual(cli, [['images', 'check', '--config', str(bundle/'offline-simulation.yaml')]])
+        (bundle/'generated/offline-smoke').mkdir(parents=True)
+        (bundle/'generated/offline-smoke/state.json').write_text('{}')
+        self.commands.unlink()
+        self.assertNotEqual(self.deploy(bundle, '--simulation').returncode, 0)
+        self.assertEqual(self.records(), [])
+
+    def test_corrupt_bundled_tokenizer_fails_before_import(self):
+        bundle = self.offline_bundle(['docker'])
+        (bundle/'tokenizer/tokenizer.json').write_text('tampered')
+        self.assertNotEqual(self.deploy(bundle, '--simulation').returncode, 0)
         self.assertEqual(self.records(), [])
 
     def test_import_failure_never_starts_stack(self):
@@ -135,26 +179,32 @@ sys.exit(17 if os.environ.get('FAIL_STAGE') == sys.argv[1] else 0)
 
     def online_repo(self):
         repo = self.base/'origin'; repo.mkdir()
-        for name in ('config_io.py', 'build_offline_bundle.sh', 'deploy_offline.sh'):
-            (repo/'scripts').mkdir(exist_ok=True)
-            shutil.copyfile(ROOT/'scripts'/name, repo/'scripts'/name)
+        shutil.copytree(ROOT/'scripts', repo/'scripts', ignore=shutil.ignore_patterns('__pycache__'))
         for name in ('configs/stacks/nerdctl-offline-smoke.yaml', 'configs/sites/single-node.example.yaml',
                      'configs/delivery/offline-images.yaml', 'docs/单机共节点离线部署与分级压测.md'):
             target = repo/name; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT/name, target)
         (repo/'requirements.txt').write_text('')
+        (repo/'requirements-build.txt').write_text('')
+        sdk = repo/'scripts/modelscope/hub'; sdk.mkdir(parents=True)
+        (repo/'scripts/modelscope/__init__.py').touch(); (sdk/'__init__.py').touch()
+        (sdk/'snapshot_download.py').write_text('''import json, os, shutil
+from pathlib import Path
+def snapshot_download(**kwargs):
+    with open(os.environ['COMMAND_LOG'], 'a') as f: f.write(json.dumps(['download', kwargs])+'\\n')
+    if os.environ.get('FAIL_STAGE') == 'download': raise RuntimeError('Download failed')
+    shutil.copytree(os.environ['TEST_TOKENIZER'], kwargs['local_dir'])
+''')
         (repo/'tests').mkdir()
         (repo/'tests/test_fixture.py').write_text('import unittest\nclass Fixture(unittest.TestCase):\n    def test_ok(self): pass\n')
         self.fake_cli(repo)
         (repo/'scripts/prepare_offline_images.py').write_text('''from pathlib import Path
-import sys
-bundle = Path(sys.argv[sys.argv.index('--output')+1])
-(bundle/'images').mkdir()
-(bundle/'images/images-linux-amd64.tar').write_text('stub images')
-''')
-        (repo/'scripts/verify_simulation.py').write_text('''from pathlib import Path
-root = Path('generated/delivery-smoke'); root.mkdir(parents=True)
-(root/'verification.json').write_text('{"passed":true}')
+import json, os, sys
+with open(os.environ['COMMAND_LOG'], 'a') as f: f.write(json.dumps(['prepare-images', *sys.argv[1:]])+'\\n')
+if '--pull-only' not in sys.argv:
+    bundle = Path(sys.argv[sys.argv.index('--output')+1])
+    (bundle/'images').mkdir()
+    (bundle/'images/images-linux-amd64.tar').write_text('stub images')
 ''')
         for command in (['git', 'init', '-b', 'main'], ['git', 'add', '.'],
                         ['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.org', 'commit', '-m', 'Fixture']):
@@ -163,10 +213,12 @@ root = Path('generated/delivery-smoke'); root.mkdir(parents=True)
 
     def test_online_publishes_archive_only_after_smoke_and_checksums_payload(self):
         repo = self.online_repo()
-        for stage in ('up', ''):
+        for stage in ('download', 'up', 'verify', ''):
             with self.subTest(stage=stage):
-                output = self.base/('failed' if stage else 'success')
-                env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output), FAIL_STAGE=stage)
+                output = self.base/(stage or 'success')
+                env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output), FAIL_STAGE=stage,
+                           OFFLINE_PYTHON=f'{sys.version_info.major}.{sys.version_info.minor}',
+                           TOKENIZER_DIR='', TEST_TOKENIZER=str(ROOT/'configs/fixtures/mock-tokenizer'))
                 result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')], env=env, text=True, capture_output=True)
                 archives = list(output.glob('*.tar.gz'))
                 if stage:
@@ -181,5 +233,37 @@ root = Path('generated/delivery-smoke'); root.mkdir(parents=True)
                     subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], cwd=bundle, check=True, capture_output=True)
                     self.assertTrue((bundle/'metadata/online-smoke.json').exists())
                     self.assertTrue((bundle/'repo/scripts/deploy_offline.sh').exists())
-        cli = [r[1] for r in self.records() if r[0] == 'llm-bench']
-        self.assertEqual(cli, ['images', 'up', 'down', 'images', 'up', 'down'])
+                    self.assertTrue((bundle/'tokenizer/tokenizer.json').exists())
+                    self.assertFalse((bundle/'.tokenizer-download').exists())
+                    meta = read_object(bundle/'metadata/tokenizer.json')
+                    self.assertEqual(meta['model'], 'Qwen/Qwen3-0.6B')
+                    self.assertIn('tokenizer.json', meta['files'])
+                    cfg = read_object(bundle/'metadata/online-smoke.yaml')
+                    self.assertTrue(cfg['offline'])
+                    self.assertEqual(cfg['benchmark']['dataset_type'], 'tokenid')
+                    self.assertEqual(cfg['benchmark']['warmups'], 0)
+                    imported = self.deploy(bundle, '--simulation')
+                    self.assertEqual(imported.returncode, 0, imported.stderr + imported.stdout)
+                    relocated = read_object(bundle/'offline-simulation.yaml')
+                    self.assertEqual(relocated['storage']['tokenizer'], str(bundle/'tokenizer'))
+                records = self.records()
+                exports = [i for i, r in enumerate(records) if r[0] == 'prepare-images' and '--local-only' in r]
+                if stage:
+                    self.assertFalse(exports)
+                else:
+                    verify = next(i for i, r in enumerate(records) if r[:2] == ['llm-bench', 'verify'] and str(output) in ' '.join(r))
+                    self.assertEqual(len(exports), 1)
+                    self.assertLess(verify, exports[0])
+
+    def test_explicit_tokenizer_skips_download_and_is_delivered(self):
+        repo = self.online_repo()
+        output = self.base / 'local-tokenizer-delivery'
+        env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output),
+                   TOKENIZER_DIR=str(ROOT/'configs/fixtures/mock-tokenizer'), FAIL_STAGE='download')
+        result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                                env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(len(list(output.glob('*.tar.gz'))), 1)
+        self.assertFalse(any(r[0] == 'download' for r in self.records()))
+        metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/tokenizer.json')
+        self.assertEqual(read_object(metadata)['provider'], 'local')
