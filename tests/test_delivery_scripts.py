@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+BASH = os.environ.get('LLM_BENCH_TEST_BASH', 'bash')
 sys.path.insert(0, str(ROOT/'scripts'))
 from config_io import read_object, write_yaml
 
@@ -101,7 +102,7 @@ if sys.argv[1] == 'verify':
         return bundle
 
     def deploy(self, bundle, *args, **env):
-        return subprocess.run(['bash', str(bundle/'repo/scripts/deploy_offline.sh'), *args],
+        return subprocess.run([BASH, str(bundle/'repo/scripts/deploy_offline.sh'), *args],
                               env=dict(self.env, PYTHON=str(self.fakebin/'python3'), **env),
                               text=True, capture_output=True)
 
@@ -219,7 +220,7 @@ if '--pull-only' not in sys.argv:
                 env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output), FAIL_STAGE=stage,
                            OFFLINE_PYTHON=f'{sys.version_info.major}.{sys.version_info.minor}',
                            TOKENIZER_DIR='', TEST_TOKENIZER=str(ROOT/'configs/fixtures/mock-tokenizer'))
-                result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')], env=env, text=True, capture_output=True)
+                result = subprocess.run([BASH, str(ROOT/'scripts/build_offline_bundle.sh')], env=env, text=True, capture_output=True)
                 archives = list(output.glob('*.tar.gz'))
                 if stage:
                     self.assertNotEqual(result.returncode, 0)
@@ -258,15 +259,30 @@ if '--pull-only' not in sys.argv:
     def test_explicit_tokenizer_skips_download_and_is_delivered(self):
         repo = self.online_repo()
         output = self.base / 'local-tokenizer-delivery'
+        tokenizer = self.base / 'tokenizer with spaces'
+        shutil.copytree(ROOT/'configs/fixtures/mock-tokenizer', tokenizer)
         env = dict(self.env, REPO_URL=str(repo), REF='main', OUTPUT_DIR=str(output),
-                   TOKENIZER_DIR=str(ROOT/'configs/fixtures/mock-tokenizer'), FAIL_STAGE='download')
-        result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                   TOKENIZER_DIR=str(tokenizer), FAIL_STAGE='download')
+        result = subprocess.run([BASH, str(ROOT/'scripts/build_offline_bundle.sh')],
                                 env=env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertEqual(len(list(output.glob('*.tar.gz'))), 1)
         self.assertFalse(any(r[0] == 'download' for r in self.records()))
         metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/tokenizer.json')
         self.assertEqual(read_object(metadata)['provider'], 'local')
+
+    def test_unset_tokenizer_directory_uses_default_download(self):
+        repo = self.online_repo()
+        output = self.base / 'default-tokenizer-delivery'
+        env = dict(self.env, REPO_URL=str(repo), OUTPUT_DIR=str(output),
+                   TEST_TOKENIZER=str(ROOT/'configs/fixtures/mock-tokenizer'))
+        env.pop('TOKENIZER_DIR', None)
+        result = subprocess.run([BASH, str(ROOT/'scripts/build_offline_bundle.sh')],
+                                env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(len(list(output.glob('*.tar.gz'))), 1)
+        metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/tokenizer.json')
+        self.assertEqual(read_object(metadata)['provider'], 'modelscope')
 
     def test_offline_python_defaults_to_39_and_accepts_explicit_newer_version(self):
         repo = self.online_repo()
@@ -275,7 +291,7 @@ if '--pull-only' not in sys.argv:
                 output = self.base / ('python-' + (version or 'default'))
                 env = dict(self.env, REPO_URL=str(repo), OUTPUT_DIR=str(output),
                            OFFLINE_PYTHON=version, TOKENIZER_DIR=str(ROOT/'configs/fixtures/mock-tokenizer'))
-                result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                result = subprocess.run([BASH, str(ROOT/'scripts/build_offline_bundle.sh')],
                                         env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/offline-python.txt')
@@ -286,7 +302,7 @@ if '--pull-only' not in sys.argv:
         for version in ('3.8', '3.9.25', '3.09', '4.0', 'invalid'):
             with self.subTest(version=version):
                 output = self.base / ('rejected-' + version)
-                result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                result = subprocess.run([BASH, str(ROOT/'scripts/build_offline_bundle.sh')],
                                         env=dict(self.env, OFFLINE_PYTHON=version, OUTPUT_DIR=str(output)),
                                         text=True, capture_output=True)
                 self.assertEqual(result.returncode, 2, result.stderr + result.stdout)

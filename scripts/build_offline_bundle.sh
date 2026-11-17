@@ -72,11 +72,12 @@ cp "${DELIVERY_CONFIG:-configs/delivery/offline-images.yaml}" "$bundle/delivery.
 if [[ -z ${TOKENIZER_DIR:-} ]]; then
   python -m pip install -r requirements-build.txt
 fi
-tokenizer_args=()
-if [[ -n ${TOKENIZER_DIR:-} ]]; then tokenizer_args+=(--source "$TOKENIZER_DIR"); fi
-python scripts/bundle_support.py --output "$bundle/tokenizer" \
-  --metadata "$bundle/metadata/tokenizer.json" --revision "${TOKENIZER_REVISION:-master}" \
-  "${tokenizer_args[@]}"
+# Bash 4.2/4.3 treats an empty array as unset under nounset. Keep this command
+# nonempty for both the default download and the optional local tokenizer path.
+tokenizer_command=(python scripts/bundle_support.py --output "$bundle/tokenizer"
+  --metadata "$bundle/metadata/tokenizer.json" --revision "${TOKENIZER_REVISION:-master}")
+if [[ -n ${TOKENIZER_DIR:-} ]]; then tokenizer_command+=(--source "$TOKENIZER_DIR"); fi
+"${tokenizer_command[@]}"
 smoke_config="$work/source/generated/delivery-smoke.yaml"
 export BUNDLE_PATH="$bundle" SMOKE_CONFIG="$smoke_config" SMOKE_PORT_BASE=${SMOKE_PORT_BASE:-43000}
 python - <<'PY'
