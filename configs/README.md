@@ -69,7 +69,7 @@ python3 scripts/create_site_config.py --runtime docker
 - `services`：Grafana/Alloy 容器实际可达的 Prometheus、Loki URL；示例服务名必须由部署环境提供。
 - `status`：`reference` 是来源示例，`template` 是未完成适配。完成现场验证后可记录为 `validated`，并在旁边补充版本和证据；状态本身不构成验证证明。
 
-生成工具仅依赖 Python 3.10+ 与 PyYAML（`pip install -r requirements.txt`）。YAML 配置片段由工具组合为完整 Prometheus/Grafana YAML，不是让 Prometheus 自动 include job 片段。运行命令、输出目录挂载与限制见[使用指南](../docs/观测链路使用指南.md)。
+生成工具仅依赖 Python 3.9+ 与 PyYAML（`pip install -r requirements.txt`）。YAML 配置片段由工具组合为完整 Prometheus/Grafana YAML，不是让 Prometheus 自动 include job 片段。运行命令、输出目录挂载与限制见[使用指南](../docs/观测链路使用指南.md)。
 
 AISBench 参数目前放 `stacks/*.yaml` 的 `benchmark` 字段，详见 [AISBench 指南](../docs/合成数据与推理压测指南.md)。新增容器部署请从 [Docker 指南](../docs/容器压测链路部署指南.md)开始；上文旧环境清单的单组限制不适用于新入口的多角色 targets。
 

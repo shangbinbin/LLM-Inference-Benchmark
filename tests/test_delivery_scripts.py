@@ -267,3 +267,29 @@ if '--pull-only' not in sys.argv:
         self.assertFalse(any(r[0] == 'download' for r in self.records()))
         metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/tokenizer.json')
         self.assertEqual(read_object(metadata)['provider'], 'local')
+
+    def test_offline_python_defaults_to_39_and_accepts_explicit_newer_version(self):
+        repo = self.online_repo()
+        for version in ('', '3.9', '3.11'):
+            with self.subTest(version=version):
+                output = self.base / ('python-' + (version or 'default'))
+                env = dict(self.env, REPO_URL=str(repo), OUTPUT_DIR=str(output),
+                           OFFLINE_PYTHON=version, TOKENIZER_DIR=str(ROOT/'configs/fixtures/mock-tokenizer'))
+                result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                                        env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                metadata, = output.glob('.build-*/llm-bench-offline-*/metadata/offline-python.txt')
+                self.assertEqual(metadata.read_text().strip(), version or '3.9')
+                self.assertEqual(len(list(output.glob('*.tar.gz'))), 1)
+
+    def test_unsupported_or_malformed_offline_python_fails_before_build(self):
+        for version in ('3.8', '3.9.25', '3.09', '4.0', 'invalid'):
+            with self.subTest(version=version):
+                output = self.base / ('rejected-' + version)
+                result = subprocess.run(['bash', str(ROOT/'scripts/build_offline_bundle.sh')],
+                                        env=dict(self.env, OFFLINE_PYTHON=version, OUTPUT_DIR=str(output)),
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+                self.assertIn('OFFLINE_PYTHON must be 3.9 or newer', result.stderr)
+                self.assertFalse(output.exists())
+        self.assertEqual(self.records(), [])

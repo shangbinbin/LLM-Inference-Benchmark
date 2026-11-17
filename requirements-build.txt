@@ -1,2 +1,3 @@
 # Online tokenizer download only; not needed or installed on the offline host.
-modelscope==1.40.3
+# Keep Python 3.9 host support; newer ModelScope releases require Python 3.10+.
+modelscope==1.33.0

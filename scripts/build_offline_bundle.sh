@@ -4,11 +4,11 @@ set -Eeuo pipefail
 if [[ ${1:-} == --help ]]; then
   cat <<'EOF'
 Usage: [REPO_URL=...] [REF=main] [OUTPUT_DIR=...] bash scripts/build_offline_bundle.sh
-Online prerequisites: Linux x86_64, Git, Docker daemon/build support, Python 3.10+ with venv/pip, tar, sha256sum.
+Online prerequisites: Linux x86_64, Git, Docker daemon/build support, Python 3.9+ with venv/pip, tar, sha256sum.
 Optional: SITE_CONFIG=/absolute/site.yaml, DELIVERY_CONFIG=/absolute/delivery.yaml,
 TOKENIZER_DIR=/absolute/tokenizer (optional existing tokenizer; otherwise download Qwen3-0.6B),
 TOKENIZER_REVISION=master (ModelScope revision used by the default download),
-OFFLINE_PYTHON=3.11 (offline CPython minor version), SMOKE_PORT_BASE=43000.
+OFFLINE_PYTHON=3.9 (offline host CPython minor version; independent of container Python 3.11), SMOKE_PORT_BASE=43000.
 Default repository: https://github.com/shangbinbin/LLM-Inference-Benchmark.git
 Always clones the requested remote ref, downloads and bundles tokenizer assets (no weights),
 builds both project images, runs tokenid CPU fixture smoke and verifies metrics/logs/reports,
@@ -19,14 +19,15 @@ EOF
 fi
 [[ $# == 0 ]] || { echo 'Use --help for usage' >&2; exit 2; }
 for cmd in git docker python3 tar sha256sum; do command -v "$cmd" >/dev/null; done
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "Online host requires Python 3.9 or newer")'
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { echo 'Requires Linux x86_64' >&2; exit 1; }
 REPO_URL=${REPO_URL:-https://github.com/shangbinbin/LLM-Inference-Benchmark.git}
 REF=${REF:-main}
 for setting in SITE_CONFIG DELIVERY_CONFIG TOKENIZER_DIR; do
   [[ -z ${!setting:-} || ${!setting} == /* ]] || { echo "$setting must be an absolute path" >&2; exit 2; }
 done
-OFFLINE_PYTHON=${OFFLINE_PYTHON:-3.11}
-[[ $OFFLINE_PYTHON =~ ^3\.(1[0-9])$ ]] || { echo 'OFFLINE_PYTHON must be 3.10 or newer' >&2; exit 2; }
+OFFLINE_PYTHON=${OFFLINE_PYTHON:-3.9}
+[[ $OFFLINE_PYTHON =~ ^3\.(9|[1-9][0-9])$ ]] || { echo 'OFFLINE_PYTHON must be 3.9 or newer (major.minor, e.g. 3.9 or 3.11)' >&2; exit 2; }
 export OFFLINE_PYTHON
 OUTPUT_DIR=${OUTPUT_DIR:-$PWD/generated/delivery}
 mkdir -p "$OUTPUT_DIR"
