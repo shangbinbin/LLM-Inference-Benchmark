@@ -8,6 +8,8 @@
 
 ## 快速开始
 
+国内源码仓库使用 `git@gitee.com:Ayanami_Rei_0/LLM-Inference-Benchmark.git`，与 GitHub 仓库同步。国内执行完整交付或仅代码更新脚本时，显式设置 `REPO_URL=git@gitee.com:Ayanami_Rei_0/LLM-Inference-Benchmark.git`；脚本默认仍为 GitHub，不会从本地 origin 自动推断。SSH 方式需要当前用户已配置仓库访问密钥。
+
 源码入口先安装 YAML 依赖：`python3 -m pip install -r requirements.txt`。
 
 单机共节点的完整流程见 [在线一键打包 → 离线一键部署 → 分级压测](docs/单机共节点离线部署与分级压测.md)，含 [带注释的 YAML 示例](configs/sites/single-node.example.yaml)、`scripts/build_offline_bundle.sh` 和 `scripts/deploy_offline.sh`。在线打包默认下载并携带 Qwen3-0.6B tokenizer，tokenid 无 GPU 全链路测试通过后才导出镜像和压缩包；离线可用 `deploy_offline.sh --simulation` 仅导入，再用 `llm-bench up/verify` 进行全链路模拟。
