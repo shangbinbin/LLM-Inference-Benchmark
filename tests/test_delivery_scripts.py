@@ -38,13 +38,24 @@ sys.exit(23 if os.environ.get('FAIL_STAGE') == 'load' and 'load' in sys.argv els
         # A hermetic venv bootstrap: forward Python execution, stub pip's network/install operations.
         self.venv_python = self.base/'venv-python'
         self.executable(self.venv_python, f'''#!/usr/bin/env bash
+if [[ ${{FAKE_MISSING_ENSUREPIP:-}} == 1 ]]; then
+  if [[ ${{1:-}} == -m && ${{2:-}} == ensurepip ]]; then exit 19; fi
+  if [[ ${{1:-}} == -m && ${{2:-}} == pip && ${{3:-}} == --version && ! -f $0.pip-ready ]]; then exit 17; fi
+  if [[ ${{1:-}} == - && ${{2:-}} == *.whl ]]; then touch "$0.pip-ready"; exit 0; fi
+fi
+if [[ ${{1:-}} == -m && ${{2:-}} == pip && ${{3:-}} == download && $* == *requirements-bootstrap.txt* ]]; then
+  wheelhouse=${{@: -1}}
+  mkdir -p "$wheelhouse"
+  printf 'stub pip wheel' > "$wheelhouse/pip-25.3-py3-none-any.whl"
+fi
 if [[ ${{1:-}} == -m && ${{2:-}} == pip ]]; then exit 0; fi
 exec {shlex.quote(sys.executable)} "$@"
 ''')
         self.executable(self.fakebin/'python3', f'''#!/usr/bin/env bash
 if [[ ${{1:-}} == -m && ${{2:-}} == venv ]]; then
-  mkdir -p "$3/bin"
-  cp {shlex.quote(str(self.venv_python))} "$3/bin/python"
+  venv_path=${{@: -1}}
+  mkdir -p "$venv_path/bin"
+  cp {shlex.quote(str(self.venv_python))} "$venv_path/bin/python"
   exit 0
 fi
 exec {shlex.quote(sys.executable)} "$@"
@@ -75,7 +86,7 @@ if sys.argv[1] == 'verify':
         return [json.loads(line) for line in self.commands.read_text().splitlines()] if self.commands.exists() else []
 
     def checksum(self, bundle):
-        paths = [p for directory in ('repo', 'images', 'metadata', 'tokenizer') for p in (bundle/directory).rglob('*') if p.is_file()]
+        paths = [p for directory in ('repo', 'images', 'metadata', 'tokenizer', 'wheelhouse') for p in (bundle/directory).rglob('*') if p.is_file()]
         (bundle/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(bundle))+'\n' for p in sorted(paths)))
 
     def offline_bundle(self, runtime):
@@ -136,6 +147,33 @@ if sys.argv[1] == 'verify':
         self.assertIn('requires CPython', result.stderr)
         self.assertEqual(self.records(), [])
 
+    def test_missing_system_ensurepip_uses_verified_bundled_pip_without_workload(self):
+        bundle = self.offline_bundle(['docker'])
+        (bundle/'wheelhouse/pip-25.3-py3-none-any.whl').write_text('stub pip wheel')
+        self.checksum(bundle)
+        result = self.deploy(bundle, '--simulation', FAKE_MISSING_ENSUREPIP='1')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn('Bootstrapping pip offline', result.stdout)
+        self.assertTrue((bundle/'.venv/bin/python.pip-ready').exists())
+        self.assertFalse(any(r[:2] == ['llm-bench', 'up'] for r in self.records()))
+
+    def test_older_bundle_without_pip_and_ensurepip_fails_before_runtime(self):
+        bundle = self.offline_bundle(['docker'])
+        result = self.deploy(bundle, '--simulation', FAKE_MISSING_ENSUREPIP='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('older bundle has no pip wheel', result.stderr)
+        self.assertEqual(self.records(), [])
+
+    def test_tampered_bootstrap_pip_fails_before_venv_creation(self):
+        bundle = self.offline_bundle(['docker'])
+        wheel = bundle/'wheelhouse/pip-25.3-py3-none-any.whl'
+        wheel.write_text('stub pip wheel')
+        self.checksum(bundle)
+        wheel.write_text('corrupted')
+        self.assertNotEqual(self.deploy(bundle, '--simulation', FAKE_MISSING_ENSUREPIP='1').returncode, 0)
+        self.assertFalse((bundle/'.venv').exists())
+        self.assertEqual(self.records(), [])
+
     def test_simulation_import_needs_no_real_service_and_starts_no_containers(self):
         bundle = self.offline_bundle(['nerdctl', '--namespace', 'cpu-test'])
         shutil.copy2(self.fakebin/'docker', self.fakebin/'nerdctl')
@@ -187,6 +225,7 @@ if sys.argv[1] == 'verify':
             shutil.copyfile(ROOT/name, target)
         (repo/'requirements.txt').write_text('')
         (repo/'requirements-build.txt').write_text('')
+        shutil.copyfile(ROOT/'requirements-bootstrap.txt', repo/'requirements-bootstrap.txt')
         sdk = repo/'scripts/modelscope/hub'; sdk.mkdir(parents=True)
         (repo/'scripts/modelscope/__init__.py').touch(); (sdk/'__init__.py').touch()
         (sdk/'snapshot_download.py').write_text('''import json, os, shutil
@@ -240,6 +279,7 @@ if '--pull-only' not in sys.argv:
                     self.assertTrue((bundle/'metadata/online-smoke.json').exists())
                     self.assertTrue((bundle/'repo/scripts/deploy_offline.sh').exists())
                     self.assertTrue((bundle/'tokenizer/tokenizer.json').exists())
+                    self.assertTrue((bundle/'wheelhouse/pip-25.3-py3-none-any.whl').exists())
                     self.assertFalse((bundle/'.tokenizer-download').exists())
                     meta = read_object(bundle/'metadata/tokenizer.json')
                     self.assertEqual(meta['model'], 'Qwen/Qwen3-0.6B')

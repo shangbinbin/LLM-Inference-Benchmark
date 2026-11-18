@@ -77,7 +77,7 @@ export PATH="$work/venv/bin:$PATH"
 python -m pip install -r requirements.txt
 python -m pip download --only-binary=:all: --platform manylinux2014_x86_64 \
   --implementation cp --abi "cp${OFFLINE_PYTHON//./}" --python-version "$OFFLINE_PYTHON" \
-  -r requirements.txt --dest "$bundle/wheelhouse"
+  -r requirements.txt -r requirements-bootstrap.txt --dest "$bundle/wheelhouse"
 printf '%s\n' "$OFFLINE_PYTHON" > "$bundle/metadata/offline-python.txt"
 printf '%s\n' "$revision" > "$bundle/metadata/revision.txt"
 cp "${SITE_CONFIG:-configs/sites/single-node.example.yaml}" "$bundle/site.yaml"

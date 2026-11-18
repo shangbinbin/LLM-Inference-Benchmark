@@ -4,7 +4,7 @@
 
 **文档入口：** [文档总览与阅读指南](docs/文档总览与阅读指南.md) 按任务给出阅读顺序，并逐份说明操作指南、配置 README、验证记录和来源资料的用途。
 
-宿主机支持 Python 3.9+；一键交付包默认适配离线宿主机 Python 3.9，可用 `OFFLINE_PYTHON` 指定其他版本。AISBench/toolbox 容器内部使用 Python 3.11，与宿主机版本独立。
+宿主机支持 Python 3.9+；一键交付包默认适配离线宿主机 Python 3.9，可用 `OFFLINE_PYTHON` 指定其他版本。离线完整包携带 pip 引导 wheel，系统只需包含 venv 模块，不要求预装 ensurepip/pip。AISBench/toolbox 容器内部使用 Python 3.11，与宿主机版本独立。
 
 ## 快速开始
 

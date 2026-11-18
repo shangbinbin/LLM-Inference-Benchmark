@@ -57,7 +57,7 @@ def image_contract(root, files=None):
     files = inventory(root) if files is None else files
     protected = {name: file_info(safe_path(root, name)) for name in files
                  if name.startswith('containers/') or name in
-                 ('requirements.txt', 'requirements-build.txt', '.dockerignore')}
+                 ('requirements.txt', 'requirements-build.txt', 'requirements-bootstrap.txt', '.dockerignore')}
     source = root / 'scripts/benchmark_stack.py'
     methods = []
     if source.exists():

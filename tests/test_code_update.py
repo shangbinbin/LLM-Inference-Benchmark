@@ -29,6 +29,7 @@ class CodeUpdateTests(unittest.TestCase):
         for name in ('code_update.py', 'config_io.py', 'apply_code_update.sh', 'build_code_update.sh'):
             shutil.copy2(ROOT / 'scripts' / name, self.base / 'scripts' / name)
         (self.base / 'requirements.txt').write_text('PyYAML==6.0.3\n')
+        (self.base / 'requirements-bootstrap.txt').write_text('pip==25.3\n')
         (self.base / 'containers/toolbox').mkdir(parents=True)
         (self.base / 'containers/toolbox/Dockerfile').write_text('FROM python:3.11\n')
         (self.base / 'app.py').write_text('print("old")\n')
@@ -92,6 +93,7 @@ class CodeUpdateTests(unittest.TestCase):
 
     def test_changed_requirements_container_inputs_and_image_tags_require_full_bundle(self):
         for name, content in (('requirements.txt', 'other-dependency\n'),
+                              ('requirements-bootstrap.txt', 'pip==26.0\n'),
                               ('containers/toolbox/Dockerfile', 'FROM python:3.12\n'),
                               ('configs/sites/example.yaml', 'images: {toolbox: "toolbox:2"}\n')):
             with self.subTest(name=name):

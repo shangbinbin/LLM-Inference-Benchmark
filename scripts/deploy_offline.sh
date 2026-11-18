@@ -4,10 +4,11 @@ set -Eeuo pipefail
 if [[ ${1:-} == --help ]]; then
   cat <<'EOF'
 Usage: [PYTHON=python3] bash repo/scripts/deploy_offline.sh [--simulation] [site.yaml]
-Requires an extracted offline bundle, Linux x86_64, matching CPython with venv/pip,
+Requires an extracted offline bundle, Linux x86_64, matching CPython with the venv module,
 and a working Docker or nerdctl/containerd runtime plus the matching GPU runtime/driver.
 Installs bundled Python wheels without a package index, loads images into the configured
 runtime/namespace, checks local images, starts observability with --no-benchmark.
+New bundles include a pip wheel; system ensurepip/pip is not required.
 Inference service must already be running; edit site.yaml before invoking.
 With --simulation: import/check images and generate offline-simulation.yaml only.
 No GPU, driver or real inference service required; no containers or workloads started.
@@ -32,9 +33,36 @@ PYTHON=${PYTHON:-python3}
 required=$(cat metadata/offline-python.txt)
 actual=$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 [[ $actual == "$required" ]] || { echo "Bundle requires CPython $required; got $actual. Set PYTHON=/path/to/python$required" >&2; exit 1; }
-"$PYTHON" -m venv "$bundle/.venv"
-export PATH="$bundle/.venv/bin:$bundle/repo/bin:$PATH"
 export PIP_NO_INDEX=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+if ! "$PYTHON" -m venv --without-pip "$bundle/.venv"; then
+  echo 'Cannot create venv; install the venv standard-library module for the selected Python first' >&2
+  exit 1
+fi
+if ! "$bundle/.venv/bin/python" -m pip --version >/dev/null 2>&1; then
+  pip_wheel=
+  for candidate in "$bundle"/wheelhouse/pip-*-py3-none-any.whl; do
+    [[ -f $candidate ]] || continue
+    [[ -z $pip_wheel ]] || { echo 'Multiple pip bootstrap wheels found; keep one matching the bundle' >&2; exit 1; }
+    pip_wheel=$candidate
+  done
+  if [[ -n $pip_wheel ]]; then
+    echo "Bootstrapping pip offline from $pip_wheel (system ensurepip is not required)"
+    "$bundle/.venv/bin/python" - "$pip_wheel" <<'PY'
+import runpy
+import sys
+wheel = sys.argv[1]
+if sys.prefix == sys.base_prefix:
+    raise RuntimeError('Refusing to bootstrap pip outside the bundle virtual environment')
+sys.path.insert(0, wheel)
+sys.argv = ['pip', 'install', '--no-index', '--no-deps', '--force-reinstall', wheel]
+runpy.run_module('pip', run_name='__main__')
+PY
+  elif ! "$bundle/.venv/bin/python" -m ensurepip --upgrade; then
+    echo "This older bundle has no pip wheel and system ensurepip is unavailable. Rebuild with the latest build_offline_bundle.sh and OFFLINE_PYTHON=$required, or install the matching system venv package offline." >&2
+    exit 1
+  fi
+fi
+export PATH="$bundle/.venv/bin:$bundle/repo/bin:$PATH"
 python -m pip install --no-index --find-links "$bundle/wheelhouse" -r "$bundle/repo/requirements.txt"
 # Make recovery commands available even if image import/startup fails.
 cat > "$bundle/env.sh" <<'EOF'
