@@ -157,6 +157,17 @@ if sys.argv[1] == 'verify':
         self.assertTrue((bundle/'.venv/bin/python.pip-ready').exists())
         self.assertFalse(any(r[:2] == ['llm-bench', 'up'] for r in self.records()))
 
+    def test_real_monitoring_deployment_does_not_require_tokenizer(self):
+        bundle = self.offline_bundle(['docker'])
+        cfg = read_object(bundle/'site.yaml')
+        cfg['storage'].pop('tokenizer')
+        write_yaml(bundle/'site.yaml', cfg)
+        result = self.deploy(bundle)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        commands = [r[1:] for r in self.records() if r[0] == 'llm-bench']
+        self.assertIn('--no-benchmark', commands[0])
+        self.assertIn('--no-benchmark', commands[1])
+
     def test_older_bundle_without_pip_and_ensurepip_fails_before_runtime(self):
         bundle = self.offline_bundle(['docker'])
         result = self.deploy(bundle, '--simulation', FAKE_MISSING_ENSUREPIP='1')

@@ -89,7 +89,7 @@ else:
     if cfg.get('simulation') or cfg.get('offline') is not True:
         raise ValueError('Offline deployment requires simulation: false and offline: true')
 validate_runtime(cfg)
-cfg = validate_config(cfg)
+cfg = validate_config(cfg, require_tokenizer=sys.argv[3] == '1')
 root = Path(cfg['storage']['root'])
 if (root / 'state.json').exists():
     raise ValueError('An active stack exists; use llm-bench status/down --config before redeploying')
@@ -97,7 +97,7 @@ if (root / 'state.json').exists():
 smoke = simulation_config(cfg, bundle / 'tokenizer', bundle / 'generated/offline-smoke',
                           bundle / 'generated/offline-smoke-logs',
                           project='llm-bench-offline-smoke', port_base=int(sys.argv[4]))
-validate_config(smoke)
+validate_config(smoke, require_tokenizer=sys.argv[3] == '1')
 write_simulation(bundle / 'offline-simulation.yaml', smoke)
 # Load through exactly the same command/namespace used for deployment. No eval or registry access.
 subprocess.run(cfg['runtime'] + ['info'], check=True)
@@ -110,7 +110,7 @@ if [[ $simulation == 1 ]]; then
   echo "llm-bench verify --config $bundle/offline-simulation.yaml"
   exit 0
 fi
-llm-bench images check --config "$site"
+llm-bench images check --config "$site" --no-benchmark
 llm-bench up --config "$site" --no-benchmark
 llm-bench status --config "$site"
 echo "Deployment complete (no benchmark workload run). Source $bundle/env.sh before using llm-bench."

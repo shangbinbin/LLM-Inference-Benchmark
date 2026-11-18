@@ -174,12 +174,12 @@ def check_local_images(cfg, images, call):
     print(f'Local image preflight passed: {len(images)} images ({cfg["platform"]})', flush=True)
 
 
-def load_config(path):
-    return validate_config(read_object(path))
+def load_config(path, *, require_tokenizer=True):
+    return validate_config(read_object(path), require_tokenizer=require_tokenizer)
 
 
-def validate_config(cfg, *, check_tokenizer=True):
-    """Validate settings; only offline site creation may defer local tokenizer existence."""
+def validate_config(cfg, *, check_tokenizer=True, require_tokenizer=True):
+    """Validate the stack; monitoring needs no tokenizer, workloads always require one."""
     if cfg.get('schema_version') != 1:
         raise ValueError('schema_version must be 1')
     if type(cfg.get('offline', False)) is not bool:
@@ -212,6 +212,9 @@ def validate_config(cfg, *, check_tokenizer=True):
         raise ValueError('project must be a short lowercase container name')
     for key in ('root', 'logs', 'tokenizer'):
         if not cfg['storage'].get(key):
+            if key == 'tokenizer' and not require_tokenizer:
+                cfg['storage'].pop(key, None)
+                continue
             raise ValueError(f'storage.{key} is required (AISBench summary requires a tokenizer)')
         p = Path(cfg['storage'][key]).expanduser()
         cfg['storage'][key] = str((ROOT / p).resolve() if not p.is_absolute() else p.resolve())
@@ -283,8 +286,7 @@ def validate_config(cfg, *, check_tokenizer=True):
             raise ValueError(f'benchmark.{key} must be a positive integer')
     if bench['dataset_type'] not in ('string', 'tokenid'):
         raise ValueError('dataset_type must be string/tokenid')
-    tokenizer = Path(cfg['storage']['tokenizer'])
-    if check_tokenizer and not (tokenizer / 'tokenizer_config.json').is_file():
+    if require_tokenizer and check_tokenizer and not (Path(cfg['storage']['tokenizer']) / 'tokenizer_config.json').is_file():
         raise ValueError('storage.tokenizer requires a local tokenizer_config.json; used by synthetic generation/results')
     if type(bench.get('retry', 1)) is not int or bench.get('retry', 1) < 1:
         raise ValueError('benchmark.retry is the total attempt count in this AISBench version; it must be >= 1')
@@ -726,6 +728,7 @@ class Stack:
             raise ValueError('Runtime/namespace differs from the running stack; use the original config to down before switching runtimes')
 
     def bench(self):
+        validate_config(self.cfg)  # Never inherit monitoring-only validation for a workload.
         b=self.cfg['benchmark']; name=self.project+'-aisbench'
         results = self.root/'data/results'
         previous_runs = set(results.iterdir())
@@ -795,7 +798,7 @@ def main():
     p.add_argument('--no-benchmark',action='store_true',help='start observability only')
     args=p.parse_args()
     try:
-        cfg=load_config(args.config)
+        cfg=load_config(args.config, require_tokenizer=not args.no_benchmark and args.action not in ('down', 'status'))
         if args.action in ('down','status'):
             state=json.loads((Path(cfg['storage']['root'])/'state.json').read_text())
             if state['project'] != cfg['project']:

@@ -159,7 +159,7 @@ def configured_stack(args):
         cfg['benchmark'].pop('concurrency_levels', None)
         cfg['benchmark'].pop('requests_per_level', None)
     cfg['benchmark'].update(settings)
-    return validate_config(cfg)
+    return validate_config(cfg, require_tokenizer=not getattr(args, 'no_benchmark', False))
 
 
 def reference(root):

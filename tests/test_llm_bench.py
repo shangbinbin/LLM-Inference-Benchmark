@@ -13,6 +13,43 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 
 
 class CommandLineTests(unittest.TestCase):
+    def monitoring_config(self, folder, tokenizer=None):
+        cfg = yaml.safe_load((ROOT/'configs/sites/single-node.example.yaml').read_text())
+        cfg['storage'].update(root=str(folder/'state'), logs=str(folder/'logs'))
+        if tokenizer is None:
+            cfg['storage'].pop('tokenizer')
+        else:
+            cfg['storage']['tokenizer'] = tokenizer
+        path = folder/'monitoring.yaml'
+        path.write_text(yaml.safe_dump(cfg))
+        return path
+
+    def test_no_benchmark_plan_needs_no_tokenizer_but_default_plan_still_requires_it(self):
+        for tokenizer in (None, '', '/not-present/tokenizer'):
+            with self.subTest(tokenizer=tokenizer), tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                config = self.monitoring_config(folder, tokenizer)
+                result = self.cli(tmp, 'plan', '--config', config, '--no-benchmark')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['workloads'], [])
+                result = self.cli(tmp, 'plan', '--config', config)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('storage.tokenizer', result.stderr)
+
+    def test_no_benchmark_up_and_image_check_skip_tokenizer_and_client(self):
+        from llm_bench import execute, parser_for_cli
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self.monitoring_config(Path(tmp))
+            args = parser_for_cli().parse_args(['up', '--config', str(config), '--no-benchmark'])
+            with patch('llm_bench.Stack.up', autospec=True, return_value=None) as up, patch('llm_bench.remember'):
+                self.assertEqual(execute(args), 0)
+                self.assertNotIn('tokenizer', up.call_args.args[0].cfg['storage'])
+                self.assertEqual(up.call_args.kwargs, {'run_benchmark': False, 'needs_client': False})
+            args = parser_for_cli().parse_args(['images', 'check', '--config', str(config), '--no-benchmark'])
+            with patch('llm_bench.Stack.call'), patch('llm_bench.Stack.preflight_images') as check:
+                self.assertEqual(execute(args), 0)
+                check.assert_called_once_with(False)
+
     def test_verify_cli_forwards_simulation_selection_and_restart_option(self):
         from llm_bench import execute, parser_for_cli
         args = parser_for_cli().parse_args(['verify', '--config', 'offline-simulation.yaml', '--exercise-restart'])

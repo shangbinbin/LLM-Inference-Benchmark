@@ -16,6 +16,20 @@ import benchmark_stack as stack
 
 
 class StackTests(unittest.TestCase):
+    def test_monitoring_validation_cannot_bypass_workload_tokenizer_checks(self):
+        from run_aisbench_suite import prepare_suite
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            stack.validate_config(cfg, require_tokenizer=False)
+            folder, vendor = stack.prepare(cfg)
+            instance = stack.Stack(cfg, folder, vendor)
+            with patch.object(instance, 'call') as call:
+                with self.assertRaisesRegex(ValueError, 'storage.tokenizer'):
+                    instance.bench()
+                call.assert_not_called()
+            with self.assertRaisesRegex(ValueError, 'storage.tokenizer'):
+                prepare_suite(cfg, {'cases': [{'name': 'must-have-tokenizer'}]})
+
     def config(self, tmp):
         cfg=stack.load_config(ROOT/'configs/stacks/mac-simulation.yaml')
         cfg['storage']={'root':str(Path(tmp)/'state'),'logs':str(Path(tmp)/'logs')}

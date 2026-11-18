@@ -11,7 +11,7 @@ runtime:
 storage:
   root: /data/llm-bench  # 【必改】可写结果/监控数据目录，预留磁盘空间
   logs: /var/log/inference  # 【必改】推理服务实际日志目录，log_sources.path 相对此目录
-  tokenizer: /data/models/Qwen3-0.6B  # 【必改】模型匹配的本地 tokenizer 目录（不是 mock）
+  tokenizer: /data/models/Qwen3-0.6B  # 【压测必改】模型匹配的本地 tokenizer；只观测 --no-benchmark 时可省略
 images:
   toolbox: llm-benchmark-toolbox:local-amd64
   aisbench: llm-benchmark-aisbench:e330dc1-amd64
